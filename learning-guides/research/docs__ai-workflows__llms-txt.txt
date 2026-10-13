@@ -1,0 +1,59 @@
+AI agent workflows
+llms.txt
+
+An agent pointed at Grit, or at an API you built with it, should not have to crawl a site or guess at conventions. Both serve an llmstxt.org index at the path models look for it.
+
+For working with the framework
+
+gritframework.dev/llms.txt is the index: what Grit is, the one thing to understand about it, and every documentation page with the description it carries, grouped by subject. gritframework.dev/llms-full.txt is that index, plus the working guide an agent should follow, plus the complete CLI reference, as one file of about 80 KB.
+
+curl https://gritframework.dev/llms-full.txt
+
+Copy to clipboard
+
+Both are built from the files the site itself is built from: the page list is the same metadata the pages use for their titles, the CLI reference is the same catalogue /docs/cli renders, and the working guide is the same file grit init writes into a project. None of it is written twice, so none of it can drift from the docs.
+
+For calling an API you built
+
+A scaffolded API serves its own pair. /llms.txt is the orientation: how versioning works, which header carries the token, what a response and an error look like, and the parameters every list endpoint takes.
+
+GET /llms.txt
+Copy to clipboard
+
+# acme API
+
+> A REST API built with Grit (Go, Gin, GORM). This file is the orientation;
+
+> the contract is the OpenAPI spec linked below.
+
+## Start here
+
+- [OpenAPI 3.1 spec](https://api.acme.com/docs/openapi.json): every endpoint, its
+
+parameters and its schemas. Generate a client from this.
+
+- [Every route this process serves](https://api.acme.com/llms-full.txt)
+
+- [Dependency health](https://api.acme.com/api/health)
+
+## Versioning
+
+...
+
+## Authentication
+
+...
+
+/llms-full.txt adds every route the router holds, grouped by what it is about. That is the one thing the OpenAPI spec cannot answer: the spec documents the routes somebody wrote an override for, and this is the router's own table, so a route you add appears without anybody maintaining a list.
+
+The spec is still the contractFor generating a client, read /docs/openapi.json. llms.txt exists because 300 KB of JSON says nothing about the conventions every endpoint shares, and because an agent that has just been handed a URL needs somewhere to start.
+
+Both are gated with the API reference
+
+They describe the whole surface, admin routes included, so they are mounted under the same condition as /docs: off in production unless API_DOCS_PUBLIC=true. A route list is not a secret, and it is also not something to hand out by default.
+
+Adding to what they say
+
+The text is internal/llms in your project, which is yours to edit like any generated file: the conventions section is a string, and a service with its own idempotency header or its own rate limit policy should say so there. The route listing is read from the engine on each request, so nothing has to be kept in step by hand.
+
+MCP ServerAPI Documentation

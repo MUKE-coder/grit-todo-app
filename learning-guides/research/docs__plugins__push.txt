@@ -1,0 +1,89 @@
+Plugin
+
+Push notifications
+
+Send a notification to a user's phone from Go, in one line. The API talks to Expo's push service, which relays to Apple and Google, so there is no APNs certificate or Firebase key to manage.
+
+grit plugin add push
+
+grit migrate
+
+pnpm install
+
+Copy to clipboard
+
+Send one
+
+Go sends in the background, so the request that caused it never waits on the push service. Every device the users registered gets it.
+
+push := services.NewPush(db)
+
+push.Go([]string{order.CustomerID}, services.PushMessage{
+
+Title: "Your order shipped",
+
+Body:  "Order " + order.Number + " is on its way.",
+
+Sound: "default",
+
+// Arrives with the notification: what the app opens when it is tapped.
+
+Data: map[string]string{"order_id": order.ID},
+
+})
+
+Copy to clipboard
+
+Send does the same and waits, returning how many devices Expo accepted: for a background job that wants the result.
+
+In the Expo app
+
+apps/expo/lib/push.ts asks for permission, gets the device's token and registers it. Call it after sign-in and on every launch while signed in; unregister before signing out.
+
+import { onNotificationTap, registerForPush, unregisterPush } from "@/lib/push";
+
+useEffect(() => {
+
+if (user) void registerForPush();
+
+}, [user?.id]);
+
+// The tap that opened the app counts too.
+
+useEffect(() => onNotificationTap((data) => {
+
+if (data.order_id) router.push(`/orders/${data.order_id}`);
+
+}), []);
+
+// In logout, before the session ends:
+
+await unregisterPush();
+
+Copy to clipboard
+
+What you get
+
+EndpointDoes
+
+POST /api/v1/push/tokensRegisters the signed-in device. Anything but an Expo push token is refused.
+
+POST /api/v1/push/tokens/removeUnregisters it, if it is yours. The answer is the same either way.
+
+POST /api/v1/push/testSends yourself a test notification, to check the set-up end to end.
+
+The details that matter
+
+Dead tokens clean themselves up. When an app is deleted or notifications are turned off, Expo answers DeviceNotRegistered for that token, and it is removed on the spot instead of being tried with every message from then on.
+
+A phone belongs to whoever signed in last. A token is unique, and registering it moves it to the current user, so a shared or handed-down phone stops getting the previous person's notifications.
+
+Batches of 100. Expo takes at most 100 messages a request; sending to more users makes as many requests as it needs.
+
+Ten devices a user. The oldest are dropped first, since a phone that was replaced stops re-registering.
+
+Real devices only. Simulators and the web cannot receive push; registerForPush returns null there and the app carries on. Store builds need an EAS project id; set EXPO_ACCESS_TOKEN if the project uses enhanced push security.
+
+Checked against Expo's live service while building the WhatsApp blueprint: a message to someone with a registered token went out through Expo, and a token no device owned came back as not registered and was removed.
+
+Device pairingVideo

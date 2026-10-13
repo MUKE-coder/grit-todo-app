@@ -1,0 +1,617 @@
+Infrastructure
+Deployment
+
+Deploy your Grit application anywhere Docker runs — from a $5 VPS to managed cloud platforms. This guide walks you through a complete production deployment on a VPS, step by step.
+
+BuildRun on VPS
+Build an image, ship it to your VPS, and bring it up with Docker Compose
+
+Go deeper: the Deployment Guide course covers Dokploy, VPS and Vercel targets, and CI/CD with GitHub Actions automates the whole pipeline.
+
+On This Page
+
+1. Choose a VPS Provider2. Initial Server Setup3. Install Docker4. Clone & Configure5. Deploy with Docker Compose6. Set Up SSL with Caddy7. Configure Firewall (UFW)8. Automated Deployments (CI/CD)9. Database Backups10. Monitoring & Logging11. Zero-Downtime Updates12. Production Checklist
+
+1
+
+Choose a VPS Provider
+
+A VPS (Virtual Private Server) is the most cost-effective way to deploy a Grit application. You get full control over the server, and a $5-10/month VPS can handle thousands of users.
+
+ProviderStarting AtSpecs (entry)Best For
+
+Hetzner$4/mo2 vCPU, 4GB RAM, 40GB SSDBest price-to-performance
+
+DigitalOcean$6/mo1 vCPU, 1GB RAM, 25GB SSDGreat docs, managed DBs
+
+Linode (Akamai)$5/mo1 vCPU, 1GB RAM, 25GB SSDGood global coverage
+
+Vultr$6/mo1 vCPU, 1GB RAM, 25GB SSDMany locations, hourly billing
+
+Recommendation: For a Grit monorepo (Go API + 2 Next.js apps + PostgreSQL + Redis), we recommend at least 2 vCPU / 4GB RAM. Hetzner's CX22 ($4/mo) or DigitalOcean's Basic ($24/mo for 2 vCPU / 4GB) are solid choices.
+
+2
+
+Initial Server Setup
+
+After provisioning your VPS with Ubuntu 22.04+ (recommended), SSH in as root and set up a non-root user with sudo access.
+
+2a. SSH into your server
+
+local machine
+
+$ ssh root@your-server-ip
+
+2b. Create a deploy user
+
+Running everything as root is a security risk. Create a dedicated deploy user:
+
+server (as root)
+
+# Create user and add to sudo group
+
+# adduser deploy
+
+# usermod -aG sudo deploy
+
+# Copy SSH keys to the new user
+
+# rsync --archive --chown=deploy:deploy ~/.ssh /home/deploy
+
+# Now log out and SSH as deploy
+
+# exit
+
+local machine
+
+$ ssh deploy@your-server-ip
+
+2c. Update packages and set timezone
+
+server (as deploy)
+
+$ sudo apt update && sudo apt upgrade -y
+
+$ sudo timedatectl set-timezone UTC
+
+3
+
+Install Docker
+
+Docker is the only dependency you need on the server. Install Docker Engine and Docker Compose:
+
+server
+
+# Install Docker using the official convenience script
+
+$ curl -fsSL https://get.docker.com | sh
+
+# Add your user to the docker group (no more sudo for docker)
+
+$ sudo usermod -aG docker $USER
+
+# Apply group changes (or log out and back in)
+
+$ newgrp docker
+
+# Verify installation
+
+$ docker --version
+
+$ docker compose version
+
+4
+
+Clone & Configure
+
+Clone your project to the server and set up production environment variables. We recommend /opt/myapp as the deployment directory.
+
+server
+
+# Clone your project
+
+$ sudo mkdir -p /opt/myapp && sudo chown deploy:deploy /opt/myapp
+
+$ git clone https://github.com/you/myapp.git /opt/myapp
+
+$ cd /opt/myapp
+
+# Create production .env from example
+
+$ cp .env.example .env
+
+$ nano .env
+
+Production .env
+
+Update these critical values for production. Never use default credentials in production:
+
+.env
+Copy to clipboard
+
+APP_ENV=production
+
+APP_PORT=8080
+
+# Database — change password!
+
+DATABASE_URL=postgres://grit:YOUR_STRONG_DB_PASSWORD@postgres:5432/myapp?sslmode=disable
+
+POSTGRES_USER=grit
+
+POSTGRES_PASSWORD=YOUR_STRONG_DB_PASSWORD
+
+POSTGRES_DB=myapp
+
+# Auth — generate a random 64-char secret
+
+# openssl rand -hex 32
+
+JWT_SECRET=GENERATE_A_RANDOM_64_CHAR_STRING
+
+# Redis
+
+REDIS_URL=redis://redis:6379
+
+# Frontend URLs (update with your domains)
+
+WEB_URL=https://yourdomain.com
+
+ADMIN_URL=https://admin.yourdomain.com
+
+CORS_ORIGINS=https://yourdomain.com,https://admin.yourdomain.com
+
+# Storage (Cloudflare R2 recommended for production)
+
+STORAGE_DRIVER=r2
+
+R2_ENDPOINT=https://your-account.r2.cloudflarestorage.com
+
+R2_ACCESS_KEY=your-access-key
+
+R2_SECRET_KEY=your-secret-key
+
+R2_BUCKET=myapp-uploads
+
+# Email
+
+RESEND_API_KEY=re_your_api_key
+
+MAIL_FROM=noreply@yourdomain.com
+
+# AI (optional — Vercel AI Gateway)
+
+AI_GATEWAY_API_KEY=your-gateway-key
+
+AI_GATEWAY_MODEL=anthropic/claude-sonnet-4-6
+
+AI_GATEWAY_URL=https://ai-gateway.vercel.sh/v1
+
+# Disable GORM Studio in production
+
+GORM_STUDIO_ENABLED=false
+
+Security tip: Generate a strong JWT secret with: openssl rand -hex 32. Never commit your .env file to git.
+
+Environment Variables Reference
+
+VariableRequiredNotes
+
+APP_ENVYesSet to "production"
+
+DATABASE_URLYesPostgreSQL connection string
+
+JWT_SECRETYesRandom 64+ character string. Never reuse.
+
+REDIS_URLYesRedis connection URL
+
+CORS_ORIGINSYesComma-separated allowed frontend domains
+
+WEB_URLYesYour web app URL (for CORS and redirects)
+
+ADMIN_URLYesYour admin panel URL
+
+RESEND_API_KEYIf emailsResend API key for transactional emails
+
+STORAGE_DRIVERIf uploads"r2", "b2", or "minio" for file storage
+
+GORM_STUDIO_ENABLEDNoSet to "false" in production
+
+5
+
+Deploy with Docker Compose
+
+Grit includes a production-ready docker-compose.prod.yml that builds optimized containers for the Go API and Next.js apps, plus PostgreSQL and Redis.
+
+server — /opt/myapp
+
+# Build and start everything
+
+$ docker compose -f docker-compose.prod.yml up -d --build
+
+# Check that all services are running
+
+$ docker compose -f docker-compose.prod.yml ps
+
+# Test the API
+
+$ curl http://localhost:8080/api/auth/me
+
+Expected output: you should see all containers running (api, web, admin, postgres, redis). The first build may take a few minutes as Docker builds the Go binary and Next.js apps.
+
+Expose-only, no host ports: The scaffolded docker-compose.prod.yml uses expose (not host ports) — the API listens on 8080 and both the web and admin containers listen on 3000 internally, with nothing published to the host. Traffic reaches them only through a reverse proxy on the same Docker network. If you run Caddy natively on the host (as below), either run it inside the compose network or add host ports for the services you proxy to.
+
+What the production build does
+
+Go APIMulti-stage build: compiles to a single static binary (~15MB), runs in a minimal distroless container
+
+Next.js WebBuilds with standalone output mode, creating a minimal Node.js server
+
+Next.js AdminSame as web, built as a separate service (listens on port 3000 inside its container)
+
+PostgreSQLPersistent volume for data, configured with production settings
+
+RedisIn-memory cache and job queue, configured with maxmemory and eviction policy
+
+View logs
+
+server
+
+# Follow all logs
+
+$ docker compose -f docker-compose.prod.yml logs -f
+
+# Follow only API logs
+
+$ docker compose -f docker-compose.prod.yml logs -f api
+
+6
+
+Set Up SSL with Caddy
+
+Caddy is a modern web server that automatically provisions SSL certificates from Let's Encrypt. It's the easiest way to get HTTPS working.
+
+6a. Install Caddy
+
+server
+
+$ sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+
+$ curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+
+$ curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+
+$ sudo apt update && sudo apt install caddy
+
+6b. Configure the Caddyfile
+
+Before editing, make sure your DNS A records point to your server's IP address. Caddy will automatically obtain SSL certificates once DNS is configured.
+
+/etc/caddy/Caddyfile
+Copy to clipboard
+
+# Go API
+
+api.yourdomain.com {
+
+reverse_proxy localhost:8080
+
+}
+
+# Next.js Web App
+
+yourdomain.com {
+
+reverse_proxy localhost:3000
+
+}
+
+# Admin Panel
+
+admin.yourdomain.com {
+
+reverse_proxy localhost:3001
+
+}
+
+6c. Start Caddy
+
+server
+
+$ sudo nano /etc/caddy/Caddyfile  # paste config above
+
+$ sudo systemctl reload caddy
+
+$ sudo systemctl enable caddy     # auto-start on boot
+
+Caddy will automatically obtain and renew SSL certificates from Let's Encrypt. After a few seconds, your site will be live at https://yourdomain.com.
+
+DNS Records
+
+Add these DNS A records at your domain registrar or Cloudflare:
+
+TypeNameValue
+
+A@your-server-ip
+
+Aapiyour-server-ip
+
+Aadminyour-server-ip
+
+7
+
+Configure Firewall (UFW)
+
+Lock down your server to only expose the ports you need. UFW (Uncomplicated Firewall) makes this simple:
+
+server
+
+# Allow SSH (don't lock yourself out!)
+
+$ sudo ufw allow OpenSSH
+
+# Allow HTTP and HTTPS (for Caddy)
+
+$ sudo ufw allow 80/tcp
+
+$ sudo ufw allow 443/tcp
+
+# Enable the firewall
+
+$ sudo ufw enable
+
+$ sudo ufw status
+
+This blocks all inbound traffic except SSH (22), HTTP (80), and HTTPS (443). Database (5432) and Redis (6379) ports are only accessible from within Docker's network.
+
+8
+
+Automated Deployments (CI/CD)
+
+Automate deployments so that every push to main deploys to production. Here's a GitHub Actions workflow that SSHs into your server and redeploys:
+
+.github/workflows/deploy.yml
+Copy to clipboard
+
+name: Deploy to VPS
+
+on:
+
+push:
+
+branches: [main]
+
+jobs:
+
+deploy:
+
+runs-on: ubuntu-latest
+
+steps:
+
+- name: Deploy via SSH
+
+uses: appleboy/ssh-action@v1
+
+with:
+
+host: ${{ secrets.VPS_HOST }}
+
+username: deploy
+
+key: ${{ secrets.VPS_SSH_KEY }}
+
+script: |
+
+cd /opt/myapp
+
+git pull origin main
+
+docker compose -f docker-compose.prod.yml up -d --build
+
+docker image prune -f
+
+Set up GitHub Secrets
+
+In your GitHub repo, go to Settings → Secrets → Actions and add:
+
+SecretValue
+
+VPS_HOSTYour server IP (e.g., 164.90.131.42)
+
+VPS_SSH_KEYThe deploy user's private SSH key (contents of ~/.ssh/id_ed25519)
+
+Tip: Generate a dedicated deploy key for CI/CD instead of using your personal SSH key:ssh-keygen -t ed25519 -f deploy_key -C "github-actions". Add the public key to ~/.ssh/authorized_keys on the server.
+
+9
+
+Database Backups
+
+Always back up your production database. Losing data is irreversible.
+
+Manual backup
+
+server
+
+# Create a backup
+
+$ docker compose -f docker-compose.prod.yml exec postgres pg_dump -U grit myapp > backup.sql
+
+# Restore from backup
+
+$ docker compose -f docker-compose.prod.yml exec -T postgres psql -U grit myapp < backup.sql
+
+Automated daily backups (cron)
+
+Set up a cron job to backup daily and keep the last 7 days:
+
+server
+
+# Create backup directory
+
+$ sudo mkdir -p /backups && sudo chown deploy:deploy /backups
+
+# Add to crontab
+
+$ crontab -e
+
+crontab
+Copy to clipboard
+
+# Daily DB backup at 3 AM, keep last 7 days
+
+0 3 * * * cd /opt/myapp && docker compose -f docker-compose.prod.yml exec -T postgres pg_dump -U grit myapp | gzip > /backups/myapp-$(date +\%Y\%m\%d).sql.gz && find /backups -name "myapp-*.sql.gz" -mtime +7 -delete
+
+Managed database backups
+
+If you use a managed PostgreSQL service (DigitalOcean Managed Databases, Supabase, Neon, etc.), backups are handled automatically. This is the recommended approach for important production workloads.
+
+10
+
+Monitoring & Logging
+
+Grit's Go API includes a built-in request logger middleware. For production, add proper monitoring to catch issues before your users do:
+
+Docker Logs
+
+Built-in. Use "docker compose logs -f api" to stream API logs in real time. Combine with journald for persistence.
+
+Free
+
+Uptime Kuma
+
+Self-hosted uptime monitoring. Set up health checks against your API endpoint. Get notified via email, Slack, or Telegram.
+
+Free (self-hosted)
+
+Grafana + Prometheus
+
+For advanced metrics. Add a /metrics endpoint to your Go API and visualize request rates, latency, and error rates.
+
+Free (self-hosted)
+
+Sentry
+
+Error tracking for both Go API and Next.js frontends. Captures stack traces, context, and user info.
+
+Free tier available
+
+Better Stack
+
+Managed log aggregation and uptime monitoring. Stream Docker logs for search, alerting, and dashboards.
+
+Free tier available
+
+11
+
+Zero-Downtime Updates
+
+To update your running application with minimal downtime, use Docker's rolling update capability:
+
+server — /opt/myapp
+
+# Pull latest code
+
+$ git pull origin main
+
+# Rebuild and restart only changed services
+
+$ docker compose -f docker-compose.prod.yml up -d --build
+
+# Clean up old images to save disk space
+
+$ docker image prune -f
+
+Docker Compose detects which services have changed and only rebuilds and restarts those. PostgreSQL and Redis keep running throughout. The typical downtime for an API update is under 5 seconds.
+
+For true zero-downtime: Use Docker Compose's health checks combined with Caddy. Caddy will only route traffic to healthy containers, so the old container serves requests until the new one is ready.
+
+12
+
+Production Checklist
+
+Before going live, make sure you have completed these steps:
+
+Security
+
+Generate a strong, unique JWT_SECRET (64+ characters)
+
+Set APP_ENV=production
+
+Set GORM_STUDIO_ENABLED=false
+
+Use sslmode=require if using external database
+
+Restrict CORS_ORIGINS to your actual domains
+
+Change default database credentials from grit/grit
+
+Enable SSL/TLS via Caddy
+
+Configure UFW firewall (SSH + HTTP/HTTPS only)
+
+Disable root SSH login
+
+Infrastructure
+
+Set up automated daily database backups
+
+Configure uptime monitoring (Uptime Kuma or Better Stack)
+
+Set up error tracking (Sentry or similar)
+
+Docker restart policies set to "unless-stopped"
+
+DNS A records pointing to your server
+
+SSL certificates working (check with browser)
+
+Set up CI/CD for automated deployments
+
+Performance
+
+Set appropriate database connection pool limits
+
+Add indexes to frequently queried columns
+
+Enable Redis caching for read-heavy endpoints
+
+Use a CDN for static assets (Cloudflare recommended)
+
+Test the app under load with hey or k6
+
+Alternative: Cloud Platforms
+
+If you prefer managed infrastructure over a VPS, these platforms support Grit's architecture. Deploy the Go API and Next.js apps as separate services:
+
+Railway
+
+Deploy from GitHub with zero config. Supports Go, Node.js, PostgreSQL, and Redis as managed services.
+
+Best for solo developers and small teams.
+
+Render
+
+Deploy Go as a Web Service, Next.js as a Web Service. Managed PostgreSQL and Redis available.
+
+Best for side projects and startups.
+
+Fly.io
+
+Container-based deployment with edge computing. Deploy Docker images directly. Built-in Postgres and Redis.
+
+Best for apps needing global edge distribution.
+
+Coolify (Self-Hosted)
+
+Open-source Heroku alternative you host on your own VPS. Docker-based, built-in databases, auto SSL. Free.
+
+Best for PaaS convenience at VPS pricing.
+
+Dokploy (Self-Hosted)
+
+Open-source PaaS with Docker Compose support, web dashboard, auto SSL via Traefik, and GitHub auto-deploy. Free.
+
+Best for Docker Compose-based monorepos like Grit. See our dedicated guide. Read the guide →
+
+Database & MigrationsTheme & Colors

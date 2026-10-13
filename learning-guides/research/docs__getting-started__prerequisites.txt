@@ -1,0 +1,61 @@
+Getting Started
+Prerequisites
+
+Grit assumes you know Go and can read React/TypeScript — it teaches Grit's conventions on top, not the languages themselves. If any of these are new, start with the matching primer. Otherwise, jump straight to Create a project.
+
+Backend
+
+func main() {
+r := gin.Default()
+r.Run(":8080")
+}
+
+Go for Grit Developers
+
+The 20% of Go you need for Grit — structs, methods, interfaces, error handling.
+
+Interactive
+
+package main
+
+import "fmt"
+
+fmt.Println("Hello, Grit")
+
+Go Playground
+
+Run Go in the browser — experiment with the snippets from the primer, no install.
+
+Frontend
+
+export default function Page() {
+return <h1>Hello</h1>
+}
+
+Next.js & React
+
+App Router, components, and hooks — the frontend concepts Grit builds on.
+
+Infra
+
+$ docker compose up -d
+✓ postgres  redis  minio
+
+Docker
+
+Just enough Docker to run Postgres, Redis and MinIO locally with one command.
+
+Frequently asked questions
+
+Do I really need to know Go?
+Enough to read and write handlers, services and GORM models. The primer covers exactly that slice — you do not need advanced Go.
+Can I skip Docker?
+Yes — use managed Neon (Postgres), Upstash (Redis) and Cloudflare R2 instead, or the Desktop kit which runs on local SQLite.
+
+Something wrong, unclear, or missing on this page?
+
+Open an issue: your feedback shapes Grit, and we fix docs fast.
+
+Raise an issue on GitHub
+
+Coming from Laravel / DjangoCreate a project

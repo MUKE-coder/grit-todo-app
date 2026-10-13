@@ -1,0 +1,78 @@
+Batteries
+
+Turning modules off
+
+Grit ships every battery enabled — that's the point of the framework. But not every app wants an AI endpoint or a job queue, and a module you aren't using shouldn't mount routes, start workers, or create tables.
+
+Switching one off
+
+Set the flag in .env. Every module defaults to true, so leaving these unset changes nothing:
+
+.env
+Copy to clipboard
+
+MODULE_AI=false
+
+MODULE_JOBS=false
+
+MODULE_WEBHOOKS=false
+
+The full set:
+
+MODULE_AI          # /api/ai/* chat + completion
+
+MODULE_JOBS        # asynq workers + the Jobs page
+
+MODULE_CRON        # scheduled tasks
+
+MODULE_BACKUP      # backup/restore + Data & Backup
+
+MODULE_WEBHOOKS    # outbound webhook delivery
+
+MODULE_REALTIME    # WebSocket hub
+
+MODULE_FILES       # uploads + File manager
+
+MODULE_MAIL        # transactional email
+
+MODULE_AUDIT       # activity log
+
+MODULE_FLAGS       # feature flags
+
+MODULE_TWOFACTOR   # TOTP / 2FA
+
+Copy to clipboard
+
+What actually happens
+
+A disabled module:
+
+mounts no routes — the endpoints stop existing
+
+registers no workers or cron entries
+
+disappears from the admin sidebar and the System hub
+
+The code stays in your repo. If you want it gone entirely, delete it — it's your codebase, not a vendored dependency.
+
+Restart required
+
+Flags are read once at startup. Changing one needs a restart — routes are mounted at boot, not per request.
+
+Checking from the frontend
+
+The admin reads GET /api/system/modules to hide nav for disabled modules. Use the same hook in your own pages:
+
+const { moduleEnabled } = useModules()
+
+{moduleEnabled("jobs") && <JobsWidget />}
+
+Copy to clipboard
+
+Unlike can(), this fails open: while the flags are loading, everything is treated as enabled. Briefly hiding navigation because a request is slow looks like the feature vanished, and a visible link to a disabled module is only a 404 — not a privilege leak.
+
+Why not a smaller scaffold?
+
+Grit is for projects that will grow into these features. If your app is small enough that the batteries are pure overhead, a lighter framework is genuinely the better tool — and you can always remove what you don't want: grit remove resource Blog deletes the demo blog entirely.
+
+BatteriesRoles & Permissions

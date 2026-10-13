@@ -1,0 +1,510 @@
+Admin Panel
+Multi-Step Forms
+
+Break complex forms into guided wizard-style steps. Multi-step forms improve UX for resources with many fields — like employee onboarding, product creation, or lead capture — by grouping related fields together with per-step validation.
+
+Per-step validationSingle submit
+Each step validates before advancing; the wizard submits every step as one payload
+
+Overview
+
+Multi-step forms work with both modal and full-page form views. They reuse the same field components as the standard form builder — the only difference is how fields are presented: split across numbered steps with a visual indicator and navigation controls.
+
+Key features:
+
+Auto-split — Automatically chunks fields into steps (default: 4 per step)
+
+Custom steps — Define explicit steps with titles, descriptions, and field keys
+
+Per-step validation — Only validates current step fields when clicking "Next"
+
+Two variants — Horizontal step bar (default) or vertical sidebar
+
+Progress bar — Visual progress indicator showing completion
+
+Clickable steps — Users can click completed steps to go back and edit
+
+Quick Start
+
+The simplest way to enable multi-step forms is to set formView on your resource definition. Fields are automatically split into steps of 4:
+
+resources/products.ts
+Copy to clipboard
+
+import { defineResource } from "@/lib/resource";
+
+export const productsResource = defineResource({
+
+name: "Product",
+
+slug: "products",
+
+endpoint: "/api/admin/products",
+
+icon: "Package",
+
+formView: "modal-steps",  // ← Enable multi-step modal
+
+form: {
+
+layout: "two-column",
+
+fields: [
+
+{ key: "name", label: "Name", type: "text", required: true },
+
+{ key: "sku", label: "SKU", type: "text", required: true },
+
+{ key: "price", label: "Price", type: "number", required: true, prefix: "$" },
+
+{ key: "stock", label: "Stock", type: "number" },
+
+{ key: "category_id", label: "Category", type: "relationship-select",
+
+relatedEndpoint: "/api/admin/categories" },
+
+{ key: "description", label: "Description", type: "richtext", colSpan: 2 },
+
+{ key: "images", label: "Images", type: "images", colSpan: 2 },
+
+{ key: "active", label: "Active", type: "toggle" },
+
+],
+
+},
+
+// ... table config
+
+});
+
+With 8 fields and the default fieldsPerStep: 4, this creates two steps: "Step 1" (name, sku, price, stock) and "Step 2" (category, description, images, active).
+
+Form View Options
+
+There are four formView values. The multi-step variants work with all existing field types, layouts, and validation:
+
+ValueBehavior
+
+"modal"Standard modal dialog (default)
+
+"page"Full-page form with back navigation
+
+"modal-steps"Multi-step wizard in a wider modal dialog
+
+"page-steps"Multi-step wizard as a full page
+
+Custom Steps
+
+For better UX, define explicit steps with meaningful titles and descriptions. Each step lists the field keys to include:
+
+resources/employees.ts — Custom steps
+Copy to clipboard
+
+export const employeesResource = defineResource({
+
+name: "Employee",
+
+slug: "employees",
+
+endpoint: "/api/admin/employees",
+
+icon: "UserPlus",
+
+formView: "page-steps",
+
+form: {
+
+layout: "two-column",
+
+stepVariant: "horizontal",  // or "vertical"
+
+steps: [
+
+{
+
+title: "Personal Info",
+
+description: "Basic personal details",
+
+fields: ["first_name", "last_name", "email", "phone"],
+
+},
+
+{
+
+title: "Address",
+
+description: "Home address and location",
+
+fields: ["street", "city", "state", "zip_code"],
+
+},
+
+{
+
+title: "Employment",
+
+description: "Role and department details",
+
+fields: ["department_id", "position", "salary", "start_date"],
+
+},
+
+{
+
+title: "Extras",
+
+description: "Additional information",
+
+fields: ["bio", "avatar", "active"],
+
+},
+
+],
+
+fields: [
+
+{ key: "first_name", label: "First Name", type: "text", required: true },
+
+{ key: "last_name", label: "Last Name", type: "text", required: true },
+
+{ key: "email", label: "Email", type: "text", required: true },
+
+{ key: "phone", label: "Phone", type: "text" },
+
+{ key: "street", label: "Street", type: "text", colSpan: 2 },
+
+{ key: "city", label: "City", type: "text" },
+
+{ key: "state", label: "State", type: "text" },
+
+{ key: "zip_code", label: "Zip Code", type: "text" },
+
+{ key: "department_id", label: "Department", type: "relationship-select",
+
+relatedEndpoint: "/api/admin/departments" },
+
+{ key: "position", label: "Position", type: "text", required: true },
+
+{ key: "salary", label: "Salary", type: "number", prefix: "$" },
+
+{ key: "start_date", label: "Start Date", type: "date", required: true },
+
+{ key: "bio", label: "Bio", type: "textarea", colSpan: 2 },
+
+{ key: "avatar", label: "Photo", type: "image", colSpan: 2 },
+
+{ key: "active", label: "Active", type: "toggle" },
+
+],
+
+},
+
+// ... table config
+
+});
+
+Auto-Split Mode
+
+When no steps array is provided, fields are automatically chunked into steps. Control the chunk size with fieldsPerStep:
+
+Auto-split configuration
+Copy to clipboard
+
+form: {
+
+fieldsPerStep: 3,  // 3 fields per step (default: 4)
+
+fields: [
+
+// 9 fields → 3 steps: "Step 1", "Step 2", "Step 3"
+
+{ key: "name", label: "Name", type: "text", required: true },
+
+{ key: "email", label: "Email", type: "text", required: true },
+
+{ key: "phone", label: "Phone", type: "text" },
+
+{ key: "company", label: "Company", type: "text" },
+
+{ key: "role", label: "Role", type: "select", options: [...] },
+
+{ key: "notes", label: "Notes", type: "textarea" },
+
+{ key: "source", label: "Source", type: "select", options: [...] },
+
+{ key: "avatar", label: "Avatar", type: "image" },
+
+{ key: "active", label: "Active", type: "toggle" },
+
+],
+
+}
+
+Auto-split labels steps as "Step 1", "Step 2", etc. For meaningful labels, use the custom steps array instead.
+
+Step Indicator Variants
+
+The stepVariant property controls how the step indicator is displayed. Both variants support clickable navigation to completed steps.
+
+Horizontal (Default)
+
+A centered step bar at the top of the form, ideal for forms with 2–5 steps. Each step shows as a numbered circle connected by progress lines:
+
+Completed steps — Green circle with a check icon
+
+Active step — Purple circle with a subtle ring glow
+
+Upcoming steps — Muted circle with border
+
+Horizontal variant (default)
+Copy to clipboard
+
+form: {
+
+stepVariant: "horizontal",  // This is the default, can be omitted
+
+steps: [...],
+
+fields: [...],
+
+}
+
+Vertical
+
+A sidebar on the left with step titles and descriptions. Better for forms with many steps or when step descriptions help guide the user. The vertical variant uses a wider modal (max-w-4xl) to accommodate the sidebar.
+
+Vertical variant
+Copy to clipboard
+
+form: {
+
+stepVariant: "vertical",
+
+steps: [
+
+{ title: "Personal Info", description: "Name, email, phone" },
+
+{ title: "Address", description: "Street, city, state" },
+
+{ title: "Employment", description: "Role and salary" },
+
+],
+
+fields: [...],
+
+}
+
+Per-Step Validation
+
+Validation is enforced per-step. When the user clicks "Next", only the current step's fields are validated using React Hook Form's trigger() method. Required fields that are empty will show error messages, and the step won't advance until all visible fields pass validation.
+
+On the final step, clicking the submit button validates all remaining fields and submits the entire form at once. This means:
+
+Step 1 fields are validated when clicking "Next" from step 1
+
+Step 2 fields are validated when clicking "Next" from step 2
+
+Final step fields are validated on submit
+
+All data is submitted as a single payload (same as the standard form)
+
+Step Navigation
+
+The stepper includes built-in navigation:
+
+Cancel — Shown on step 1 instead of "Previous"
+
+Previous — Go back to the previous step (shown from step 2 onward)
+
+Next — Advance to the next step (validates first)
+
+Submit — Shown on the last step, submits the form
+
+Clickable indicators — Click any completed step to jump back to it, or click the next step to advance (with validation)
+
+A progress bar below the step content shows how far through the form the user is, along with a "Step X of Y" label.
+
+Type Reference
+
+The multi-step form types are part of the resource type system in lib/resource.ts:
+
+lib/resource.ts — Step types
+Copy to clipboard
+
+export interface StepDefinition {
+
+title: string;          // Step label shown in the indicator
+
+description?: string;   // Optional subtitle (shown in vertical variant)
+
+fields: string[];       // Field keys to include in this step
+
+}
+
+export interface FormDefinition {
+
+fields: FieldDefinition[];
+
+layout?: "single" | "two-column";
+
+steps?: StepDefinition[];           // Custom step definitions
+
+fieldsPerStep?: number;             // Auto-split chunk size (default: 4)
+
+stepVariant?: "horizontal" | "vertical";  // Indicator style
+
+}
+
+// formView on ResourceDefinition:
+
+formView?: "modal" | "page" | "modal-steps" | "page-steps";
+
+Complete Example
+
+Here's a full resource definition for an employee onboarding form with four custom steps, vertical indicator, and full-page layout:
+
+resources/employees.ts — Full example
+Copy to clipboard
+
+import { defineResource } from "@/lib/resource";
+
+export const employeesResource = defineResource({
+
+name: "Employee",
+
+slug: "employees",
+
+endpoint: "/api/admin/employees",
+
+icon: "UserPlus",
+
+formView: "page-steps",
+
+label: { singular: "Employee", plural: "Employees" },
+
+table: {
+
+searchable: true,
+
+defaultSort: { key: "created_at", direction: "desc" },
+
+columns: [
+
+{ key: "first_name", label: "First Name", sortable: true },
+
+{ key: "last_name", label: "Last Name", sortable: true },
+
+{ key: "email", label: "Email", sortable: true },
+
+{ key: "position", label: "Position" },
+
+{ key: "department", label: "Department" },
+
+{ key: "active", label: "Status", format: "badge" },
+
+],
+
+},
+
+form: {
+
+layout: "two-column",
+
+stepVariant: "vertical",
+
+steps: [
+
+{
+
+title: "Personal Info",
+
+description: "Name and contact details",
+
+fields: ["first_name", "last_name", "email", "phone"],
+
+},
+
+{
+
+title: "Address",
+
+description: "Home address",
+
+fields: ["street", "city", "state", "zip_code"],
+
+},
+
+{
+
+title: "Employment",
+
+description: "Role and compensation",
+
+fields: ["department_id", "position", "salary", "start_date"],
+
+},
+
+{
+
+title: "Profile",
+
+description: "Bio and photo",
+
+fields: ["bio", "avatar", "active"],
+
+},
+
+],
+
+fields: [
+
+{ key: "first_name", label: "First Name", type: "text", required: true },
+
+{ key: "last_name", label: "Last Name", type: "text", required: true },
+
+{ key: "email", label: "Email", type: "text", required: true },
+
+{ key: "phone", label: "Phone", type: "text" },
+
+{ key: "street", label: "Street", type: "text", colSpan: 2 },
+
+{ key: "city", label: "City", type: "text" },
+
+{ key: "state", label: "State", type: "text" },
+
+{ key: "zip_code", label: "Zip Code", type: "text" },
+
+{
+
+key: "department_id",
+
+label: "Department",
+
+type: "relationship-select",
+
+relatedEndpoint: "/api/admin/departments",
+
+required: true,
+
+},
+
+{ key: "position", label: "Position", type: "text", required: true },
+
+{ key: "salary", label: "Salary", type: "number", prefix: "$" },
+
+{ key: "start_date", label: "Start Date", type: "date", required: true },
+
+{ key: "bio", label: "Bio", type: "textarea", colSpan: 2 },
+
+{ key: "avatar", label: "Photo", type: "image", colSpan: 2 },
+
+{ key: "active", label: "Active", type: "toggle" },
+
+],
+
+},
+
+});
+
+Form BuilderStandalone Usage

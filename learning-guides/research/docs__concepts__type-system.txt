@@ -1,0 +1,390 @@
+Core Concepts
+Type System
+
+Grit provides end-to-end type safety from Go structs all the way to React components. The type system bridges the gap between the Go backend and TypeScript frontend through auto-generated schemas, types, and validation.
+
+End-to-End Type Safety
+
+In a typical full-stack application, you define types in the backend and then manually recreate them in the frontend. This leads to drift, bugs, and maintenance burden. Grit solves this by making the Go model the single source of truth and automatically generating all downstream types.
+
+Source of truth (Go)DatabaseTypeScriptValidation
+One Go struct drives the table, the API shape, the types, and validation
+
+The Type Chain
+
+Here is the complete journey of a type through the Grit stack, using a "Post" resource as an example:
+
+1. Go Struct (Source of Truth)
+
+Everything starts with a Go struct. GORM tags define the database schema. JSON tags define the API serialization. Binding tags define server-side validation.
+
+apps/api/internal/models/post.go
+Copy to clipboard
+
+type Post struct {
+
+ID        uint           `gorm:"primarykey" json:"id"`
+
+Title     string         `gorm:"size:255" json:"title" binding:"required"`
+
+Content   string         `gorm:"type:text" json:"content"`
+
+Published bool           `json:"published"`
+
+Views     int            `json:"views"`
+
+Rating    float64        `json:"rating"`
+
+PublishAt *time.Time     `json:"publish_at"`
+
+CreatedAt time.Time      `json:"created_at"`
+
+UpdatedAt time.Time      `json:"updated_at"`
+
+DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+
+}
+
+2. GORM to PostgreSQL
+
+GORM reads the struct tags and auto-migrates the database. This happens automatically when the API starts. No manual SQL or migration files needed.
+
+resulting PostgreSQL table
+Copy to clipboard
+
+CREATE TABLE posts (
+
+id          BIGSERIAL PRIMARY KEY,
+
+title       VARCHAR(255) NOT NULL,
+
+content     TEXT,
+
+published   BOOLEAN DEFAULT false,
+
+views       BIGINT DEFAULT 0,
+
+rating      DOUBLE PRECISION DEFAULT 0,
+
+publish_at  TIMESTAMPTZ,
+
+created_at  TIMESTAMPTZ,
+
+updated_at  TIMESTAMPTZ,
+
+deleted_at  TIMESTAMPTZ
+
+);
+
+CREATE INDEX idx_posts_deleted_at ON posts(deleted_at);
+
+3. JSON Serialization
+
+When Gin returns a Go struct as JSON, the json tags control the field names. The json:"-" tag on DeletedAt hides it from API responses entirely.
+
+API response JSON
+Copy to clipboard
+
+{
+
+"data": {
+
+"id": 1,
+
+"title": "Hello World",
+
+"content": "This is a blog post.",
+
+"published": true,
+
+"views": 42,
+
+"rating": 4.5,
+
+"publish_at": "2026-01-15T10:00:00Z",
+
+"created_at": "2026-01-10T08:30:00Z",
+
+"updated_at": "2026-01-10T08:30:00Z"
+
+}
+
+}
+
+4. TypeScript Interface
+
+The generator (or grit sync) parses the Go struct using Go's AST parser and generates a matching TypeScript interface. Each Go type maps to a specific TypeScript type.
+
+packages/shared/types/post.ts
+Copy to clipboard
+
+export interface Post {
+
+id: number;
+
+title: string;
+
+content: string;
+
+published: boolean;
+
+views: number;
+
+rating: number;
+
+publish_at: string | null;
+
+created_at: string;
+
+updated_at: string;
+
+}
+
+5. Zod Schema
+
+Zod schemas provide runtime validation in the frontend. The generator creates separate Create and Update schemas. The Update schema makes all fields optional for partial updates.
+
+packages/shared/schemas/post.ts
+Copy to clipboard
+
+import { z } from "zod";
+
+export const CreatePostSchema = z.object({
+
+title: z.string().min(1, "Required"),
+
+content: z.string(),
+
+published: z.boolean(),
+
+views: z.number().int(),
+
+rating: z.number(),
+
+publishAt: z.string().nullable(),
+
+});
+
+export const UpdatePostSchema = z.object({
+
+title: z.string().min(1, "Required").optional(),
+
+content: z.string().optional(),
+
+published: z.boolean().optional(),
+
+views: z.number().int().optional(),
+
+rating: z.number().optional(),
+
+publishAt: z.string().nullable(),
+
+});
+
+export type CreatePostInput = z.infer<typeof CreatePostSchema>;
+
+export type UpdatePostInput = z.infer<typeof UpdatePostSchema>;
+
+6. React Components
+
+React Query hooks use the TypeScript interface for type-safe data fetching. Forms use the Zod schema for validation. The types flow through the entire component tree without any manual type assertions.
+
+using the types in a component
+Copy to clipboard
+
+import { usePosts, useCreatePost } from "@/hooks/use-posts";
+
+import { CreatePostSchema, type CreatePostInput } from "@shared/schemas";
+
+function PostList() {
+
+// Fully typed: data.data is Post[], data.meta has pagination
+
+const { data, isLoading } = usePosts({ page: 1, search: "" });
+
+// TypeScript knows about all Post fields
+
+return data?.data.map(post => (
+
+<div key={post.id}>
+
+<h2>{post.title}</h2>        {/* string */}
+
+<p>{post.content}</p>          {/* string */}
+
+<span>{post.views} views</span> {/* number */}
+
+</div>
+
+));
+
+}
+
+function CreatePostForm() {
+
+const createPost = useCreatePost();
+
+const onSubmit = (input: CreatePostInput) => {
+
+// Zod validates at runtime, TypeScript validates at compile time
+
+const validated = CreatePostSchema.parse(input);
+
+createPost.mutate(validated);
+
+};
+
+}
+
+Go to TypeScript Type Mapping
+
+This is the complete mapping table used by both grit generate andgrit sync when converting Go types to TypeScript and Zod:
+
+Go TypeTypeScript TypeZod Validator
+
+stringstringz.string()
+
+int, int8, int16, int32, int64numberz.number().int()
+
+uint, uint8, uint16, uint32, uint64numberz.number().int().nonnegative()
+
+float32, float64numberz.number()
+
+boolbooleanz.boolean()
+
+time.Timestringz.string()
+
+*time.Timestring | nullz.string().nullable()
+
+gorm.DeletedAtstring | null(skipped via json:"-")
+
+[]TT[]z.unknown()
+
+*T (pointer)T | nullz.unknown()
+
+The Shared Package Bridge
+
+The packages/shared directory is the bridge between the Go backend and the TypeScript frontends. Both the web app and admin panel import from this package, ensuring they use identical types and validation logic.
+
+packages/shared/
+
+📂schemas/
+
+index.tsRe-exports all schemas
+
+user.tsHand-written (not overwritten by sync)
+
+post.tsAuto-generated: Create/Update schemas
+
+invoice.tsAuto-generated
+
+📂types/
+
+index.tsRe-exports all types
+
+api.tsHand-written: ApiResponse, PaginatedResponse, ApiError
+
+user.tsHand-written (not overwritten by sync)
+
+post.tsAuto-generated: Post interface
+
+invoice.tsAuto-generated
+
+📂constants/
+
+index.tsAPI_ROUTES, ROLES, APP_CONFIG
+
+The index files use barrel exports so the frontends can import cleanly:
+
+importing from shared
+Copy to clipboard
+
+// In apps/web or apps/admin
+
+import { CreatePostSchema, type CreatePostInput } from "@shared/schemas";
+
+import type { Post } from "@shared/types";
+
+import { API_ROUTES, ROLES } from "@shared/constants";
+
+grit sync: Manual Type Generation
+
+When you generate a resource with grit generate resource, the types are created automatically. But when you manually edit a Go model (add a field, change a type, remove a field), you need to run grit sync to update the frontend types.
+
+How sync works internally
+
+Scans all .go files in apps/api/internal/models/
+
+Parses each file with Go's ast package (Abstract Syntax Tree parser)
+
+Extracts struct definitions, field names, Go types, json tags, and gorm tags
+
+Skips the User model (has hand-written custom schemas)
+
+Skips fields with json:"-" (hidden from API)
+
+Skips auto-generated fields (id, created_at, updated_at, deleted_at) from Zod schemas
+
+Maps Go types to TypeScript using the mapping table above
+
+Writes .ts files to packages/shared/types/ and packages/shared/schemas/
+
+$ grit sync
+
+Syncing Go types → TypeScript...
+
+✓ packages/shared/types/post.ts
+
+✓ packages/shared/schemas/post.ts
+
+✓ packages/shared/types/invoice.ts
+
+✓ packages/shared/schemas/invoice.ts
+
+✅ Synced 2 model(s) to TypeScript + Zod
+
+Copy to clipboard
+
+Auto-Skipped Fields
+
+Certain fields are handled automatically and excluded from generated Zod schemas because they are managed by the database or GORM, not by user input:
+
+FieldReasonIn TS Interface?In Zod Schema?
+
+idAuto-incremented by databaseYesNo
+
+created_atSet by GORM on creationYesNo
+
+updated_atSet by GORM on updateYesNo
+
+deleted_atHidden via json:"-", used for soft deletesNoNo
+
+Create vs. Update Schemas
+
+Grit generates two separate Zod schemas for each resource because create and update operations have different validation requirements:
+
+CreateSchema
+
+All fields are included with their full validation. Required string fields have .min(1, "Required"). Optional fields have .optional(). This schema is used when creating a new resource.
+
+UpdateSchema
+
+Same fields as CreateSchema, but every field gets .optional() appended (unless it already has .optional() or.nullable()). This allows partial updates where the frontend only sends the changed fields.
+
+Field Name Conversion
+
+When generating Zod schemas, field names are converted from snake_case (Go/JSON) to camelCase (TypeScript convention). This means your Go field publish_at becomespublishAt in the Zod schema, while the TypeScript interface keeps the original snake_case JSON field name for direct API compatibility.
+
+ContextField NameConvention
+
+Go struct fieldPublishAtPascalCase (Go export)
+
+JSON / API responsepublish_atsnake_case (json tag)
+
+TypeScript interfacepublish_atsnake_case (matches JSON)
+
+Zod schema keypublishAtcamelCase (TS convention)
+
+Database columnpublish_atsnake_case (GORM default)
+
+Code GenerationNaming Conventions

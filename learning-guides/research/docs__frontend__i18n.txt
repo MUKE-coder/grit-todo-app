@@ -1,0 +1,109 @@
+Frontend
+Internationalisation
+
+One cookie decides the language for the API, the web app and the admin panel, so a French user gets French buttons, French column headers and French validation errors from the server, not a French page reporting English failures.
+
+Setting it up
+
+On a new project, pass --i18n. On an existing one, run the command. Both do the same thing, because the flag calls the command.
+
+grit new shop --triple --i18n
+
+# or, in a project that already exists
+
+grit add i18n
+
+pnpm install
+
+Copy to clipboard
+
+What that sets up:
+
+The API reads the grit_locale cookie and answers its own error messages in that language.
+
+The web app and the admin get next-intl, catalogues in messages/en.json, fr.json and sw.json, and a language switcher: in the admin's page header, and in the web app's navbar.
+
+The locale lives in the cookie, not the URL, so a link means the same page in every language.
+
+Translating the admin
+
+The admin's own text goes through one function, t(key, fallback) from @/lib/i18n. Without i18n it returns the fallback, which is the English the admin always showed, so a project that never asks for translation pays nothing for it. With i18n, any key present in the catalogue replaces its fallback.
+
+The sidebar, the table toolbar, pagination, the empty state, row actions and the form buttons and headings read their text from nav.*, table.* and form.*, already translated in all three catalogues.
+
+Your resources' labels
+
+A resource's name, its column headers and its form labels come from its definition, so the catalogue has no way to know them in advance. Add them under resources.<slug>, where the slug is the one in the resource's definition (kebab case, so purchase-requests, not the API's purchase_requests), keyed by the same field keys the definition uses:
+
+apps/admin/messages/fr.json
+Copy to clipboard
+
+{
+
+"resources": {
+
+"purchase-requests": {
+
+"singular": "Demande d'achat",
+
+"plural": "Demandes d'achat",
+
+"fields": {
+
+"title": "Objet",
+
+"department": "Service",
+
+"total": "Montant"
+
+}
+
+}
+
+}
+
+}
+
+The list page, the detail page and the forms translate the definition once, where it comes in, so the table and the form under them render translated labels without knowing translation exists. A key you have not added falls back to the label in the definition, so a half-translated catalogue shows English where it has nothing better, never a raw key.
+
+In your own components
+
+// Admin: no dependency, works with or without i18n.
+
+import { useT } from "@/lib/i18n";
+
+const t = useT();
+
+<button>{t("orders.refund", "Refund")}</button>
+
+<p>{t("orders.count", "{n} orders", { n: total })}</p>
+
+// Web app: next-intl directly.
+
+import { useTranslations } from "next-intl";
+
+const t = useTranslations("nav");
+
+<a>{t("dashboard")}</a>
+
+Copy to clipboard
+
+Adding a language
+
+Add it to LOCALES in lib/locale.ts in each app, which is what the switcher offers.
+
+Add messages/<code>.json to each app.
+
+Add internal/i18n/locales/<code>.json to the API, or its error messages stay in the default language.
+
+Upgrading a project from before v3.222.0
+
+Until v3.222.0, --i18n left three problems behind: the switcher imported a component neither app has, so the project failed its type check; next-intl was pinned to version 3, which does not support Next 16, so production builds failed as well; the switcher was never mounted anywhere; and nothing in the admin read the catalogues. Every upgrade also reported the six files i18n edits as edited by you, and so never updated them.
+
+grit upgrade repairs all of it. It replaces the switcher, mounts it, feeds the admin's catalogue, and takes back any of those six files that differ from its own template only by its own i18n wiring. A file you really did edit stays yours. Your catalogues are never replaced, but keys a newer release added are merged into them, leaving every translation you wrote, and its order, as it was.
+
+Still in English
+
+The account menus, the record detail page's chrome and the System Hub pages do not go through t() yet. Toast messages come from the API in the user's language.
+
+React Query HooksUI Components

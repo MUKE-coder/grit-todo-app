@@ -1,0 +1,114 @@
+Deployment
+Railway
+
+grit deploy --railway links your project, adds Postgres and Redis, pushes the variables a deploy actually needs, uploads the API and gives you a URL.
+
+Once, per machine
+
+Railway's API has no endpoint that accepts local source: a service is built either from a connected GitHub repository or from an archive their CLI uploads. So the CLI is what deploys, and Grit drives it.
+
+Terminal
+Copy to clipboard
+
+$npm i -g @railway/cli     # or: brew install railway
+
+$railway login
+
+In CI there is no browser to log in with, so set RAILWAY_TOKEN instead. Grit checks for either before it does anything.
+
+The first deploy
+
+From the root of your project. The first step links a Railway project, and that is the one thing Grit will not decide for you: a new project or an existing one is your call, not a default.
+
+Terminal
+Copy to clipboard
+
+$cd apps/api
+
+$railway init          # a new project
+
+# or: railway link    # an existing one
+
+$cd ../..
+
+$grit deploy --railway --provision
+
+--provision adds Postgres and Redis and points DATABASE_URL and REDIS_URL at them. Leave it off on every deploy after the first, or if you are bringing your own database.
+
+See the plan before it runsgrit deploy --railway --dry-run prints every command it would run, in order, and runs none of them. Variable values are masked, so the output is safe to paste into an issue.
+
+Which variables are sent
+
+A generated .env has around a hundred entries. Sending all of them is minutes of CLI calls, a dashboard nobody can read, and an app carrying settings that point at a laptop. A real project sends roughly sixty.
+
+SentWhy
+
+Everything with a valueYour app name, URLs, JWT secret, encryption key, provider keys, module switches.
+
+APP_ENVForced to production, whatever the file on your laptop says.
+
+DATABASE_URL, REDIS_URLWith --provision, replaced by Railway references so they follow the database rather than a copy of its password.
+
+Held backWhy
+
+Empty valuesA generated .env is mostly placeholders for providers you do not use. An empty string configures nothing and makes the dashboard unreadable.
+
+PORT, APP_PORTRailway assigns the port. Overriding it is how a deploy ends up listening on the wrong one.
+
+MINIO_*, MAILHOG_*Containers on your machine. On Railway, storage and mail are configured with their own provider keys.
+
+DB_HOST, MYSQL_*, POSTGRES_*The compose database. On Railway the app connects through DATABASE_URL, and these would contradict it.
+
+Anything Grit held back you can still set yourself, and it will not be overwritten:
+
+Terminal
+Copy to clipboard
+
+$railway variable set SENTRY_DSN=... --service api
+
+How it is built
+
+From apps/api/Dockerfile, the same one docker compose uses, so there is one definition of how the API is built rather than two that drift. apps/api/railway.json says so, and adds the health check and restart policy:
+
+{
+
+"$schema": "https://railway.com/railway.schema.json",
+
+"build": { "builder": "DOCKERFILE", "dockerfilePath": "Dockerfile" },
+
+"deploy": {
+
+"healthcheckPath": "/api/v1/health",
+
+"healthcheckTimeout": 60,
+
+"restartPolicyType": "ON_FAILURE",
+
+"restartPolicyMaxRetries": 5
+
+}
+
+}
+
+Copy to clipboard
+
+The upload happens from apps/api, not the repository root, because the Dockerfile copies go.mod from the context root and the Go module is apps/api. Without that, Railway uploads the whole monorepo and the build cannot find the module.
+
+After the first deploy
+
+Terminal
+Copy to clipboard
+
+$grit deploy --railway            # variables, upload, done
+
+$grit deploy --railway --no-domain  # skip asking for a URL
+
+$grit deploy --railway --service worker --environment staging
+
+The web and admin apps
+
+This deploys the API. The Next.js apps are separate Railway services, or a Vercel deploy, or anything that serves static files: point them at the API with NEXT_PUBLIC_API_URL and add that URL to CORS_ORIGINS on the API service.
+
+CORS_ORIGINS is the one to rememberThe value in your .env is http://localhost:3000. It is pushed as-is, which means a deployed frontend is refused until you set the real origin. Grit cannot guess it, because it does not know where you will put the frontend.
+
+DeploymentProject audit (grit doctor)

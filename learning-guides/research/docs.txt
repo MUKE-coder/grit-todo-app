@@ -1,0 +1,357 @@
+Introduction
+The Full-Stack Framework for Builders Who Ship
+
+Grit is a full-stack meta-framework purpose-built for CRMs, admin dashboards, SaaS products, and internal tools. It fuses a Go backend (Gin + GORM) with your choice of Next.js or TanStack Router (Vite) frontend and a Filament-like admin panel — with 5 architecture modes, an interactive CLI, authentication, file storage, email, background jobs, AI integration, and a visual database browser all wired together out of the box.
+
+Build with AI
+
+Let your AI build it
+
+One prompt that installs the Grit skill, teaches your agent the framework, and links every concept it needs. Works in Claude Code, Cursor, Codex, Windsurf, Copilot or any chat.
+
+Copy prompt to build with AI
+
+Ship in hours, not weeksSelf-host everythingGo performanceCRM-ready
+
+Start here
+
+Terminal
+Copy to clipboard
+
+# Scaffold a full-stack app
+
+$grit new myapp
+
+# Generate a full CRUD resource — model, API, admin, types & hooks
+
+$grit generate resource Post --fields "title:string,body:text,published:bool"
+
+Quick Start — 5 minBuild your first app
+
+Pick your stack
+
+Every Grit project starts from a tech kit. Choose the shape that fits what you're building — the CLI scaffolds it in seconds.
+
+Recommended
+
+Triple — Web + Admin + API
+
+The full monorepo: a Next.js web app, a Filament-like admin panel, and a Go API with shared types. The default for SaaS and internal tools.
+
+$ grit new myapp --triple
+
+Read the guide
+
+Recommended
+
+Multi-Client — Everything at once
+
+Web, admin, API, mobile (Expo) and desktop (Wails) — one Go backend, every client, scaffolded together.
+
+$ grit new myapp --triple --mobile --desktop
+
+Read the guide
+
+Single (Next.js)
+
+One Next.js app with API routes — a fast, self-contained full-stack app.
+
+$ grit new myapp --single
+
+Read the guide
+
+Single + Vite
+
+A single-page app on Vite + TanStack Router, backed by its own lightweight API.
+
+$ grit new myapp --single --vite
+
+Read the guide
+
+Double — Web + API
+
+A Next.js frontend and a standalone Go API with shared TypeScript types.
+
+$ grit new myapp --double
+
+Read the guide
+
+API only
+
+Just the Go API — Gin, GORM, auth, and GORM Studio, no frontend.
+
+$ grit new myapp --api
+
+Read the guide
+
+Mobile (Expo)
+
+A React Native app on Expo wired to a Go API — iOS and Android from one codebase.
+
+$ grit new myapp --mobile
+
+Read the guide
+
+Desktop (Wails)
+
+A native, offline-first desktop app built with Wails and a bundled Go backend.
+
+$ grit new-desktop myapp
+
+Read the guide
+
+From the blog
+
+Stories, walkthroughs, and the thinking behind Grit.
+
+Why I built Grit
+
+The founder story and the problem Grit sets out to solve.
+Read
+
+Build your first Grit app
+
+A web store, built start to finish.
+Read
+
+Build a desktop app with Grit
+
+An offline-first POS you can run anywhere.
+Read
+
+The commands you'll use
+
+The core of the Grit CLI — the handful of commands behind every project.
+
+CommandWhat it does
+
+grit new <name>Scaffold a new project from a tech kit
+
+grit generate resource <Name>Generate a full-stack CRUD resource — model, API, admin, types & hooks
+
+grit generate seeder <Name>Add a seeder for a resource
+
+grit migrateCreate or update database tables from your models
+
+grit seedFill the database with sample data
+
+grit startRun the whole app — API and all frontends
+
+grit start server|web|admin|expo|desktopRun a single app on its own
+
+grit syncSync Go types → TypeScript types & Zod schemas
+
+grit studioOpen GORM Studio, the visual database browser
+
+grit deployDeploy your app to a VPS
+
+What is Grit?
+
+Grit Developer Handbook
+
+The complete Grit reference — printable PDF for offline reading
+
+Download PDF
+
+Built for Builders
+
+Ship Fast
+
+One command scaffolds your entire stack. Another generates full-stack CRUD resources. Stop gluing boilerplate together and start building what matters. Go from zero to a production-ready app with auth, admin panel, and API in minutes.
+
+Self-Host Everything
+
+No vendor lock-in. No serverless cold starts. No per-request pricing. Grit compiles to a single Go binary and static frontend bundles (Next.js or Vite). Deploy on a $5 VPS, your own servers, or any cloud. You own every byte of your infrastructure.
+
+Go Performance
+
+Go compiles to native machine code. Your API handles thousands of concurrent requests with minimal memory. No garbage collection pauses that matter, no interpreter overhead, no JIT warm-up. Just raw speed backed by goroutines and a compiled runtime.
+
+Rock Solid
+
+Opinionated by design. One folder structure, one auth system, one state management approach. Every pattern is predictable. Any developer (or AI assistant) can jump into any Grit project and immediately understand it. Convention over configuration.
+
+Why Grit?
+
+Think of Grit as Laravel's developer experience, but with Go's performance and React's frontend ecosystem. Instead of stitching together 15+ tools to build a modern full-stack app, you run one command and get everything: a Go API server, a React frontend (Next.js or TanStack Router), an admin dashboard, shared TypeScript types, Docker infrastructure, and a CLI that generates full-stack resources for you.
+
+Grit is designed for the kind of software that runs businesses: CRMs, admin panels, internal tools, SaaS dashboards, and data-heavy applications. The admin panel is not an afterthought — it's a first-class citizen with resource definitions, advanced data tables, form builders, multi-step wizards, charts, and widgets. Define a resource once, and Grit generates the entire stack from Go model to admin UI.
+
+Every piece of code Grit generates is yours. No lock-in, no black boxes, no runtime magic. The CLI produces clean, readable, editable files that you own and control. Self-host on your own servers with zero ongoing costs beyond hosting.
+
+How Grit Compares
+
+Grit combines the best parts of existing frameworks into one cohesive tool. Here's how it stacks up:
+
+FeatureGritLaravelDjangoRailsT3 StackRefine
+
+LanguageGo + TypeScriptPHPPythonRubyTypeScriptTypeScript
+
+Compiled / Native
+
+Built-in Admin Panel
+
+Full-Stack Code Gen
+
+End-to-End Type Safety
+
+React Frontend
+
+Self-Hostable
+
+Background Jobs
+
+File Storage (S3)
+
+Email Service
+
+AI Integration
+
+Database Browser
+
+Multi-Step Forms
+
+Docker Setup
+
+Built-in· Partial / via plugin· Not included·Laravel comparison includes Filament. T3 Stack = Next.js + tRPC + Prisma + NextAuth.
+
+Key Features
+
+Interactive CLI Scaffolder
+
+grit new myapp launches an interactive CLI to pick your architecture (single/double/triple) and frontend (Next.js or TanStack Router). Five modes from API-only to full monorepo.
+
+Full-Stack Code Gen
+
+grit generate resource Post creates a Go model, CRUD handler, React Query hooks, Zod schema, and admin page in one shot.
+
+CRM-Grade Admin Panel
+
+Resource-based admin with data tables, form builders, multi-step wizards, charts, widgets, RBAC, and a polished dark theme.
+
+End-to-End Type Safety
+
+Go struct tags auto-generate TypeScript types and Zod schemas. Change the backend, run grit sync, and the frontend stays in sync.
+
+Batteries Included
+
+JWT auth, file storage (S3/R2/MinIO), email (Resend), background jobs, cron, Redis caching, and AI integration ship with every project.
+
+GORM Studio
+
+A visual database browser embedded at /studio. Browse tables, inspect data, and manage your database without leaving the browser.
+
+How It Works
+
+1
+
+Scaffold your project
+
+Run grit new myapp to launch the interactive CLI. Choose your architecture mode and frontend framework (Next.js or TanStack Router), and Grit generates the full project -- Go API with auth, frontend app, admin panel, shared types, Docker Compose, and GORM Studio.
+
+2
+
+Start the dev environment
+
+Run docker compose up -d to start PostgreSQL, Redis, MinIO, and Mailhog. Then run grit start to start the Go API and Next.js apps with hot reload.
+
+3
+
+Generate resources
+
+Use grit generate resource Post --fields "title:string,content:text" to create a full-stack resource. The Go model, handler, React hooks, Zod schema, and admin page are all created and wired together.
+
+4
+
+Build and ship
+
+Your app is production-ready from day one. Multi-stage Docker builds for Go and Next.js. Self-host on a VPS, your own servers, or any cloud provider. No vendor lock-in, no recurring platform fees.
+
+Quick Example
+
+Create a project and generate your first resource in under a minute:
+
+terminal
+
+$ grit new myapp
+
+$ cd myapp
+
+$ docker compose up -d
+
+$ grit generate resource Post --fields "title:string,content:text,published:bool"
+
+$ grit start
+
+That's it. You now have a Go API serving CRUD endpoints for Posts, a React frontend with data fetching hooks, Zod validation, and an admin panel with a data table and form -- all connected and ready to use.
+
+What Gets Generated
+
+When you run grit generate resource Post, the CLI creates:
+
+apps/api/internal/models/post.goGORM model with struct tags, timestamps, and soft deletes
+
+apps/api/internal/handlers/post.goCRUD handler with pagination, sorting, filtering, and search
+
+apps/api/internal/services/post.goBusiness logic layer with reusable query scopes
+
+packages/shared/schemas/post.tsZod validation schemas (create + update)
+
+packages/shared/types/post.tsTypeScript types inferred from the Go model
+
+apps/admin/hooks/use-posts.tsReact Query hooks for all CRUD operations
+
+apps/admin/resources/posts.tsResource definition with table, form, and multi-step wizard config
+
+apps/admin/app/resources/posts/page.tsxAdmin page with data table, search, filters, and form actions
+
+Who is Grit For?
+
+Freelancers and agencies who need to ship client projects fast with a complete stack that works out of the box.
+
+Solo SaaS developers who want Go's performance for their backend but React's ecosystem for their frontend.
+
+Small to mid-size teams building internal tools, CRMs, dashboards, or SaaS products.
+
+Laravel developers who want to move to Go but miss the developer experience and Filament's admin panel.
+
+Next.js developers who are frustrated with serverless limitations and want a real, self-hosted backend.
+
+Anyone tired of vendor lock-in who wants to own their infrastructure and deploy anywhere.
+
+Next Steps
+
+Quick Start
+
+Get a project running in 5 minutes
+
+Philosophy
+
+Why Grit exists and the design principles behind it
+
+Installation
+
+System requirements and CLI setup
+
+Tutorials
+
+Step-by-step guides to build real apps
+
+Quick StartRead the PhilosophyBrowse Examples
+
+Frequently asked questions
+
+Is Grit free and open source?
+Yes — MIT licensed. You own all the generated code, self-host anything, and there is no vendor lock-in.
+Do I need to know Go?
+You should be comfortable with Go for the backend and able to read React/TypeScript for the frontend. Grit teaches its own conventions on top — see Coming from Laravel / Django / Next.
+What can I build with it?
+SaaS products, admin dashboards, internal tools, CRMs, plus mobile (Expo) and native desktop (Wails) apps — all from one Go + React codebase.
+How is it different from Next.js or Laravel?
+A compiled Go backend, a React frontend, a generated admin panel, and shared end-to-end types — from one CLI. See the comparison matrix.
+
+Something wrong, unclear, or missing on this page?
+
+Open an issue: your feedback shapes Grit, and we fix docs fast.
+
+Raise an issue on GitHub

@@ -1,0 +1,305 @@
+Backend
+Feature Flags & A/B Testing
+
+Ship code before it's finished, roll it out to 5% of users, and kill it from the admin panel if it misbehaves — no redeploy. Grit's flags package is an in-memory engine that answers flags.IsEnabled(c, "new_dashboard") in sub-microseconds and never touches the database on the hot path. The same engine assigns sticky A/B variants and logs every exposure for rollout-health analytics.
+
+How it fits together
+
+A single Engine loads every flag into memory at boot and refreshes it in the background every 30 seconds. Your code calls the engine; the engine reads its in-memory map. Admin writes refresh the cache immediately and broadcast a flag.updated realtime event so connected clients can refetch.
+
+Read path (memory)Admin writeRealtime push
+Reads hit an in-memory map; admin writes refresh instantly and broadcast to clients
+
+internal/flags
+Copy to clipboard
+
+DB (feature_flags)
+
+│  Find() at boot + every 30s
+
+▼
+
+flags.Engine ──────── in-memory map[name]*FeatureFlag
+
+│  IsEnabled(c, "x")           (read-locked, zero DB hits)
+
+│  Variant(c, "x")
+
+▼
+
+evaluate(userID, name)
+
+├─ master Enabled switch  → "disabled" if off
+
+├─ date window            → EnabledFrom / EnabledUntil
+
+├─ blocklist              → always deny
+
+├─ allowlist (if set)     → restrict to listed users
+
+├─ bucket = SHA-256(userID:name) % 100   ← sticky
+
+├─ A/B: variants[bucket % len]
+
+└─ boolean: bucket < RolloutPercentage
+
+│
+
+└─ trackExposure(...) → FlagExposure  (async, fire-and-forget)
+
+Admin write → RefreshAndBroadcast() → hub.Broadcast("flag.updated")
+
+Checking a flag in Go
+
+The engine is built once in routes.Setup (flags.New(db, hub)) and handed to whatever needs it. From a handler you have the *gin.Context, so use the context-aware helpers — they read user_id from the context (set by the auth middleware) for you.
+
+internal/handlers/dashboard.go
+Copy to clipboard
+
+func (h *DashboardHandler) Show(c *gin.Context) {
+
+if h.Flags.IsEnabled(c, "new_dashboard") {
+
+h.renderNewDashboard(c)
+
+return
+
+}
+
+h.renderLegacyDashboard(c)
+
+}
+
+// A/B flag — Variant returns one of the configured strings.
+
+func (h *CheckoutHandler) Start(c *gin.Context) {
+
+switch h.Flags.Variant(c, "checkout_redesign") {
+
+case "variant_a":
+
+h.startVariantA(c)
+
+case "variant_b":
+
+h.startVariantB(c)
+
+default: // "control" or "disabled"
+
+h.startControl(c)
+
+}
+
+}
+
+Outside a request — a cron job or worker that already knows the user id — use the explicit forms:
+
+internal/jobs/digest.go
+Copy to clipboard
+
+if engine.IsEnabledForUser(userID, "weekly_digest") {
+
+sendDigest(userID)
+
+}
+
+variant := engine.VariantForUser(userID, "pricing_experiment")
+
+Fail closed. An unknown flag name returns false from IsEnabled (and "" from Variant). A flag that exists but whose rules deny the user returns "disabled". Deleting a flag or a typo therefore hides the feature rather than crashing the request.
+
+The FeatureFlag model
+
+A flag is a row in feature_flags. The master Enabled boolean short-circuits everything — flip it off and no rule matters. Everything nuanced (percentage, allow/block lists, date windows, A/B variants) lives in the Rules JSON column, decoded into a typed FlagRules struct.
+
+internal/models/feature_flag.go
+Copy to clipboard
+
+type FeatureFlag struct {
+
+ID          string         `gorm:"primarykey;size:36" json:"id"`
+
+Name        string         `gorm:"size:100;uniqueIndex;not null" json:"name"` // "new_dashboard"
+
+Description string         `gorm:"type:text" json:"description"`
+
+Enabled     bool           `gorm:"not null;default:false" json:"enabled"`   // master switch
+
+Rules       datatypes.JSON `gorm:"type:jsonb" json:"rules"`
+
+CreatedAt   time.Time      `json:"created_at"`
+
+UpdatedAt   time.Time      `json:"updated_at"`
+
+Version     int            `gorm:"not null;default:1" json:"version"`      // bumped on every update
+
+}
+
+type FlagRules struct {
+
+RolloutPercentage int        `json:"rollout_percentage,omitempty"` // 0..100
+
+AllowlistUserIDs  []string   `json:"allowlist_user_ids,omitempty"` // ONLY these users
+
+BlocklistUserIDs  []string   `json:"blocklist_user_ids,omitempty"` // always deny
+
+EnabledFrom       *time.Time `json:"enabled_from,omitempty"`       // date window start
+
+EnabledUntil      *time.Time `json:"enabled_until,omitempty"`      // date window end
+
+Variants          []string   `json:"variants,omitempty"`           // set = A/B mode
+
+Attributes        map[string][]string `json:"attributes,omitempty"` // {"business_unit": ["eu"]}
+
+}
+
+IDs are UUID strings assigned in a BeforeCreate hook. Version is auto-incremented in BeforeUpdate so you can tell whether a client's view of a flag is stale. Decode rules with flag.ParsedRules(); encode with flag.SetRules(r).
+
+Rules & evaluation order
+
+evaluate() runs the checks in a fixed order, and the order matters — a blocklisted user never reaches the percentage roll:
+
+#CheckOutcome when it matches
+
+1Master Enabled is falsedisabled (short-circuit)
+
+2Now < EnabledFrom or > EnabledUntildisabled
+
+3User in BlocklistUserIDsdisabled (always wins)
+
+4A key in Attributes whose values do not include the subject'sdisabled
+
+5AllowlistUserIDs set & user not in itdisabled
+
+6Variants set (A/B mode)variants[bucket % len]
+
+7bucket < RolloutPercentage (or allowlisted)enabled, else disabled
+
+Targeting a business unit
+
+Attributes turns a flag on for subjects whose attributes match, rather than for a list of user IDs you would have to keep in step with your staff. With {"business_unit": ["eu", "ke"]} the flag is on only for someone whose business unit is eu or ke. Every key listed must match, ignoring case, and a subject without the attribute does not match, so a rule on something your app never supplies fails closed.
+
+Where the attributes come from is yours to say. flags.AttributesFor reports the user's role by default; replace it at boot with whatever your users carry. Code without a request, such as a job, builds the subject itself:
+
+// At boot: what the rules can target.
+
+flags.AttributesFor = func(c *gin.Context) map[string]string {
+
+return map[string]string{"business_unit": businessUnitOf(c)}
+
+}
+
+// In any handler or service.
+
+if flags.IsEnabled(c, "eu_approvals") {
+
+// ...
+
+}
+
+// In a job, with no request.
+
+eu := flags.Subject{UserID: id, Attributes: map[string]string{"business_unit": "eu"}}
+
+if flags.IsEnabledFor(eu, "eu_approvals") {
+
+// ...
+
+}
+
+Copy to clipboard
+
+The package-level functions use the engine routes.Setup starts, and answer false before it has. Before v3.223.0 the package documented flags.IsEnabled(c, ...) without it existing, so code outside the routes file could not check a flag. Flags are still managed through the API: the admin has no flags screen yet.
+
+Sticky bucketing
+
+Both the percentage roll and A/B assignment bucket a user by SHA-256(userID + ":" + flagName) % 100. Same user, same flag → same bucket, every time — so a user in the 25% rollout stays in it across sessions and never sees the feature flicker. SHA-256 (not Go's runtime hash) keeps the bucket stable across process restarts and Go versions.
+
+Anonymous users. With an empty user_id the bucket is drawn from crypto/rand — effectively random per request, and not sticky. For a sticky anonymous flag (marketing experiment on logged-out traffic) pass a stable id via IsEnabledForUser — a session id or device id. Anonymous checks are also skipped in the exposure log.
+
+Managing flags (admin API)
+
+CRUD lives under /api/admin/flags (admin role required). Every write calls Engine.RefreshAndBroadcast(), so the in-memory cache updates instantly — you don't wait for the 30s tick.
+
+Method & pathDoes
+
+GET /api/admin/flagsList (paginated, searchable by name/description)
+
+POST /api/admin/flagsCreate a flag (name must be unique)
+
+PUT /api/admin/flags/:idUpdate (name is immutable)
+
+DELETE /api/admin/flags/:idDelete; cache drops it on next check
+
+GET /api/admin/flags/:id/exposuresPer-variant unique-user counts
+
+The create/update body takes rules as a structured object — the handler encodes it to JSON for you:
+
+POST /api/admin/flags
+Copy to clipboard
+
+{
+
+"name": "new_dashboard",
+
+"description": "Redesigned analytics home",
+
+"enabled": true,
+
+"rules": {
+
+"rollout_percentage": 25,
+
+"blocklist_user_ids": ["…"],
+
+"enabled_from": "2026-08-01T00:00:00Z"
+
+}
+
+}
+
+The exposure log
+
+Every non-anonymous flag check writes a FlagExposure row — which user got which variant, and when. The insert is fire-and-forget: it runs in a goroutine with a 5s timeout so exposure tracking never blocks (or fails) a flag check.
+
+internal/models/feature_flag.go
+Copy to clipboard
+
+type FlagExposure struct {
+
+ID        string    `gorm:"primarykey;size:36" json:"id"`
+
+FlagID    string    `gorm:"size:36;index;not null" json:"flag_id"`
+
+FlagName  string    `gorm:"size:100;index" json:"flag_name"` // denormalized for join-free analytics
+
+UserID    string    `gorm:"size:36;index" json:"user_id"`
+
+Variant   string    `gorm:"size:50" json:"variant"` // "enabled" / "disabled" / "variant_a" / …
+
+CreatedAt time.Time `gorm:"index" json:"created_at"`
+
+}
+
+The /exposures endpoint aggregates it into rollout health — COUNT(DISTINCT user_id) grouped by variant, so you see how many real users landed in each arm:
+
+GET /api/admin/flags/:id/exposures
+Copy to clipboard
+
+{
+
+"data": [
+
+{ "variant": "variant_a", "count": 4231 },
+
+{ "variant": "variant_b", "count": 4189 }
+
+]
+
+}
+
+Go deeper
+
+Want to build a real rollout end to end — a percentage ramp, an A/B experiment, and a kill switch wired to the admin UI? The course walks the whole flow with a live app.
+Course: Feature Flags & A/B Testing →
+
+Pulse (Observability)Webhooks

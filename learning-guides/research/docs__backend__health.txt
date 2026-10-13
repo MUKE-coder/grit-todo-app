@@ -1,0 +1,100 @@
+Backend
+Health checks
+
+GET /api/health reports every component this deployment depends on, in four states rather than a boolean, so "we have no Redis" and "Redis is down" stop being the same answer.
+
+The four states
+
+A boolean cannot distinguish a component that is broken from one nobody asked for, and a dashboard that cannot tell them apart either cries wolf about a dependency you never configured or stays quiet about one that just died.
+
+ok        wired up, and nothing known to be wrong
+
+degraded  wired up, and not working, or working worse than it should
+
+off       deliberately not wired up; this is not a problem
+
+unknown   wired up, but this probe could not find out
+
+Copy to clipboard
+
+Only degraded lowers the deployment's overall status. A deployment with no Redis is healthy. One whose queue depth has not been sampled since the last restart is healthy until something says otherwise. That rule lives in one place, health.Overall, so a new component cannot quietly invent its own.
+
+What a response looks like
+
+Each component carries its state, a detail an operator can act on, and whatever that component measures, flattened into the same object.
+
+GET /api/health
+Copy to clipboard
+
+{
+
+"status": "ok",
+
+"version": "0.1.0",
+
+"api":      { "state": "ok", "ok": true, "detail": "answering requests" },
+
+"database": { "state": "ok", "ok": true, "latency_ms": 1, "tables": 42 },
+
+"redis":    { "state": "off", "ok": false,
+
+"detail": "REDIS_URL is empty, so caching, jobs and cron are off on purpose" },
+
+"jobs":     { "state": "off", "ok": false, "detail": "no queue: asynq needs Redis" },
+
+"storage":  { "state": "ok", "ok": true, "configured": true, "driver": "local" },
+
+"email":    { "state": "ok", "ok": true, "configured": true, "driver": "log" },
+
+"events":   { "state": "ok", "ok": true, "subscribers": 2, "queued": 0,
+
+"capacity": 1024, "dropped": 0 },
+
+"realtime": { "connections": 0, "users": 0, "channels": 0 }
+
+}
+
+ok is still there, and is exactly state === "ok". Load balancers, uptime probes and the desktop client's heartbeat read it, and it means what it always meant.
+
+Redis is the one probe that asks about the environmentA missing cache has two causes. REDIS_URL= turned it off on purpose, and that is off. Anything else means the API dialled Redis at boot, was refused, and carried on with caching, jobs and cron disabled. On a laptop that is still off, with a detail saying so. In production it is degraded, because there it is an incident.
+
+Adding your own component
+
+Anything the route file does not already hold a handle to reports itself through health.Register: a plugin, a client you wired in main.go, a dependency only your code knows about. Register once while the application is being built, never per request.
+
+cmd/server/main.go
+Copy to clipboard
+
+health.Register("billing", func() health.Report {
+
+if !gateway.Configured() {
+
+return health.Off("no payment gateway; set BILLING_KEY")
+
+}
+
+if err := gateway.LastPing(); err != nil {
+
+return health.Degraded("the gateway refused our last call", nil)
+
+}
+
+return health.OK("", map[string]any{"charges_settled": settled.Load()})
+
+})
+
+It appears beside the framework's own components, counts towards the overall status under the same rule, and shows up on the admin's System Health page without touching the handler. Registering the same name twice replaces the first, so a reload cannot show one component twice.
+
+What a probe may do
+
+Nothing slow. A probe reports state its subsystem already holds, or makes one bounded call. It must not block on a dependency that is already unwell: /api/health is exactly what somebody reaches for during an outage, and a probe that waits on a hung database turns the one endpoint that could explain the outage into another symptom of it. The framework's own database and Redis probes are bounded at 500ms; the queue counts come from a snapshot refreshed in the background, because counting asynq's keys inside Redis on every probe stalled every other Redis client while it ran.
+
+A probe that panics is reported as unknown rather than taking the endpoint down. Somebody else's broken probe is not a reason to stop answering "is the database up".
+
+No probe reports a secret/api/health is reachable without authentication so a load balancer can use it. Report a credential by presence, never by value: {"signing_key": true}, not the key. The framework's own probes follow the same rule, which is why storage reports local or s3 and not the bucket, and why a failed database ping says "the database did not answer a ping" while the driver error, which names the host and often the user, goes to the log.
+
+Where to see it
+
+The admin panel renders it at /system/health, one card per component, with off and unknown drawn in neutral rather than in red. The endpoint is registered at both /api/health and /api/v1/health: the first for probes, load balancers and the desktop client's heartbeat, which are configured outside your repo, and the second for the frontends, whose client rewrites every call to the versioned path.
+
+Pulse (Observability)Feature Flags

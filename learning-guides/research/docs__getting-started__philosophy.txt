@@ -1,0 +1,128 @@
+Getting Started
+Philosophy
+
+Why Grit exists, what it borrows from the frameworks that came before it, and what each of its decisions costs you. Every choice below has a downside; they are named rather than hidden.
+
+Related reading. The pitch states the six trade-offs in short form. The long-form founder story is on the blog: Why I built Grit →
+
+What Grit is
+
+Grit does enough things that the honest answer needs three parts rather than one. Everything in the framework fits under one of them, and anything that does not fit under any of them probably should not be in the core.
+
+Application Infrastructure
+
+Auth, RBAC, sessions, jobs, cron, cache, storage, mail, realtime, observability, backups, security. The three weeks you spend before you have written any of your own product.
+
+Application UI
+
+An admin panel with tables, forms, filters, bulk actions and widgets, plus a component library. Not a theme: components that understand what a resource is.
+
+Application Generation
+
+Describe a resource once and get the Go model, service, API, migrations, OpenAPI, Zod schemas, TypeScript types, React hooks and admin screens. Code you own, not runtime magic.
+
+The third is what connects the first two. A framework with good infrastructure and a good admin panel still leaves you wiring one to the other by hand for every entity in your domain. Grit's bet is that the wiring is the boilerplate worth eliminating, and that eliminating it is only worth anything if the result is code you can read, edit and take over.
+
+Why Grit exists
+
+Building a full-stack application today means stitching together fifteen or more tools: a framework, an ORM, an auth library, a validation library, a data-fetching library, an S3 client, a mailer, a queue, an admin panel. Every project starts with days of wiring. Every developer wires it differently, and the result is a codebase where the interesting decisions are buried under the boring ones.
+
+Go has an excellent performance and deployment story, but its web ecosystem is deliberately unopinionated — Gin, Echo, Fiber and Chi for routing; GORM, sqlc and sqlx for data; dozens of auth libraries. That is a genuine strength for infrastructure work and a genuine cost for product work, where you would rather inherit good defaults than assemble them.
+
+And then there is the admin panel. Laravel has Filament: define a resource, get a real dashboard with tables, filters, forms and widgets. The Go + React world has no equivalent, so every team rebuilds the same CRUD screens.
+
+Grit exists to close that gap — convention over configuration, batteries included, and code generation, applied to Go on the backend and React on the front.
+
+What Grit borrows
+
+Almost nothing here is a new idea. Grit's contribution is the combination, not the invention:
+
+Laravel + Filament (PHP) — the Artisan CLI and resource-driven admin panel are the direct model for grit generate and Grit's admin.
+
+Ruby on Rails — convention over configuration, and the argument that frameworks should have opinions.
+
+Django (Python) — batteries included. Auth, admin, ORM and email belong in the box.
+
+Next.js — file-based routing and the React developer experience Grit builds its frontends on.
+
+GORM Studio — our own database browser, folded into the framework. Seeing your data without leaving the browser changes how you work.
+
+Design principles, and what each costs
+
+A principle that costs nothing is a slogan. Each of these buys something real and charges for it.
+
+1. Convention over configuration
+
+One auth system. One folder structure. One naming convention. Any developer can open any Grit project and know where things live, and an AI agent does not have to infer which of six patterns you chose.
+
+The cost: if your application genuinely does not fit the convention, you are swimming upstream, and the framework will not help you. Grit is a good fit for CRUD-shaped products with an admin surface. It is a poor fit for software whose core is an unusual data model or an unusual request lifecycle.
+
+2. Code generation over runtime magic
+
+grit generate resource Post writes real files — Go model, service, handler, routes, Zod schema, TypeScript types, React Query hook, admin page. No hidden proxies, no auto-wiring, no reflection. Open any file, read it, change it.
+
+The cost: generated code is yours to maintain from the moment it lands. Upgrading Grit does not retroactively improve resources you generated six months ago — new templates apply to new code. That is the honest trade for never being blocked by a framework internal you cannot see.
+
+3. Own your code
+
+Everything Grit produces is in your repository, not in node_modules and not compiled into a binary you cannot inspect. Stop using the CLI tomorrow and the project still builds: it is a Go API, a Next.js app, and some TypeScript.
+
+The cost: a bigger repository and more code with your name on it. Some teams would rather depend on a library than own the source. That is a reasonable preference, and it is the opposite of this one.
+
+4. Batteries included, individually removable
+
+Auth, storage, email, queues, cron, AI and the admin panel ship in every project. Each is a separate Go package that can be switched off with MODULE_<NAME>=false in .env, or deleted outright without breaking the rest of the app.
+
+The cost: more surface area to read on day one. A project that needs three of the batteries still starts larger than a hand-rolled service that needs three things.
+
+5. Secure before it is convenient
+
+CSRF, a strict CSP, rate limiting, SSRF defence, IDOR-safe ownership checks, field-level encryption, server-side sessions with revocation, GDPR export and erasure, and a tamper-evident audit log are in the scaffold, not in a checklist.
+
+The cost: some of it will be in your way. A strict CSP means you cannot paste an inline script and move on. That friction is the feature — security work is what loses every argument against a deadline, so it ships before the argument happens.
+
+6. Predictable enough for machines
+
+Because there is one way to do each thing, an AI assistant has nothing to guess. Grit ships a SKILL.md, and grit mcp serve hands an agent the real route table and model definitions over the Model Context Protocol — parsed from your source, read-only.
+
+The cost: conventions were sometimes simplified past what an experienced developer would have chosen, because the question asked of every pattern was “can this be generated and read back reliably?” Where the answer was no, the clever version lost.
+
+Why Go — and when it is the wrong answer
+
+Go is small, explicit, and boring in the way infrastructure should be. It compiles to a single static binary with no runtime to install, which collapses most of what deployment usually costs. Its concurrency model suits the work a product backend actually does — many concurrent requests, each mostly waiting on I/O. For CPU-bound work it is substantially faster than interpreted runtimes, though for the request/response work most applications do, the deployment story and the predictable memory profile matter more than raw benchmark numbers.
+
+Go is the wrong answer when: your core problem is data science or machine learning, where Python's ecosystem is not close to matched; your team is genuinely all-TypeScript and adding a second language costs more than the runtime saves; or you want an expressive, metaprogramming-heavy style, which Go will actively resist.
+
+Why React — and when it is not
+
+React has the largest component ecosystem of any frontend framework, the tools Grit depends on are built for it first, and more developers know it than any alternative, which matters when hiring. It also reaches mobile through Expo, so a Grit project can share types and validation between web and native.
+
+Pick something else when: you want the smallest possible bundle and the simplest mental model, where Svelte is a better answer; you are building server-rendered pages with sprinkles of interactivity, where HTMX plus Go templates is genuinely lighter; or your team already knows Vue well, in which case that knowledge outweighs the ecosystem gap.
+
+Why not full-stack JavaScript
+
+For CRMs, SaaS tools, internal dashboards, and anything with WebSockets, background jobs, or sustained processing, a long-running server beats a serverless function, and Go gives you one binary that handles high concurrency and deploys anywhere.
+
+But if your team is small, entirely TypeScript, and shipping speed dominates every other concern, a single-language stack is a real advantage. AdonisJS and Nest solve a similar problem well inside that constraint. Grit is the answer when you want the Laravel experience and a Go backend, not when you want one language everywhere.
+
+What Grit deliberately does not do
+
+Support every database. Postgres in production, SQLite for development and tests. Adding more would dilute the migration and Studio work that makes those two good.
+
+Abstract the cloud. Grit generates Docker, Compose, and deployment config you can read. It does not wrap your provider in an interface that hides what is actually happening.
+
+Ship a plugin for everything. Plugins are added when someone needs one, not in anticipation. An unused abstraction is a maintenance cost with no user.
+
+Chase releases. Every release runs a 73-check matrix across 13 project shapes and is re-verified by downloading the published binary and building a fresh project with it. That is slower than shipping on green unit tests, and it is the point.
+
+If those trades sound right for what you are building, the quick start takes about five minutes. If they do not, that is genuinely useful to know now rather than later.
+
+Community
+
+Build alongside other Grit developers
+
+Join the WhatsApp community for questions, tutorials, and guidance from people shipping Grit apps, and from the person who builds it. No question is too small.
+
+Join the community
+
+IntroductionQuick Start

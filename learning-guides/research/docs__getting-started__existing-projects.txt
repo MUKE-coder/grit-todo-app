@@ -1,0 +1,114 @@
+Getting started
+Using Grit with an existing project
+
+Grit scaffolds new projects. It does not convert old ones. But several pieces of it work standalone in a codebase that has never heard of Grit — and those are usually the pieces people actually want.
+
+There is no `grit init` for an existing app
+
+No command reads your current codebase and Grit-ifies it. The generators write into a known project layout with known marker comments, and neither exists in a codebase that was not scaffolded by Grit. A command that pretended otherwise would produce files that do not compile against your app, which is a worse outcome than not having the command.
+
+What works standalone, today
+
+In rough order of how easy they are to adopt. None of these requires the Grit CLI to be anywhere near your production build.
+
+1
+Grit UI blocks — any React project
+
+The block registry is a plain shadcn registry. Marketing sections, headers, feature sections and the swappable primitives install into any React + Tailwind codebase. Nothing about it is Grit-specific.
+
+npx shadcn@latest add https://ui.gritframework.dev/r/marketing-headers-simple-with-actions.json
+
+Copy to clipboard
+
+2
+Pulse — any Gin app
+
+Observability as an ordinary Go package. Mount the middleware and you get request tracing, DB query timings and a dashboard, with no other part of Grit involved.
+
+go get github.com/MUKE-coder/pulse
+
+// in your existing router setup
+
+r.Use(pulse.Middleware())
+
+pulse.MountUI(r, "/pulse/ui")
+
+Copy to clipboard
+
+3
+Sentinel — any Gin app
+
+Rate limiting and WAF rules, same deal. Both of these are the parts of Grit most often wanted on their own, and both were built as standalone packages first.
+
+go get github.com/MUKE-coder/sentinel
+
+r.Use(sentinel.Guard(sentinel.Default()))
+
+Copy to clipboard
+
+4
+GORM Studio — any GORM app
+
+A visual browser for your existing models. Point it at the same *gorm.DB you already have.
+
+go get github.com/MUKE-coder/gorm-studio
+
+studio.Mount(r, db, "/studio")
+
+Copy to clipboard
+
+Adding a Grit API beside what you have
+
+If the goal is a new service rather than a rewrite, generate an API-only project into a subdirectory of the existing repo. It gets its own go.mod, its own Dockerfile and its own deploy, and it talks to your current system over HTTP like any other service.
+
+# From the root of your existing repo:
+
+mkdir services/reporting && cd services/reporting
+
+grit new . --api --here
+
+# Then generate against it as normal:
+
+grit generate resource Report --fields "title:string,period:string,total:float"
+
+Copy to clipboard
+
+This is the honest brownfield path: strangle rather than convert. New surface area gets Grit's generators, the old system keeps working, and nothing has to be migrated on a deadline.
+
+--here refuses to scaffold into a non-empty directory unless you also pass --force. That guard exists because the alternative is writing forty files over the top of someone's repository. If you pass --force, commit first.
+
+Borrowing the generated code
+
+Underrated and completely legitimate: scaffold a throwaway project, generate the resource you were about to hand-write, and read it. The output is ordinary Gin and GORM with no framework runtime — handler, service, model, migration, Zod schema, React Query hooks. Copy the parts you want.
+
+cd /tmp
+
+grit new scratch --api
+
+cd scratch
+
+grit generate resource Invoice --fields "customer:belongs_to:Customer,total:float,status:select:draft=Draft|sent=Sent|paid=Paid"
+
+# Now read internal/{models,services,handlers}/invoice.go and take what is useful.
+
+Copy to clipboard
+
+MIT licensed, and it is your code the moment it is generated. There is no attribution requirement and nothing to remove later.
+
+What is genuinely not possible
+
+Pointing the admin panel at an existing database schema. Resource definitions are generated from Grit field types, not reflected from tables — you would be hand-writing the definitions anyway.
+
+Running `grit generate resource` inside a project Grit did not scaffold. The injection markers it needs are not there, and it will not invent them.
+
+Migrating an Express, Laravel or Django app. The generators emit Go. There is no path that does not involve rewriting the backend.
+
+Deciding
+
+Want the admin panel and CRUD generation? That needs a Grit-scaffolded project. Add one as a new service rather than converting.
+
+Want observability, rate limiting or a DB browser? Those are standalone packages. Ten minutes, no restructuring.
+
+Want the UI blocks? They work in any React project already.
+
+Quick startGovernance & risk

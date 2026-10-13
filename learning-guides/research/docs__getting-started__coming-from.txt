@@ -1,0 +1,215 @@
+Getting Started
+Coming from Laravel, Django, or Next.js
+
+You already think in models, migrations, seeders, an admin panel, and a CLI that scaffolds everything. Grit works the same way — a Go backend and a React frontend, driven by one grit command. Here's the translation so you feel at home in minutes.
+
+Same conceptSame workflow
+The concepts you already use map one-to-one onto Grit's Go + React workflow
+
+Command cheat sheet
+
+Your muscle memory maps almost one-to-one. The big difference: Grit's generate resource does in one command what Laravel splits across make:model, make:controller, make:migration, and a Filament resource.
+
+TaskLaravelDjangoGrit
+
+Create a projectlaravel new blogdjango-admin startprojectgrit new blog
+
+Model + CRUD + APImake:model -mcrstartapp + models.pygrit generate resource
+
+Run migrationsartisan migratemanage.py migrategrit migrate
+
+Seed the databaseartisan db:seedloaddata (fixtures)grit seed
+
+Run the dev serverartisan servemanage.py runservergrit start
+
+Browse the DBartisan tinkermanage.py shell/studio (GORM Studio)
+
+Admin panelFilamentdjango.contrib.admingenerated per resource
+
+The whole workflow, in grit
+
+Like artisan or manage.py, the Grit CLI is the only interface you need — you never cd into a sub-folder or run raw go/pnpm to work on your app.
+
+Terminal
+Copy to clipboard
+
+$grit new blog                 # scaffold the project
+
+$cd blog
+
+$docker compose up -d          # start Postgres, Redis, MinIO, Mailhog
+
+$pnpm install                  # frontend deps (one-time)
+
+$grit generate resource Post --fields "title:string,body:text,published:bool"
+
+$grit migrate                  # create the tables
+
+$grit seed                     # (optional) sample data
+
+$grit start                    # run the API + web + admin together
+
+Concepts that translate
+
+Resource
+
+One declaration → model, migration, CRUD API, validation, admin page, and typed hooks. Laravel’s make:model -mcr + a Filament resource + your API + your TS client, in a single command.
+
+GORM
+
+The ORM — the Eloquent / Django-ORM of the Go world. Models are Go structs with tags instead of PHP/Python classes.
+
+grit migrate
+
+Explicit, like artisan/manage.py migrate. Uses GORM AutoMigrate (adds tables & columns); there are no Laravel-style down-migrations — reset in dev with grit migrate --fresh.
+
+Shared types
+
+Go struct → TypeScript types + Zod, kept in sync by grit sync. There is no Laravel/Django equivalent — your frontend is typed against your backend for free, so you never hand-write an API client.
+
+The admin panel
+
+Filament-style and resource-driven, but it is generated code you own — not a black box. Style it, override it, or ignore it.
+
+Supported databases
+
+Grit talks to your database through GORM, so the supported engines are PostgreSQL (production) and SQLite (dev, desktop, and tests). The Go API builds its connection string from the POSTGRES_* environment variables, or you can hand it a single DATABASE_URL and it will use that instead. Desktop apps default to a local SQLite file so they run with zero infrastructure.
+
+# Option A — the API assembles the DSN from these
+
+POSTGRES_HOST=localhost
+
+POSTGRES_PORT=5432
+
+POSTGRES_USER=grit
+
+POSTGRES_PASSWORD=grit
+
+POSTGRES_DB=blog
+
+# Option B — one URL wins over the POSTGRES_* vars
+
+DATABASE_URL=postgres://grit:grit@localhost:5432/blog
+
+DATABASE_URL=sqlite:./app.db        # local file (desktop default)
+
+DATABASE_URL=sqlite::memory:        # ephemeral, used by tests
+
+Copy to clipboard
+
+Docker (what it runs, and why)
+
+docker compose up -d spins up the infrastructure your app talks to — not your app. Think Laravel Sail: one command gives you a local Postgres, Redis, MinIO and Mailhog. You still run the app itself with grit start.
+
+ServiceWhat it is
+
+postgresYour primary database in dev.
+
+redisCache and background-job queue (asynq).
+
+minioS3-compatible object storage for uploads.
+
+mailhogCatches outgoing email so you can preview it locally.
+
+Docker is optional. Point the same env vars at hosted services — Neon or Supabase for Postgres, Upstash for Redis, Cloudflare R2 for storage — and you can develop and deploy completely Docker-free.
+
+Architecture: MVC vs Grit
+
+Laravel and Django are MVC — Model, View, Controller in one app. Grit keeps the same responsibilities but splits them cleanly: on the backend a thin Gin handler receives the request and calls a service that owns the business logic, which in turn works with GORM models. The “view” is a separate React frontend, fed by typed hooks generated from those same models.
+
+Laravel / DjangoGrit equivalent
+
+ModelGORM model (Go struct with tags)
+
+ControllerHandler (thin Gin handler)
+
+Fat controllers / business logicService layer
+
+Blade / template / ViewReact frontend + shared generated types
+
+RouteGin route + grit:routes markers
+
+Monorepos
+
+The default Grit modes (triple, double, and mobile) scaffold a Turborepo monorepo — one repo holding every part of your product, with the Go→TypeScript types shared through a single package.
+
+PathWhat it holds
+
+apps/apiThe Go backend (Gin + GORM).
+
+apps/webThe Next.js user-facing frontend.
+
+apps/adminThe generated admin panel.
+
+packages/sharedThe Go→TS types & Zod schemas that keep everything in sync.
+
+The single and api-only modes are flat instead of a monorepo. Either way it's one repo, shared types, and a single grit start.
+
+Prisma vs GORM
+
+Coming from a Node/Prisma world, the mental model carries over — only the tooling changes. Grit's ORM is GORM (Go).
+
+PrismaGrit / GORM
+
+schema.prisma DSLGo structs with gorm/json tags
+
+prisma migrategrit migrate (GORM AutoMigrate)
+
+Generated Prisma Client typesgrit sync → TypeScript from your Go structs
+
+So the end-to-end type-safety you loved from Prisma Client is still there — it just flows from your Go models out to the frontend instead of from a schema file.
+
+GORM Studio
+
+Grit ships a visual database browser — the equivalent of Prisma Studio, Adminer, or Django admin's data view. It's served by the Go API at http://localhost:8080/studio, and lets you browse and edit rows directly while developing, no SQL required.
+
+Where to go next
+
+Models & Database
+
+GORM structs, tags, relations — your Eloquent/Django models
+
+Handlers
+
+Thin Gin handlers — the controllers of a Grit API
+
+Services
+
+Where business logic lives, called by handlers
+
+Migrations
+
+grit migrate, AutoMigrate, and --fresh in dev
+
+Architecture Overview
+
+How the handler → service → model split fits together
+
+Database & GORM Studio
+
+Connections, DSNs, and the visual row browser
+
+The one real mindset shiftIn a Laravel/Django + Next.js setup you maintain two codebases and hand-write the API client between them. In Grit the Go backend and React frontend are one project with shared, generated types — change a Go struct, run grit sync, and the frontend knows. That single flow is the thing worth unlearning your old habits for.
+
+What Grit does differentlyIt's Go, not PHP/Python — a compiled, single-binary backend. Migrations use GORM AutoMigrate (no down-migrations; use grit migrate --fresh in dev). And the frontend is React (Next.js or Vite), not Blade/Livewire or Django templates. If you know Go and can read React/TypeScript, everything else is familiar.
+
+Quick StartBuild your first app
+
+Frequently asked questions
+
+Do I have to learn Go?
+Enough to read and edit structs, handlers, and services — but grit generate resource writes the boilerplate for you. If you know one C-family language you'll be productive fast. See the Go for Grit Developers primer.
+Can I use MySQL?
+Yes, since v3.146.0. Grit supports PostgreSQL (the default), MySQL 8+ / MariaDB, and SQLite (dev, desktop, tests). Point DATABASE_URL at mysql://user:pass@tcp(host:3306)/db and everything else is unchanged. See Database for the DSN format.
+Is there an Eloquent / Prisma-style query builder?
+Yes — that's GORM. You get a chainable API like db.Where("published = ?", true).Find(&posts), plus associations, preloading, and scopes. It's the Go equivalent of Eloquent or the Prisma Client.
+Where do migrations live?
+Grit uses GORM AutoMigrate driven by your models, run with grit migrate. There are no hand-written up/down migration files like Laravel or Django — in dev, reset with grit migrate --fresh. See Migrations.
+Can I keep my existing Postgres database?
+Yes. Point DATABASE_URL (or the POSTGRES_* vars) at your existing database and skip the Docker Postgres. AutoMigrate adds new tables and columns without dropping your data.
+
+Something wrong, unclear, or missing on this page?
+
+Open an issue: your feedback shapes Grit, and we fix docs fast.
+
+Raise an issue on GitHub

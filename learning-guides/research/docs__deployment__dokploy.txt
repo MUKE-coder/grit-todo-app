@@ -1,0 +1,251 @@
+All deployment targets
+Self-hosted platform
+Deploy to Dokploy
+
+A Heroku-like panel on your own server. Grit’s own sites run on it.
+
+From
+
+Cost of the VPS (~$5)
+
+Ops effort
+
+Medium
+
+Managed Postgres
+
+Persistent disk
+
+Best for
+
+Running several apps on one box with a UI, automatic TLS and Git deploys: without paying per service.
+
+Not for
+
+Anyone who does not want to own an operating system. You are the one patching it.
+
+Quick setup
+
+1
+Install on a fresh VPS
+
+One command on a clean Ubuntu box. Give it 2 GB of RAM minimum: Dokploy plus a Go API plus Postgres will not fit comfortably in 1 GB.
+
+curl -sSL https://dokploy.com/install.sh | sh
+
+Copy to clipboard
+
+2
+Create the application
+
+Point it at your repository and set the build context to the API directory. In a monorepo, set the watch path too, or every commit to the frontend rebuilds the backend.
+
+Build type:           Dockerfile
+
+Docker file:          apps/api/Dockerfile
+
+Docker context path:  apps/api
+
+Watch paths:          apps/api/**
+
+Copy to clipboard
+
+3
+Know which variables are build-time
+
+Anything read while the frontend compiles (NEXT_PUBLIC_*, and anything baked into prerendered HTML) must be a Build Argument. Set only at runtime, it is simply absent from the built output, and nothing warns you.
+
+Build arguments:  NEXT_PUBLIC_API_URL
+
+Environment:      DATABASE_URL, REDIS_URL, JWT_SECRET
+
+Copy to clipboard
+
+4
+Or deploy the whole stack as Compose
+
+The steps above deploy the API as a single Dockerfile application. To bring up API, web, Postgres and Redis together, add a Compose service instead and point it at the production compose file. Choose Compose rather than Stack: Stack targets Docker Swarm and does not support the build key, and three of the services build from a Dockerfile.
+
+Add Service:    Compose
+
+Provider:       GitHub -> your repository
+
+Compose Path:   ./docker-compose.prod.yml
+
+Compose Type:   docker-compose
+
+Copy to clipboard
+
+5
+Give the containers their environment
+
+Dokploy writes dashboard variables into a .env beside the compose file, and does not inject them into containers. That file only reaches a container if the compose file asks for it, so either keep the ${VAR} substitution in every environment block or add env_file to each service. Skipping this is why a stack boots with an empty DATABASE_URL despite the dashboard being full.
+
+services:
+
+api:
+
+env_file:
+
+- .env        # or keep ${VAR} in the environment block
+
+environment:
+
+DATABASE_URL: ${DATABASE_URL}
+
+Copy to clipboard
+
+6
+Attach domains per service
+
+On a Compose deployment the Domains tab asks which service a domain belongs to, so web and api each get their own. Dokploy generates the Traefik labels; you do not write them. Preview Compose shows exactly what it will inject before you deploy, which is worth reading once.
+
+7
+Add the domain and TLS
+
+Dokploy provisions TLS through Traefik. If Cloudflare sits in front with the orange cloud on, set SSL/TLS to Full (strict): Flexible produces a redirect loop that looks like an application bug.
+
+What catches people out
+
+Postgres and Redis run as containers you own. Backups, upgrades and disk pressure are yours: see the backup page.
+
+The server is a single point of failure. Fine for internal tools, a real decision for anything customer-facing.
+
+Dokploy updates itself in place. Snapshot the volume before a major upgrade.
+
+Remove explicit container_name values from the compose file. Dokploy suffixes names so two projects can share a server, and an explicit container_name overrides that, which means a staging copy of the same stack on the same box collides with production.
+
+Keep using ${VAR} substitution in the environment blocks. Dashboard variables are written to a .env beside the compose file, so they reach a running container through Compose substitution rather than being injected directly.
+
+Auto-deploy re-clones the repository on every deploy, which wipes the working directory. Anything written there at runtime, uploads included, is gone on the next push. Use a named volume or Dokploy File Mounts, never a path inside the repo.
+
+A custom deploy command replaces the default rather than adding to it. The default is docker compose -p <name> -f <path> up -d --build --remove-orphans, so anything you drop from it stops happening.
+
+Full walkthrough
+Deploying Sentex: VPS + Dokploy
+
+The example application below is called sentex and its domains are on gritcms.com. Substitute your own project name and hostnames as you go — every other detail, including the service layout and the Compose translation, applies unchanged to any Grit project.
+
+Your docker-compose.prod.yml is already written for Dokploy (see its header comments), so this is the least amount of translation of the four — mostly server setup, DNS, and pasting environment variables.
+
+1.1 Provision the VPS
+
+1
+Spin up a VPS (2 vCPU / 4 GB RAM minimum for four app containers + Postgres + Redis; more if traffic is expected). Ubuntu 22.04/24.04 is the best-supported OS for Dokploy’s install script.
+
+2
+Point your registrar/DNS provider’s records at the VPS’s public IP — same three hosts as before:
+
+sentex.gritcms.com          → <VPS public IP>
+
+admin.sentex.gritcms.com    → <VPS public IP>
+
+api.sentex.gritcms.com      → <VPS public IP>
+
+Copy to clipboard
+
+3
+These stay A records (not CNAMEs) because Dokploy’s Traefik terminates TLS directly on your server’s IP — exactly what the Compose file’s header comments describe.
+
+4
+SSH into the server as root (or a user with sudo).
+
+1.2 Install Dokploy
+
+1
+Run the official installer:
+
+curl -sSL https://dokploy.com/install.sh | sh
+
+Copy to clipboard
+
+2
+Wait for it to finish — it installs Docker if missing, starts Dokploy’s own containers, and creates the dokploy-network Docker network that your Compose file’s networks.dokploy-network.external: true expects.
+
+3
+Open http://<VPS public IP>:3000 in a browser and create your admin account on first load.
+
+4
+(Recommended) Under Settings → Server, point a domain at the Dokploy dashboard itself and enable HTTPS for it, so you’re not managing infrastructure over plain HTTP long-term. This is separate from your three app domains.
+
+1.3 Connect GitHub
+
+1
+In Dokploy, go to Settings → Git Providers → GitHub.
+
+2
+Follow the prompts to install the Dokploy GitHub App on your account/org and grant it access to the sentex repository. (SSH deploy keys are the alternative if you’d rather not install a GitHub App — see Dokploy’s Providers docs for that flow.)
+
+1.4 Create the project and Compose application
+
+1
+In the Dokploy dashboard, click Create Project, name it sentex.
+
+2
+Inside the project, click Create Service → Compose.
+
+3
+Under Source, choose GitHub, select the sentex repository and the branch you’re deploying (e.g. main).
+
+4
+Set Compose Path to:
+
+docker-compose.prod.yml
+
+Copy to clipboard
+
+5
+Leave the network settings alone — since your file already declares networks: dokploy-network: external: true plus its own internal sentex bridge network, Dokploy will attach correctly without any extra configuration.
+
+1.5 Set environment variables
+
+1
+Go to the Environment tab of the Compose service.
+
+2
+Paste in the full contents of your .env.production file (one KEY=VALUE per line) — Dokploy writes this to a .env file next to your compose file on the server and uses it to interpolate every ${VARIABLE} reference in docker-compose.prod.yml, for both build args (NEXT_PUBLIC_API_URL, THEME, etc.) and runtime environment (POSTGRES_PASSWORD, APP_URL, CORS_ORIGINS, R2 credentials, and so on). This is a direct match for env_file: [.env] already declared for migrate and api in your Compose file.
+
+3
+Double-check WEB_DOMAIN, ADMIN_DOMAIN, API_DOMAIN are set to the exact hosts from step 1.1 — these are baked into the frontend bundles at build time and drive the Traefik Host() rules already written into your Compose file’s labels.
+
+1.6 Deploy
+
+1
+Click Deploy. Dokploy will:
+
+Build migrate, api, admin, web from their Dockerfiles.
+
+Start postgres and redis and wait for their healthchecks.
+
+Run migrate (./migrate && ./seed) to completion — this works unmodified because Dokploy runs a real docker compose up, and plain Docker Compose (unlike Railway) natively understands depends_on: condition: service_completed_successfully and restart: "no". You don’t need any pre-deploy-command workaround here.
+
+Start api, then admin and web once api has started.
+
+2
+Watch the deployment logs in the Dokploy UI. Confirm migrate exits 0 before api starts.
+
+3
+After roughly 10 seconds, Traefik should finish provisioning Let’s Encrypt certificates for the three Host() rules already defined in your Compose labels (sentex-api, sentex-admin, sentex-web routers). No separate "Domains" configuration step is required in the UI, since the labels already declare everything — that’s what the Compose file’s own header comments mean by "routing works" this way.
+
+1.7 Verify
+
+1
+Visit https://api.sentex.gritcms.com/<health endpoint>.
+
+2
+Visit https://admin.sentex.gritcms.com and https://sentex.gritcms.com and confirm no CORS errors in the browser console.
+
+3
+Log in with the seeded demo SACCO credentials to confirm migrate/seed actually ran.
+
+1.8 Ongoing deploys
+
+1
+In the Compose service’s General tab, enable the GitHub webhook ("Auto Deploy" / deploy-on-push) so pushes to your branch redeploy automatically — Dokploy re-clones the repo, re-reads the .env it generated, and reruns docker compose up -d --build.
+
+2
+migrate/seed reruns every deploy; it’s already idempotent per the Compose file’s own comments, so this is safe.
+
+Platform dashboards and CLI flags change faster than these docs. For anything that looks different from what is written here, Dokploy's own documentation is the authority: docs.dokploy.com/
+
+Go-live checklistNext: Coolify

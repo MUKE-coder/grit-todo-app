@@ -1,0 +1,1302 @@
+# Grit
+
+> Grit is a full-stack meta-framework: a Go API (Gin + GORM), a Next.js or TanStack Router frontend, and a generated admin panel, in one monorepo with shared Zod schemas and TypeScript types.
+
+Grit is a code generator, not a runtime library. `grit generate resource Post`
+writes a Go model, a service and a handler, a Zod schema, TypeScript types,
+React Query hooks and an admin page, and injects the wiring into the router and
+the registries. That generated code belongs to the project: read it, edit it,
+delete it. Hand-writing those files instead of running the command produces
+something that compiles and is missing the injections that make it reachable.
+
+So the loop is: generate, then edit. A scaffolded project already has
+authentication, roles and permissions, file storage, email, background jobs,
+caching, audit logging, an admin panel and an OpenAPI reference wired together
+before a line is written.
+
+Current CLI version: 3.398.0. Source: https://github.com/MUKE-coder/grit
+
+## Read these first
+
+- [The full text](https://gritframework.dev/llms-full.txt): this index, the working guide an agent should follow, and the complete CLI reference, as one file.
+- [Agent skill](https://gritframework.dev/skill.md): the same working guide as a skill file, which `grit init` also writes into a project.
+- [Stack selector](https://gritframework.dev/docs/stack-selector): which architecture to scaffold, with the exact command for each.
+
+## Start here
+
+- [Introduction](https://gritframework.dev/docs): Get started with Grit, the full-stack meta-framework that combines Go (Gin + GORM) with React (Next.js) and a Filament-like admin panel.
+- [Stack Selector: Pick the Right Grit Combo](https://gritframework.dev/docs/stack-selector): Eleven Grit architecture combos with use cases, exact commands, trade-offs, and a capability matrix. Helps humans (and AI assistants) pick the right scaffold for what they're building, web portal, offline desktop, multi-platform, API only, and everything in between.
+- [Start here](https://gritframework.dev/docs/start): The ordered path from nothing to deployed: create a project, generate a resource, model relationships, secure it, and ship it. About ninety minutes.
+- [Systems: How Grit Is Built](https://gritframework.dev/docs/systems): System design pages for every subsystem in Grit. Problem statement, functional and non-functional requirements, capacity estimation, high and low level design, data model, API surface, scaling and bottlenecks, one page per system.
+- [Upgrading a project](https://gritframework.dev/docs/upgrades): grit upgrade brings an existing project up to the current templates without overwriting your edits: the manifest that knows which files are still Grit's, the 53 repairs that rewrite the files you share with it, and what travels on every upgrade.
+- [Versioning & breaking changes](https://gritframework.dev/docs/versioning): What Grit version numbers mean, what can change in a minor, and why upgrading the CLI cannot break a running application.
+
+## Getting started
+
+- [CLI Cheatsheet](https://gritframework.dev/docs/getting-started/cli-cheatsheet): Complete Grit CLI reference: every command, flag, and field type. Quick-copy recipes for scaffolding, code generation, migrations, seeding, and more.
+- [Coming from Laravel, Django, or Next.js](https://gritframework.dev/docs/getting-started/coming-from): A translation guide for Laravel, Django, and Next.js developers: how models, migrations, seeders, the admin panel, and CLI commands map to Grit, and the one real mindset shift (shared Go↔TypeScript types).
+- [Configuration](https://gritframework.dev/docs/getting-started/configuration): Configure your Grit project with environment variables, database connections, JWT secrets, Redis, S3 storage, and more.
+- [Create a project](https://gritframework.dev/docs/getting-started/create-a-project): Scaffold and run your first Grit app. Install the CLI, then pick what you are building (API, Mobile (Expo), Desktop (Wails), or the full web + admin + API stack) with a complete copy-pasteable grit command sequence for each.
+- [Using Grit with an existing project](https://gritframework.dev/docs/getting-started/existing-projects): Grit scaffolds new projects rather than converting old ones, but Pulse, Sentinel, GORM Studio and the UI blocks all work standalone. The honest brownfield options.
+- [Installation](https://gritframework.dev/docs/getting-started/installation): Install Grit CLI and set up your development environment. Requires Go 1.21+, Node.js 18+, pnpm, and Docker.
+- [Performance & Benchmarks](https://gritframework.dev/docs/getting-started/performance): Why Grit is fast (compiled Go binary, gzip, connection pooling, Redis cache, presigned uploads, async jobs, ISR, Turbo), the full batteries-included list you get out of the box (auth, storage, email, jobs, cron, AI, Sentinel, Pulse, feature flags, webhooks, realtime), and an honest capability comparison against Laravel, Django, Next.js, Rails, and T3: including when not to use Grit.
+- [Philosophy](https://gritframework.dev/docs/getting-started/philosophy): Why Grit exists, what it borrows from Laravel, Rails and Django, and what each of its decisions costs you: including when Go, React, or Grit itself is the wrong answer.
+- [Prerequisites](https://gritframework.dev/docs/getting-started/prerequisites): What you need before building with Grit: Go, Next.js & React, Docker, and a Go Playground to experiment in. Short primers for each, or skip straight to creating a project.
+- [Project Structure](https://gritframework.dev/docs/getting-started/project-structure): Understand the Grit monorepo structure: apps/api (Go), apps/web (Next.js), apps/admin (Next.js), and packages/shared.
+- [Quick Start](https://gritframework.dev/docs/getting-started/quick-start): Create your first Grit project in under 5 minutes. Scaffold a full-stack app with Go API, Next.js frontend, and admin panel.
+- [Troubleshooting](https://gritframework.dev/docs/getting-started/troubleshooting): Common issues and solutions when working with Grit projects, including Docker, database, and build errors.
+
+## Prerequisites (Go, Next.js, Docker)
+
+- [Docker for Grit Developers](https://gritframework.dev/docs/prerequisites/docker): Learn Docker fundamentals for running Grit infrastructure: containers, images, docker-compose, PostgreSQL, Redis, and MinIO.
+- [Go for Grit Developers](https://gritframework.dev/docs/prerequisites/golang): Learn Go fundamentals for building Grit backends: variables, structs, functions, error handling, interfaces, pointers, goroutines, Gin routing, GORM, middleware, and JWT authentication.
+- [Next.js for Grit Developers](https://gritframework.dev/docs/prerequisites/nextjs): Learn Next.js fundamentals for building Grit frontends: App Router, server/client components, data fetching, routing, and React Query.
+
+## Concepts
+
+- [Architecture](https://gritframework.dev/docs/concepts/architecture): Understand Grit architecture: monorepo layout, Go API with handler-service-model pattern, Next.js frontend, shared types, and code generation.
+- [Architecture Modes](https://gritframework.dev/docs/concepts/architecture-modes): Grit supports 5 architecture modes: triple (web + admin + API), double (web + API), single (embedded SPA), API only, and mobile. Choose the one that fits your project.
+- [API Only Architecture: Headless Go Backend](https://gritframework.dev/docs/concepts/architecture-modes/api-only): API-only architecture in Grit: pure Go backend with no frontend. All batteries included (auth, storage, email, jobs, AI). Perfect for mobile backends and microservices.
+- [Double Architecture: Web + API](https://gritframework.dev/docs/concepts/architecture-modes/double): Streamlined Turborepo monorepo with 2 apps (web + API). Admin features live as role-protected routes in the web app. Best for blogs, portfolios, and simpler SaaS applications.
+- [Mobile Architecture: API + Expo React Native](https://gritframework.dev/docs/concepts/architecture-modes/mobile): Mobile architecture in Grit: Go API paired with Expo React Native in a Turborepo monorepo. SecureStore for tokens, Expo Router for navigation, shared types between backend and mobile.
+- [Multi-Client: API + Mobile + Desktop](https://gritframework.dev/docs/concepts/architecture-modes/multi-client): Combine --desktop with other flags to scaffold a shared-API multi-client SaaS. One Go backend serving Expo mobile and Wails desktop, with optional web and admin. The Linear / Notion / Slack pattern.
+- [Single Architecture: One Binary](https://gritframework.dev/docs/concepts/architecture-modes/single): Single architecture in Grit: one Go binary serves both API and embedded React frontend via go:embed. Flat project structure, no monorepo, simplest deployment.
+- [Triple Architecture: Web + Admin + API](https://gritframework.dev/docs/concepts/architecture-modes/triple): The default and most feature-rich Grit architecture. Turborepo monorepo with 3 apps (web, admin, API) sharing types via packages/shared. Best for SaaS, marketplaces, and content platforms.
+- [CLI Commands](https://gritframework.dev/docs/concepts/cli): Complete reference for Grit CLI commands: grit new, grit generate resource, grit sync, grit add role, grit start, and grit remove.
+- [Code Generation](https://gritframework.dev/docs/concepts/code-generation): How Grit code generation works: generating full-stack resources with models, handlers, services, Zod schemas, TypeScript types, hooks, and admin pages.
+- [Field Types Reference](https://gritframework.dev/docs/concepts/field-types): Every field type for grit generate resource --fields, with its Go type, TypeScript type, Zod schema, and default admin form control and table column. The single source of truth for field mapping.
+- [Generated File Map](https://gritframework.dev/docs/concepts/generated-files): The definitive index of every file grit generate resource writes across the API, shared package, web, admin, mobile, and desktop apps: including which files are yours to edit versus regenerated by grit sync.
+- [Money](https://gritframework.dev/docs/concepts/money): The money field type: integer minor units plus an ISO 4217 currency, stored as two columns. Why float loses cents, how zero-decimal currencies like UGX and JPY are handled, the JSON shape, the admin form and table column, and how to migrate an existing float price column.
+- [Naming Conventions](https://gritframework.dev/docs/concepts/naming-conventions): Naming conventions in Grit: Go files (snake_case), TypeScript files (kebab-case), React components (PascalCase), API routes (plural lowercase).
+- [Offline Sync](https://gritframework.dev/docs/concepts/offline-sync): Local mirror, outbox and version-checked conflict handling shared by the web, admin, mobile and desktop clients. Installed with grit add offline.
+- [Performance](https://gritframework.dev/docs/concepts/performance): All performance optimisations built into every Grit project: Gzip, Request ID, connection pool tuning, Cache-Control, presigned uploads, background jobs, Redis caching, Server Components, ISR, React Query, next/image, and Turborepo.
+- [Style Variants](https://gritframework.dev/docs/concepts/styles): Choose from 4 admin panel style variants in Grit: default, modern, minimal, and glass themes.
+- [Type System](https://gritframework.dev/docs/concepts/type-system): How Grit shares types between Go and TypeScript: Go structs to Zod schemas to TypeScript interfaces, keeping frontend and backend in sync.
+
+## The CLI
+
+- [Command Explorer](https://gritframework.dev/docs/cli): Every Grit CLI command with a simulated run and the exact files it creates, modifies or deletes. Searchable by command, use case or file path.
+
+## Backend (Go, Gin, GORM)
+
+- [Account Security](https://gritframework.dev/docs/backend/account-security): The account security page, and the recovery-contact flow behind it: hashed single-use codes, a password required on every write, and a masked address even to the person reading it.
+- [API Documentation](https://gritframework.dev/docs/backend/api-docs): Auto-generated API documentation in Grit with gin-docs: zero-annotation OpenAPI spec, interactive Scalar/Swagger UI, Postman/Insomnia export, and GORM model schemas.
+- [Append-only records](https://gritframework.dev/docs/backend/append-only): grit generate resource --append-only: rows created and read, never changed or deleted. Read and create routes, a GORM guard, and a database trigger that stops raw SQL too.
+- [Authentication](https://gritframework.dev/docs/backend/authentication): Implement JWT authentication in Grit: login, register, token refresh, password hashing with bcrypt, and protected routes.
+- [Error codes](https://gritframework.dev/docs/backend/errors): Every error a Grit API returns, with the status it always carries and what a client should do about it. Generated from one catalogue, which also generates the typed codes in Go and the union type in TypeScript.
+- [Feature Flags & A/B Testing](https://gritframework.dev/docs/backend/feature-flags): Ship behind flags in Grit: the FeatureFlag model, an in-memory Engine with IsEnabled/Variant, percentage rollouts, allow/block lists, date windows, sticky per-user bucketing, A/B variants, the exposure log, and admin CRUD.
+- [Handlers](https://gritframework.dev/docs/backend/handlers): Write Gin HTTP handlers in Grit: request parsing, validation with binding tags, JSON responses, pagination, and error handling.
+- [Health checks](https://gritframework.dev/docs/backend/health): GET /api/health in four states rather than a boolean: ok, degraded, off and unknown, so a dependency nobody configured stops reading as one that is down. How each component is probed, what the response carries, and how to register your own.
+- [Invoices & Line Items](https://gritframework.dev/docs/backend/invoices): Generate a parent resource with inline line items, create the parent and child separately, and auto-number records with grit generate sequence.
+- [Middleware](https://gritframework.dev/docs/backend/middleware): Built-in Grit middleware: authentication, CORS, logging, rate limiting, cache, and how to write custom Gin middleware.
+- [Migrations](https://gritframework.dev/docs/backend/migrations): Database migrations in Grit with GORM AutoMigrate: adding fields, creating tables, and managing schema changes.
+- [Models](https://gritframework.dev/docs/backend/models): Define GORM models in Grit: struct tags, field types, relationships (belongs_to, many_to_many), hooks, and soft deletes.
+- [Social Login (OAuth2)](https://gritframework.dev/docs/backend/oauth): Set up Google and GitHub OAuth2 social login in Grit: provider configuration, callback URLs, account linking, and production deployment.
+- [The transactional outbox](https://gritframework.dev/docs/backend/outbox): Enqueue a message in the same transaction as the write it is about, and let a relay deliver it: keys for idempotency, retries with backoff, parked failures, and a doctor check for a topic no relay covers.
+- [Passkeys](https://gritframework.dev/docs/backend/passkeys): WebAuthn sign-in with a fingerprint, face or device PIN. Pure Go, usernameless, with the ceremony stored server-side and a management card in the admin.
+- [The public surface](https://gritframework.dev/docs/backend/public-api): grit generate resource --public: read-only endpoints behind an API key, an allowlist response, one scope deciding what is live, and the typed read layer in apps/web.
+- [Pulse (Observability)](https://gritframework.dev/docs/backend/pulse): Self-hosted observability for Grit APIs with Pulse: request tracing, database monitoring, runtime metrics, error tracking, health checks, alerting, and Prometheus export.
+- [RBAC](https://gritframework.dev/docs/backend/rbac): Role-based access control in Grit: ADMIN, EDITOR, USER roles, RequireRole middleware, role-restricted routes, and grit add role.
+- [Realtime (WebSockets)](https://gritframework.dev/docs/backend/realtime): Push live updates to clients in Grit with the realtime Hub: the GET /api/ws WebSocket endpoint, JWT handshake auth, SendToUser vs Broadcast, multi-device fan-out, the JSON event envelope, and a worked notify-on-job-finish example.
+- [The Request Lifecycle: What Runs, In What Order](https://gritframework.dev/docs/backend/request-lifecycle): Every middleware a request passes through in a Grit API, in the exact order they execute: maintenance mode, security headers, body limit, request ID, logging, panic recovery, CORS, gzip, CSRF, idempotency, then Sentinel's WAF and Pulse's tracing, then per-group auth, role checks and the activity logger. Explains where to hook your own logic, why CSRF only enforces on cookie-authenticated mutations, why order matters for CORS and recovery, and the specific ordering mistakes that cause the CORS/CSP/WAF bugs people actually hit.
+- [API Response Format](https://gritframework.dev/docs/backend/response-format): Standard API response format in Grit: success responses with data/message, paginated lists with meta, and error responses with codes.
+- [Sagas](https://gritframework.dev/docs/backend/sagas): Steps that cross systems and have to either all finish or be undone: each with a Do and an Undo, the run persisted so it resumes after a crash, compensation newest first, and the three rules a step has to follow. Generated by grit generate workflow.
+- [Seeders](https://gritframework.dev/docs/backend/seeders): Seed your Grit database with initial data: admin users, sample records, and the built-in blog example with posts.
+- [Services](https://gritframework.dev/docs/backend/services): The service pattern in Grit: business logic separation, GORM queries, pagination, filtering, and the Services struct.
+- [Product Variants](https://gritframework.dev/docs/backend/variants): The five-table variant schema, why options are shop-wide, why affects_price lives on the option, and why a variant price is resolved rather than stored. Installed with grit add variants.
+- [Webhooks](https://gritframework.dev/docs/backend/webhooks): Receive inbound webhooks in Grit: the universal POST /webhooks/:provider endpoint, built-in Stripe / GitHub / HMAC signature verifiers, event extraction, idempotent dedupe via WebhookEvent, handler dispatch, admin replay, and writing a custom verifier.
+- [Workflows (State Machines)](https://gritframework.dev/docs/backend/workflows): Turn a status select into a process the server enforces: named transitions, per-transition permissions, endpoints that make an illegal jump unrepresentable, and a domain event per action.
+
+## Frontend (Next.js, TanStack Router)
+
+- [React Hooks](https://gritframework.dev/docs/frontend/hooks): Generated React Query hooks in Grit: useList, useGet, useCreate, useUpdate, useDelete for every resource with type safety.
+- [Internationalisation: One Cookie for the API, Web App and Admin](https://gritframework.dev/docs/frontend/i18n): How grit new --i18n and grit add i18n translate a Grit project: the grit_locale cookie the API, web app and admin share, next-intl catalogues in English, French and Swahili, the language switcher, translating the admin through t(key, fallback), your resources’ labels under resources.<slug>, adding a language, and what grit upgrade repairs in projects from before v3.222.0.
+- [Shared Package](https://gritframework.dev/docs/frontend/shared-package): The packages/shared module in Grit: Zod schemas, TypeScript types, API route constants shared between web and admin apps.
+- [UI Components](https://gritframework.dev/docs/frontend/ui-components): Grit UI &ndash; 100 ready-made React components for marketing, SaaS, ecommerce, auth and layout. Install with grit ui add, or npx shadcn add in any React project.
+- [Web App](https://gritframework.dev/docs/frontend/web-app): The Next.js web app in Grit: App Router pages, authentication flow, dashboard layout, API client, and React Query setup.
+
+## Admin panel
+
+- [Custom Pages & Tables](https://gritframework.dev/docs/admin/custom-pages): Replace the Grit admin table, form or whole page with your own components using useResourceController, and keep URL-synced sorting, filters, paging, selection and bulk delete.
+- [DataTable](https://gritframework.dev/docs/admin/datatable): Advanced DataTable in Grit admin: sorting, filtering, search, pagination, column visibility, row selection, and custom cell renderers.
+- [Forms](https://gritframework.dev/docs/admin/forms): FormBuilder in Grit admin: text, number, select, date, toggle, checkbox, radio, textarea, richtext, and relationship fields.
+- [Multi-Step Forms](https://gritframework.dev/docs/admin/multi-step-forms): Multi-step forms in Grit: modal-steps and page-steps variants with step indicators, per-step validation, and progress tracking.
+- [Admin Panel Overview](https://gritframework.dev/docs/admin/overview): Grit admin panel: a Filament-like dashboard with runtime resource definitions, DataTable, FormBuilder, widgets, and dark/light theme.
+- [Relationships & Trees](https://gritframework.dev/docs/admin/relationships): Relationship fields in Grit: belongs_to, many_to_many, inline items, and self-referential hierarchies with --tree. Includes how to render level-2 categories on a level-1 page from a single request.
+- [Resources](https://gritframework.dev/docs/admin/resources): Define admin resources in Grit with defineResource(): columns, filters, sorting, search, forms, and permissions.
+- [Roles & Permissions UI](https://gritframework.dev/docs/admin/roles): The Grit admin permission editor at /system/roles: tri-state CRUD matrix, wildcard-preserving saves, locked built-in roles, and gating your own UI with usePermissions().
+- [Standalone Usage](https://gritframework.dev/docs/admin/standalone-usage): Use Grit components (DataTable, FormBuilder, FormStepper) on any page in web or admin apps without the resource system.
+- [Trash & Deleted Accounts](https://gritframework.dev/docs/admin/trash): The recycle bin at /system/trash and the closed accounts at /system/deleted-accounts: thirty-day retention with a nightly purge, restore and delete-forever, and why an administrator cannot close their own account.
+- [Dashboard Widgets](https://gritframework.dev/docs/admin/widgets): Dashboard widgets in Grit admin: StatsCard, ChartWidget (Recharts), ActivityWidget, and WidgetGrid for building custom dashboards.
+
+## Batteries (cache, jobs, mail, storage, AI)
+
+- [Batteries Included](https://gritframework.dev/docs/batteries): Everything Grit ships out of the box, one card per battery: JWT authentication, RBAC & roles, S3/R2/MinIO file storage, Resend email, background jobs, cron scheduling, Redis caching, AI via the Vercel AI Gateway, the Sentinel WAF, Pulse observability, GORM Studio, feature flags, webhooks, and realtime WebSockets. No add-ons to install, it is all wired into every scaffolded project.
+- [AI Integration](https://gritframework.dev/docs/batteries/ai): AI integration in Grit: Claude and OpenAI support with streaming responses, configurable providers, and an AI handler.
+- [Caching](https://gritframework.dev/docs/batteries/caching): Redis caching in Grit: cache service, cache middleware for API responses, TTL configuration, and cache invalidation.
+- [Cron Jobs](https://gritframework.dev/docs/batteries/cron): Cron scheduling in Grit with asynq: define recurring tasks, cron expressions, admin dashboard for monitoring schedules.
+- [Email](https://gritframework.dev/docs/batteries/email): Send emails in Grit with Resend: welcome, password reset, verification, and notification templates with HTML layouts.
+- [Background Jobs](https://gritframework.dev/docs/batteries/jobs): Background job processing in Grit with asynq and Redis: email jobs, image processing, cleanup workers, and admin monitoring.
+- [Image Optimisation](https://gritframework.dev/docs/batteries/media): A 6 MB phone photo stored as 150 KB with no configuration: resized, re-encoded per image, EXIF oriented then stripped, and a thumbnail alongside. Profiles when a field wants something different.
+- [Security](https://gritframework.dev/docs/batteries/security): Security in Grit with Sentinel: WAF, rate limiting, brute-force protection, anomaly detection, IP geolocation, and threat dashboard.
+- [File Storage](https://gritframework.dev/docs/batteries/storage): S3-compatible file storage in Grit: upload handler, image processing, MinIO for development, Cloudflare R2 or AWS S3 for production.
+
+## Infrastructure
+
+- [Database](https://gritframework.dev/docs/infrastructure/database): Database setup in Grit: PostgreSQL for production, SQLite for development, GORM Studio visual browser, and connection configuration.
+- [Docker](https://gritframework.dev/docs/infrastructure/docker): Docker setup in Grit: docker-compose for PostgreSQL, Redis, MinIO, and Mailhog. Production Dockerfiles for Go API and Next.js apps.
+- [Docker Cheatsheet](https://gritframework.dev/docs/infrastructure/docker-cheatsheet): Quick reference for Docker commands used with Grit: container management, volumes, networking, and troubleshooting.
+
+## Security
+
+- [Security Guide: OWASP Top 10:2025 defences](https://gritframework.dev/docs/security): How Grit defends every category of the OWASP Top 10:2025 by default, broken access control / IDOR via authz.MustOwn, SSRF via the safefetch package, injection via parameterised GORM queries, XSS via React escaping + CSP, auth flaws via Sentinel rate-limiting + JWT algorithm pinning + TOTP, security misconfiguration via the SecurityHeaders middleware, supply-chain via Dependabot + govulncheck, and tamper-evident audit logging.
+- [The audit log: a record you can prove was not edited](https://gritframework.dev/docs/security/audit-log): Every authenticated write a Grit API accepts is recorded, and each entry is hashed together with the one before it: hash = SHA-256(prev_hash || canonical(row)). Editing a row, deleting one or inserting forged history breaks every hash from that point forward, and Verify chain names the first entry that disagrees. Bodies are stored as a SHA-256 digest rather than verbatim, so the log proves which payload was sent without becoming the most sensitive table in the database. Reads are opt-in per resource with --audit-reads, recording which records were returned and how many. A weekly audit:prune job trims old entries and re-anchors the chain so what remains still verifies.
+- [Privacy & Compliance: GDPR Toolkit + Access Reviews](https://gritframework.dev/docs/security/compliance): Two admin-only compliance surfaces every Grit app ships with, and exactly how each gets populated. The GDPR toolkit exports a user's full data bundle and erases a user (hard-deleting child PII, anonymizing the user row) with every erasure written to a tamper-evident, hash-chained deletion journal. Access Reviews snapshot every current role assignment into a point-in-time recertification campaign an admin works item by item, Keep or Revoke, where a revoke deletes the real grant, then signs off. Nothing is scheduled or seeded: both are populated on demand by an admin action.
+- [Defender's Handbook ↔ Grit: Attack-by-Attack Defence Map](https://gritframework.dev/docs/security/defenders-handbook): Walks JB's Defender's Handbook chapter by chapter (nmap recon, Gobuster brute-force, Hydra login spray, SQL injection (UNION / blind / time-based), hash cracking, TOTP seed theft, SIM swap, AitM phishing proxies, MITM / SSL strip, evil-twin Wi-Fi, DDoS) and shows exactly how Grit defends each one by default, with file paths and code. Plus a bonus list of defences Grit ships beyond the handbook: SSRF (safefetch), IDOR (authz.MustOwn), CSRF middleware, HMAC webhook signatures, idempotency, tamper-evident audit log, Sentinel WAF + AuthShield + Anomaly + Geo, Pulse observability, JWT alg pinning, and the k6 6-test suite.
+- [Project audit: grit doctor](https://gritframework.dev/docs/security/doctor): grit doctor audits a Grit project for the mistakes that fail silently: an encrypted field with no FIELD_ENCRYPTION_KEY, a resource nothing scopes to its owner, a method that lost its scoping, the owner accepted from a request body, a table shared across organizations with the multitenant plugin, PII in a plain column, an append-only resource still mounting writes, GORM Studio with no login or a default password, default dashboard credentials and a weak JWT secret, framework libraries behind their security floors, Sentinel counting rate limits per process, and a public allowlist publishing a held-back column. Exits non-zero on errors, so CI can run it.
+- [Enterprise SSO: OpenID Connect Single Sign-On](https://gritframework.dev/docs/security/sso): Let each customer's team sign in with their own identity provider. One OIDC connection per organisation, routed by email domain, configured at runtime in the admin: works with Okta, Entra ID, Auth0, Keycloak, Google Workspace, Ping and OneLogin. Users are provisioned on first login, roles are derived from IdP groups and re-applied on every sign-in, identities are linked by the provider's immutable subject rather than email, and client secrets are encrypted at rest and never returned by the API.
+
+## Governance and compliance
+
+- [Governance & risk](https://gritframework.dev/docs/governance): Who maintains Grit, what happens if they stop, and how to reduce your exposure: written for the person signing off on adoption.
+
+## Mobile (Expo)
+
+- [Building & Publishing](https://gritframework.dev/docs/mobile/building): Ship Grit mobile apps with EAS Build: configure eas.json, build iOS and Android binaries, submit to the App Store and Google Play, and push JavaScript-only OTA updates with EAS Update.
+- [Your First Mobile App](https://gritframework.dev/docs/mobile/first-app): Step-by-step tutorial: build a Notes app with Grit and Expo. Scaffold the project, generate a resource, migrate and seed, then run the generated CRUD screens on your phone with Expo Go.
+- [Getting Started with Mobile](https://gritframework.dev/docs/mobile/getting-started): Prerequisites, scaffolding, and the development workflow for Grit mobile apps with Expo. Covers grit new --mobile, project structure, grit start expo, and the device-vs-emulator API URL matrix.
+- [Offline & Caching](https://gritframework.dev/docs/mobile/offline): How Grit mobile apps behave offline: React Query in-memory caching, SecureStore token persistence, fast-fail networking with token refresh, and how to layer on true offline-first support.
+- [Mobile Resource Generation](https://gritframework.dev/docs/mobile/resource-generation): Deep dive into the six Expo files grit generate resource emits: the typed React Query hook, list/detail/create/edit screens, and the shared form. How belongs_to renders as a picker and file fields as native uploads.
+
+## Desktop (Wails)
+
+- [Desktop App Development](https://gritframework.dev/docs/desktop): Build native desktop applications with Grit and Wails. Scaffold complete Wails projects with Go backend, React frontend, SQLite, authentication, and CRUD.
+- [Desktop Auto-Update + Installers: Binary Swap, NSIS Full + Slim](https://gritframework.dev/docs/desktop/auto-update): Every grit new-desktop project ships with an in-app Wails-bound auto-updater (binary-swap on Windows, POSIX inode swap on Linux/macOS), two Windows installers (full ~150 MB with bundled WebView2 runtime, slim ~22 MB with online bootstrapper), and a one-shot release script that builds and publishes both to a GitHub release. Adapted from JB's production walkthrough.
+- [Building & Distribution](https://gritframework.dev/docs/desktop/building): Compile Grit desktop apps into native executables. Cross-platform builds, NSIS installers, and distribution tips.
+- [Your First Desktop App](https://gritframework.dev/docs/desktop/first-app): Step-by-step tutorial: build a Task Manager desktop app with Grit and Wails. Scaffold, generate resources, browse with GORM Studio, and compile for distribution.
+- [Getting Started with Desktop](https://gritframework.dev/docs/desktop/getting-started): Prerequisites, scaffolding, and development workflow for Grit desktop apps using Wails, Go, and React.
+- [Desktop LLM Reference](https://gritframework.dev/docs/desktop/llm-reference): The complete Grit Desktop reference for AI assistants and LLMs: architecture, Wails bindings, CLI commands, resource generation, field types, code markers, DataTable, FormBuilder, building executables, and the golden rules.
+- [Building an Offline-First Desktop App](https://gritframework.dev/docs/desktop/offline): Use Grit's built-in sync engine to ship desktop apps that work fully offline. Local SQLite mirror, outbox with squash semantics, manual Sync button, field-level conflict resolution, versioned writes, Git workflow applied to your data.
+- [Build a POS App](https://gritframework.dev/docs/desktop/pos-app): Advanced tutorial: build a Point of Sale desktop application with Grit Desktop. Product catalog, sales transactions, receipts, inventory tracking, and daily reports in a single native binary.
+- [20 Desktop Project Ideas](https://gritframework.dev/docs/desktop/project-ideas): Ready-to-build desktop application ideas with Grit and Wails. Each project includes resources, field definitions, and grit generate commands to get started immediately.
+- [Desktop Resource Generation](https://gritframework.dev/docs/desktop/resource-generation): Generate full-stack CRUD resources for desktop apps. Models, services, TanStack Router route files, and 10 automatic code injections.
+
+## Deployment
+
+- [Deployment](https://gritframework.dev/docs/deployment): Where to deploy a Grit app: Railway, Render, Fly.io, Dokploy, Coolify, a plain VPS or Docker Compose, with cost, effort and trade-offs for each.
+- [Test the production build locally](https://gritframework.dev/docs/deployment/build-locally): Reproduce a deployment on your own machine before shipping it. Catches type errors, missing build-time variables and cgo problems in two minutes.
+- [Go-live checklist](https://gritframework.dev/docs/deployment/checklist): Secrets, access, data and operations checks to work through before a Grit app takes real traffic.
+- [Docker address pools: "all predefined address pools have been fully subnetted"](https://gritframework.dev/docs/deployment/docker-networks): Every image builds and the deploy dies at the last step creating a network. Docker hands out bridge subnets from 172.17.0.0/12 in /16 blocks, about sixteen for the whole daemon, and does not return them when a deploy fails or a project is deleted. Grit generates a production stack that declares no network of its own, because Compose's implicit <project>_default gives the same DNS and isolation for one fewer subnet, and pins no container_name so a second copy of the stack can run beside the first. grit upgrade applies both to existing projects. For a host whose pool is already empty, docker-compose.shared-network.yml joins an existing network and asks for no subnet at all. The real fix is docker network prune -f and a default-address-pools entry of size 24 in daemon.json.
+- [Deploy with Dokploy](https://gritframework.dev/docs/deployment/dokploy): Deploy your Grit application with Dokploy: self-hosted PaaS with Docker Compose, auto-SSL, GitHub integration, and a web dashboard on your own VPS.
+- [Environment variables](https://gritframework.dev/docs/deployment/environment): Required and conditional environment variables for a Grit deployment, and the build-time vs runtime distinction that fails silently.
+- [Deploy from GitHub](https://gritframework.dev/docs/deployment/from-github): The production Docker Compose file explained line by line, how to get a Grit project onto GitHub without committing secrets, and how the deployment platforms differ: some run the real Compose engine, others translate your file into their own model, which changes hostnames and drops depends_on ordering.
+- [Running More Than One Instance: Replicas Behind a Load Balancer](https://gritframework.dev/docs/deployment/multiple-instances): What it takes to run several copies of a Grit API behind a load balancer: the same database, Redis, JWT secret and field-encryption key, migrations once per deploy, and no sticky sessions. What is shared between copies (sessions, the cache and idempotency keys, API-key rate limits, realtime events through a Redis backplane, the activity-log chain, jobs, permission changes, SSO connections, and scheduled jobs that run on one copy), and what is still counted per copy.
+- [Deploy to Railway](https://gritframework.dev/docs/deployment/railway): grit deploy --railway links your Railway project, adds Postgres and Redis with --provision, pushes the variables a deploy actually needs, uploads the API from apps/api and generates a URL. Railway's API cannot accept local source, so their CLI does the upload and Grit drives it. Of the hundred-odd entries in a generated .env it sends around sixty: empty placeholders, PORT, and the MinIO, Mailhog and compose-database settings are held back, APP_ENV is forced to production, and with --provision the database URLs become Railway references rather than copies. --dry-run prints the whole plan with values masked.
+- [Deployment](https://gritframework.dev/docs/deployment/vps): Deploy Grit projects: Docker production builds, environment configuration, database setup, and hosting options.
+
+## Testing
+
+- [Performance & Security Testing](https://gritframework.dev/docs/testing): Run k6 load tests (smoke / average-load / stress / spike / soak / breakpoint) and methodology-driven penetration tests against a Grit app. Includes the 5-phase pentest methodology, the attack catalogue, CVSS scoring, and the audit-report structure that justifies a $2k–$10k engagement.
+
+## Scaling
+
+- [Scaling a Grit app, one break at a time](https://gritframework.dev/docs/scaling): Ten stages from one server to sharding, and where a Grit app actually starts. Config from env, one database module, uploads in object storage, a health endpoint, sessions as rows, cron elected to one instance, graceful shutdown, pgbouncer, asynq workers and a transactional outbox all ship on the first commit, which is Stages 1, 3, 4 and 8 done before you have a user. grit scale measures a running deployment (request percentiles, connection use against the ceiling, slowest queries, cache hit rate) and names one thing to do next, which is usually nothing. Read replicas are one environment variable with read-your-own-writes handled by a cookie. cache.Remember is cache-aside with fallback, jittered TTLs and stampede protection. grit doctor does the instances x pool < max_connections arithmetic.
+
+## Stability and upgrades
+
+- [Stability and hardening matrix](https://gritframework.dev/docs/stability): An honest status per subsystem: stable, beta or new, with what Grit guarantees and the test that proves it, what stays your responsibility, and what went wrong once. Covers auth, two-factor and passkeys, RBAC, generated CRUD, owned resources, optimistic locking, encryption at rest, multitenancy, money, import and export, trees, the public API, append-only resources, realtime, durable events, backups, offline sync, workflows, feature flags, desktop and mobile. Plus how Grit is tested (492 CLI tests, 256 tests shipped into each project, 57 live checks on Postgres 15, 16 and 17, 13 grit doctor checks, gosec, govulncheck, Trivy, CodeQL, Scorecard) and what is not covered yet.
+
+## Plugins
+
+- [Plugins](https://gritframework.dev/docs/plugins): Grit plugins: drop-in Go packages for WebSockets, Stripe payments, OAuth, notifications, search, video processing, conferencing, webhooks, i18n, and data export.
+
+## Design system
+
+- [Theme](https://gritframework.dev/docs/design/theme): Grit design system: dark mode default, color palette, typography (Onest + JetBrains Mono), and component styling with Tailwind CSS.
+
+## Tech kits
+
+- [Tech Kits: Starter Kits](https://gritframework.dev/docs/tech-kits): Pick the tech kit that matches the shape of your next app: single Go binary, Web + API monorepo, Triple (Web + Admin + API), Mobile (Expo), Desktop (Wails), or API-only. Each kit ships authentication, audit log, in-app Security + Observability dashboards, and the same code generator.
+- [API Tech Kit: Go backend only](https://gritframework.dev/docs/tech-kits/api): Pure Gin + GORM API. No frontend; bring your own. OpenAPI 3.0 auto-served at /docs. JWT, OAuth, 2FA, jobs, AI, audit log: same batteries as the full kits.
+- [Desktop Tech Kit: Wails + GORM](https://gritframework.dev/docs/tech-kits/desktop): Native desktop binary with Wails v2 + React + Tailwind on the front and Go + GORM (SQLite or Postgres) on the back. Local auth, PDF + Excel export, frameless window, draggable panels.
+- [Double Tech Kit: Web + API monorepo](https://gritframework.dev/docs/tech-kits/double): apps/web (Next.js) + apps/api (Go) in a Turborepo. Shared Zod schemas and TS types in packages/shared. Deploy each app on its own schedule.
+- [Mobile Tech Kit: Expo + API](https://gritframework.dev/docs/tech-kits/mobile): Expo (React Native) frontend on a Grit API. Shared Zod schemas, mobile-friendly auth with refresh tokens in AsyncStorage, EAS Build configuration, OTA-ready.
+- [Single Tech Kit: Go + embedded SPA](https://gritframework.dev/docs/tech-kits/single): Single Go binary with React (Next.js) embedded via go:embed. Smallest possible deploy. JWT auth, OAuth, 2FA, Pulse + Sentinel, code generator, all in one file.
+- [Single + Vite Tech Kit: TanStack Router SPA](https://gritframework.dev/docs/tech-kits/single-vite): Same single-binary shape, but with Vite + TanStack Router instead of Next.js. Sub-second cold starts, smaller bundle, lib/auth.ts with refresh-on-401 baked in.
+- [Triple Tech Kit: Web + Admin + API](https://gritframework.dev/docs/tech-kits/triple): The full SaaS shape. Public marketing site, Filament-style admin panel, Go API: one monorepo. RBAC, invitation flow, audit log, and in-app Security + Observability dashboards pre-wired.
+
+## Tutorials
+
+- [Tutorials](https://gritframework.dev/docs/tutorials): Learn Grit through guided courses. Follow a multi-lesson track for web, desktop, or mobile, or pick a focused 30-minute tutorial on a specific topic: auth, realtime, payments, offline-first, and more.
+- [Build a Blog Tutorial](https://gritframework.dev/docs/tutorials/blog): Step-by-step tutorial: build a full-stack blog with Grit including Go API, Next.js pages, admin panel, and SEO-friendly URLs.
+- [Your First App](https://gritframework.dev/docs/tutorials/contact-app): Step-by-step tutorial: build a contact manager with Grit. Create Group and Contact resources, explore the admin panel, GORM Studio, and API docs.
+- [Contacts: API only](https://gritframework.dev/docs/tutorials/contacts/api): Build the contacts API alone: Go, auth, migrations and generated reference docs, with no frontend at all.
+- [Contacts: desktop app](https://gritframework.dev/docs/tutorials/contacts/desktop): Build the contacts app with a Wails desktop client beside the web apps, and ship it as an installable binary.
+- [Contacts: everything](https://gritframework.dev/docs/tutorials/contacts/full): Build the contacts app with every client Grit scaffolds: web, admin, desktop, mobile and docs, against one API.
+- [Contacts: mobile app](https://gritframework.dev/docs/tutorials/contacts/mobile): Build the contacts app with an Expo client sharing the API and types, from grit new to the app stores.
+- [Contacts: one binary](https://gritframework.dev/docs/tutorials/contacts/single): Build the contacts app as a single executable with the frontend embedded, and deploy it by copying one file.
+- [Contacts: web app](https://gritframework.dev/docs/tutorials/contacts/web): Build the contacts app as a Next.js site, an admin panel and a Go API, from grit new to a deployed server.
+- [Custom API Endpoints](https://gritframework.dev/docs/tutorials/custom-endpoints): Build a shop with three resources, see every endpoint Grit generates for free, then write your own public and protected endpoints. Handlers and services explained from scratch, a GORM cheat sheet, seeding, adding fields, relationships, and consuming it all from Next.js and TanStack Start.
+- [Build an E-Commerce App](https://gritframework.dev/docs/tutorials/ecommerce): Tutorial: build a full-stack e-commerce application with Grit including products, categories, orders, and admin management.
+- [Learn Grit Step by Step](https://gritframework.dev/docs/tutorials/learn): Beginner tutorial: learn Grit from scratch by building a complete full-stack application with Go API and React frontend.
+- [Build a Product Catalog](https://gritframework.dev/docs/tutorials/product-catalog): Tutorial: build a product catalog with Grit using code generation, multi-step forms, standalone DataTable, and FormBuilder.
+- [Build a SaaS App](https://gritframework.dev/docs/tutorials/saas): Tutorial: build a multi-tenant SaaS application with Grit including authentication, billing, teams, and admin dashboard.
+
+## Benchmarks
+
+- [Benchmarks: Grit vs Laravel, Django, Next.js, Express, Bun and Encore.ts](https://gritframework.dev/docs/benchmarks): Reproducible k6 benchmarks of Grit against Laravel 13, Django 5.1, Next.js 15, Express 5, Bun and Encore.ts: the same public CRUD resource, the same Postgres, identical container limits, 10,000 identical rows restored before every run, three repetitions, medians reported, every framework on its own ORM. Includes the full harness, the CPU evidence for which results are framework-bound and which are database-bound, the scenario Grit loses, and the three bugs the benchmark found in Grit itself.
+
+## Learnings
+
+- [Learnings: Engineering Journal](https://gritframework.dev/docs/learnings): A running log of hands-on challenges built on top of the Grit framework. Each entry walks through the problem, the solution, the numbers, and what was learned: load tests, security drills, performance tuning, and more.
+- [Stateless Service + k6 Load Test: Recording p50 / p95 / p99](https://gritframework.dev/docs/learnings/stateless-service-load-test): Scaffold a stateless Go API with `grit new myapp --api`, load-test the health endpoint with k6, capture p50 / p95 / p99 latency, and commit a chart of the run. Every command, every script, every metric explained from scratch.
+
+## Working with AI agents
+
+- [AI Skill](https://gritframework.dev/docs/ai-skill): The Grit AI skill: teach AI assistants about Grit conventions, architecture, and code patterns for better code generation.
+- [Complete LLM Reference](https://gritframework.dev/docs/ai-skill/llm-guide): The complete Grit reference for AI assistants and LLMs: framework overview, full project structure, every CLI command, all field types, code patterns, API conventions, code markers, naming rules, all batteries, performance features, and the golden rules never to break.
+
+## AI agent workflows
+
+- [Using Grit with Antigravity](https://gritframework.dev/docs/ai-workflows/antigravity): How to use Antigravity AI assistant with Grit projects for faster development and code generation.
+- [Using Grit with Claude](https://gritframework.dev/docs/ai-workflows/claude): How to use Claude AI to build Grit projects faster: prompting strategies, code generation, and AI-assisted development.
+- [llms.txt](https://gritframework.dev/docs/ai-workflows/llms-txt): An llmstxt.org index for the framework and for the API you build with it: what gritframework.dev/llms.txt and llms-full.txt contain, the pair a scaffolded API serves, and why the OpenAPI spec is still the contract.
+- [MCP Server](https://gritframework.dev/docs/ai-workflows/mcp): Expose your Grit project to AI coding agents over the Model Context Protocol: ten tools over real routes, models, resources, permissions, file ownership and doctor findings, parsed from source. The default server is read-only because the tools that write files are not in it.
+
+## AI integration
+
+- [AI Integration: Generate a Grit Prompt for Your AI Agent](https://gritframework.dev/docs/ai-integration): Four-question wizard that produces a complete prompt for Claude Code, Cursor, Windsurf, Lovable, or any AI coding agent. Pick the platform, tech kit, and project shape: get back a paste-ready prompt that tells the agent exactly how to scaffold your idea with Grit and produce the four planning files (project-description, project-phases, design-style-guide, prompt.md).
+
+## The demo application
+
+- [Demo Application: Grit Motors](https://gritframework.dev/docs/demo): A live, full-stack Grit demo built on grit new --single --vite: motorcycle dealership management, POS, loans + repayments, daily-boda fleet tracking, multi-tenant RBAC, in-app Security (Sentinel) + Observability (Pulse) dashboards. Source on GitHub, login pre-filled, database reset nightly.
+
+## Optional
+
+- [Changelog](https://gritframework.dev/docs/changelog): every release, newest first.
+- [Playground](https://gritframework.dev/playground): the scaffolder's output without installing anything.
+- [OpenAPI reference](https://gritframework.dev/docs/backend/api-docs): a scaffolded API serves its own spec at /docs/openapi.json, which is the machine-readable form of everything it exposes.
+
+
+---
+
+# Building with Grit
+
+Grit is a full-stack meta-framework: a Go API (Gin + GORM), a Next.js or
+TanStack Router frontend, and a generated admin panel, in one monorepo with
+shared Zod schemas and TypeScript types.
+
+**The single most important thing to understand:** Grit is a *code generator*,
+not a runtime library. `grit generate resource Post` writes a Go model, a
+service, a handler, a Zod schema, TypeScript types, React Query hooks and an
+admin page, and injects the wiring into the router and the registries. That
+generated code is yours: read it, edit it, delete it. An agent that hand-writes
+those nine files instead of running the command produces something that looks
+right, compiles, and is missing the injections that make it reachable.
+
+So the loop is: **generate, then edit.** Never hand-write what the generator
+owns.
+
+---
+
+## Step 0: install and verify
+
+```bash
+curl -fsSL https://gritframework.dev/install.sh | sh   # macOS, Linux, Git Bash
+grit version
+```
+
+On Windows PowerShell: `irm https://gritframework.dev/install.ps1 | iex`
+
+With a Go toolchain: `go install github.com/MUKE-coder/grit/v3/cmd/grit@latest`
+
+Already installed? `grit update` self-updates the CLI. `grit upgrade`, run
+inside a project, brings that project's templates up to the CLI's version, and
+is a different command. Do not confuse them.
+
+Prerequisites: Go 1.21+, Node 20+, pnpm, and Docker if you want Postgres, Redis,
+MinIO and Mailhog locally. Full list: https://gritframework.dev/docs/prerequisites
+
+---
+
+## Step 1: choose the architecture before you scaffold
+
+This is the one decision that is annoying to reverse. Ask the user if it is not
+obvious from what they described.
+
+| They want | Command | You get |
+|---|---|---|
+| A product with a public site *and* an admin back office | `grit new app --triple --next` | apps/web + apps/admin + apps/api |
+| A product with no separate admin | `grit new app --double --next` | apps/web + apps/api |
+| One deployable binary, SPA embedded | `grit new app --single` | Go binary with `go:embed` frontend |
+| A backend for someone else's frontend | `grit new app --api` | Go API only |
+| A phone app | `grit new app --mobile` | apps/api + apps/expo (React Native) |
+| A native desktop app | `grit new-desktop app` | Wails + Go + React + SQLite |
+
+Frontend flag: `--next` (Next.js App Router, default) or `--vite` (TanStack
+Router, SPA, faster builds). Database: `--db postgres|mysql|sqlite|memory`.
+
+`grit new .` scaffolds into the current directory and takes the project name
+from the folder; add `--force` if it is not empty.
+
+Architecture guide: https://gritframework.dev/docs/concepts/architecture-modes
+
+Then:
+
+```bash
+cd app
+docker compose up -d      # Postgres, Redis, MinIO, Mailhog
+pnpm install
+grit start                # or: pnpm dev
+```
+
+Register at http://localhost:3000, and the admin is on :3001.
+
+---
+
+## Step 2: model the domain with `grit generate resource`
+
+One command per noun in the user's domain. Do this *before* writing any feature
+code, because everything else hangs off these.
+
+```bash
+grit generate resource Post --fields "title:string,body:richtext,published:bool,slug:slug:title"
+grit generate resource Comment --fields "body:text,post:belongs_to:Post,author:belongs_to:User"
+```
+
+### Field types
+
+| Type | Go | TypeScript | Notes |
+|---|---|---|---|
+| `string` | `string` | `string` | required by default |
+| `text` | `string` | `string` | GORM `type:text` |
+| `richtext` | `string` | `string` | Tiptap editor in the admin |
+| `int` `uint` `float` | `int` `uint` `float64` | `number` | `float` is for weights and ratings, never money |
+| `bool` / `toggle` | `bool` | `boolean` | `toggle` is the friendlier alias |
+| `date` `datetime` `time` | `*time.Time` | `string \| null` | |
+| `money` | minor units + currency | | **use this for money.** 0.1 + 0.2 is not 0.3 |
+| `email` `url` `domain` `tel` `country` `color` `percent` `rating` | `string` / number | | checked and normalised on every write; the admin renders the matching input. `tel:UG` sets a default country, `rating:10` the number of stars |
+| `slug` | `string` | `string` | auto-unique, from another field |
+| `select` `radio` | `string` | union | one value from a fixed list |
+| `check` | JSON array | `string[]` | zero or more from a list |
+| `file` / `files` | `FileRef` / `[]FileRef` | | upload widget, S3-backed; `file:image` limits what is accepted |
+| `json` | JSON column | | |
+| `string_array` | `datatypes.JSONSlice[string]` | `string[]` | |
+| `belongs_to` | `string` | `string` | a UUID foreign key + index. **Not `uint`** |
+| `one_to_one` | `string` | `string` | a `belongs_to` whose key is unique. Declared on the side holding the key |
+| `many_to_many` | `[]string` | `string[]` | junction table + a picker in the admin |
+
+**Modifiers:** `:unique`, `:optional`, `:encrypted` (AES-256-GCM at rest, on
+string/text/richtext), `:slug:<source>`, `:belongs_to:<Model>`,
+`:many_to_many:<Model>`, `:select:draft=Draft|paid=Paid`, `:file:image`
+
+```bash
+grit generate resource Order --fields "number:string:unique,total:money,status:select:draft=Draft|paid=Paid,customer:belongs_to:Customer,notes:text:optional"
+```
+
+Full reference: https://gritframework.dev/docs/concepts/field-types
+
+### What that one command produced
+
+Nine files and several injections. Know them, because these are the files you
+will be editing for the rest of the project:
+
+```
+apps/api/internal/models/post.go        the GORM model + hooks
+apps/api/internal/services/post.go      business logic lives HERE
+apps/api/internal/handlers/post.go      thin: parse, call service, respond
+apps/api/internal/routes/routes.go      <- injected, not created
+packages/shared/src/schemas/post.ts     Zod, shared by every frontend
+packages/shared/src/types/post.ts       TypeScript types
+apps/web|admin/hooks/use-posts.ts       React Query hooks
+apps/admin/app/(dashboard)/resources/posts/page.tsx
+apps/admin/lib/resources/post.ts        the admin resource definition
+```
+
+https://gritframework.dev/docs/concepts/generated-files
+
+### Other generators
+
+```bash
+grit generate resource Product -i                 # interactive
+grit generate resource Post --from post.yaml      # from a spec file
+grit generate resource Post --seed --faker --count 500   # and a seeder with fake rows
+grit generate field Invoice status:select:draft=Draft|paid=Paid   # one column, in place
+grit generate seeder Post Comment                 # seeders for existing resources
+grit generate form Post                           # a multi-step form for a resource
+grit generate table Post                          # a standalone table view
+grit remove resource Post                         # deletes files AND reverses every injection
+grit add role EDITOR                              # a new role, wired into the guards
+grit add variants --resource Product              # product options and variants
+grit sync                                         # Go types -> TypeScript + Zod
+```
+
+`grit generate` is also `grit g`. `grit generate field` handles scalar, select
+and toggle columns in place and lets GORM add the column on the next
+`grit migrate`; for a relationship, file, slug or array field, regenerate the
+resource instead.
+
+`grit remove resource` reverses injections properly. Deleting files by hand
+leaves the router referencing a handler that no longer exists.
+
+---
+
+## Step 3: write the feature, in the right layer
+
+```
+handler  ->  service  ->  model
+```
+
+- **Handlers are thin.** Parse the request, call one service function, respond.
+  No business logic, no direct `db.Where(...)` chains.
+- **Services hold the logic.** They take a `*gorm.DB` and a context, return
+  values and errors. They are what you unit test.
+- **Models hold the shape and the hooks.** `BeforeCreate`, `BeforeUpdate`.
+  Never import `services` from `models`: that is an import cycle, and the fix
+  is to call the underlying helper directly.
+
+Guides: [handlers](https://gritframework.dev/docs/backend/handlers) ·
+[services](https://gritframework.dev/docs/backend/services) ·
+[models](https://gritframework.dev/docs/backend/models) ·
+[request lifecycle](https://gritframework.dev/docs/backend/request-lifecycle)
+
+### The response format is not optional
+
+Every endpoint answers in one of three shapes. The frontend, the generated
+hooks and the error handling all assume it.
+
+```jsonc
+// one item
+{ "data": { }, "message": "Post created successfully" }
+
+// a list
+{ "data": [ ], "meta": { "total": 100, "page": 1, "page_size": 20, "pages": 5 } }
+
+// an error
+{ "error": { "code": "VALIDATION_ERROR", "message": "Email is required",
+             "details": { "email": "This field is required" } } }
+```
+
+Use the `respond` package rather than writing `c.JSON` error bodies by hand:
+`respond.Fail(c, respond.CodeValidationError, "...")` picks the status code from
+the code. https://gritframework.dev/docs/backend/errors
+
+### Frontend rules
+
+- Data fetching goes through the generated React Query hooks. No `fetch` in a
+  component.
+- Validate with the Zod schema from `@repo/shared/schemas`. It is the same
+  schema the API validates against, which is the point.
+- Next.js App Router only. Never Pages Router.
+- Tailwind + the existing `components/ui/` primitives. No new CSS files.
+- Never `any`.
+
+---
+
+## Step 4: reach for what is already there
+
+The most common failure mode is an agent building something Grit ships. Check
+before you write:
+
+| Need | Already in the box |
+|---|---|
+| Login, register, refresh, roles | [authentication](https://gritframework.dev/docs/backend/authentication) |
+| 2FA, passkeys, sessions, sign-in links | [account security](https://gritframework.dev/docs/backend/account-security) · [passkeys](https://gritframework.dev/docs/backend/passkeys) |
+| Google / GitHub login | [oauth](https://gritframework.dev/docs/backend/oauth) |
+| Permissions beyond roles | [rbac](https://gritframework.dev/docs/backend/rbac) · [authorization](https://gritframework.dev/docs/security/authorization) |
+| File uploads, images, video | [storage](https://gritframework.dev/docs/batteries/storage) · [media](https://gritframework.dev/docs/batteries/media) |
+| Transactional email | [email](https://gritframework.dev/docs/batteries/email) |
+| Background work, retries | [jobs](https://gritframework.dev/docs/batteries/jobs) · [cron](https://gritframework.dev/docs/batteries/cron) |
+| Caching | [caching](https://gritframework.dev/docs/batteries/caching) |
+| LLM calls | [ai](https://gritframework.dev/docs/batteries/ai) |
+| WebSockets / live updates | [realtime](https://gritframework.dev/docs/backend/realtime) |
+| Receiving webhooks | [webhooks](https://gritframework.dev/docs/backend/webhooks) |
+| Outgoing events, exactly once | [outbox](https://gritframework.dev/docs/backend/outbox) |
+| Audit trail | [append-only](https://gritframework.dev/docs/backend/append-only) |
+| Entering twenty rows at once | Bulk Create and Bulk Edit, on every list page: [grid data entry](https://gritframework.dev/docs/admin/datatable#grid-data-entry) |
+| Feature flags | [feature flags](https://gritframework.dev/docs/backend/feature-flags) |
+| Money, tax, invoices | [money](https://gritframework.dev/docs/concepts/money) · [invoices](https://gritframework.dev/docs/backend/invoices) |
+| Offline-capable clients | [offline sync](https://gritframework.dev/docs/concepts/offline-sync) |
+| Multi-tenancy, impersonation, ⌘K, saved views | `grit plugin add <name>`, see [plugins](https://gritframework.dev/docs/plugins/overview) |
+| Backups, GDPR export/erasure | [backups](https://gritframework.dev/docs/batteries/backups) · [compliance](https://gritframework.dev/docs/security/compliance) |
+
+Admin panel: [resources](https://gritframework.dev/docs/admin/resources) ·
+[data tables](https://gritframework.dev/docs/admin/datatable) ·
+[forms](https://gritframework.dev/docs/admin/forms) ·
+[relationships](https://gritframework.dev/docs/admin/relationships) ·
+[widgets](https://gritframework.dev/docs/admin/widgets) ·
+[custom pages](https://gritframework.dev/docs/admin/custom-pages)
+
+---
+
+## Step 5: verify, every time
+
+Never report work as finished on the strength of having written it. Run:
+
+```bash
+cd apps/api
+gofmt -l ./internal ./cmd     # must print nothing
+go build ./... && go vet ./...
+go test ./... -count=1
+
+cd ../admin                   # and ../web
+npx tsc --noEmit
+pnpm lint
+npx next build                # or: npx vite build
+
+cd ../.. && grit doctor       # the mistakes that do not announce themselves
+```
+
+A generated project ships its own tests. Add to them rather than replacing
+them. https://gritframework.dev/docs/testing
+
+If something looks wrong at runtime rather than at build time:
+`grit routes` lists what is actually mounted, `/pulse/ui` traces requests and
+queries, `/studio` browses the database, `/docs` is the generated API reference.
+
+---
+
+## Conventions, in one place
+
+| Thing | Convention |
+|---|---|
+| Go files | `snake_case.go` |
+| Go exported / unexported | `GetUsers` / `parseToken` |
+| TypeScript files | `kebab-case.ts` |
+| React components | `PascalCase.tsx` |
+| API routes | plural, lowercase: `/api/v1/posts` |
+| Tables | plural, snake_case |
+| Zod schemas | `PostSchema`, `CreatePostSchema` |
+| Errors | `fmt.Errorf("context: %w", err)`, never swallowed with `_` |
+
+https://gritframework.dev/docs/concepts/naming-conventions
+
+---
+
+## Money, the public API, and variants
+
+Three subjects that cost the most time when they are learned by trial.
+
+### Money
+
+`price:money` is `money.Money`: `{ Amount int64, Currency string }` with the
+amount in **minor** units. `money.New(2800, "USD")` is $28.00.
+
+- `a.Add(b)` returns `(Money, error)` and errors on mixed currencies. Check it
+  even in a one-currency app.
+- GORM embeds it as two columns prefixed with the field name, so the sortable
+  and filterable column is **`price_amount`, not `price`**:
+  `?sort_by=price_amount&sort_order=asc`, `?price_amount_min=5000`.
+- On the frontend, `formatMoney(m)` from `@repo/shared/types`. A hardcoded
+  `amount / 100` shows a 50,000 shilling price as 500, because UGX has no minor
+  unit.
+
+### The public API
+
+`--public` adds a read-only surface for callers with no logged-in user: a list,
+a get by slug, and a related strip, guarded by a publishable API key.
+
+- The response is an **allowlist** in `internal/handlers/<x>_public.go`, built
+  from the field types rather than from the model. **That file is never
+  overwritten on regeneration**, so a column you want published goes in by hand.
+- Relations are held back on purpose. Filter by the foreign key id instead.
+- A **public endpoint that writes** (a cart, a sign-up, a review) is
+  hand-written, and must not go on the `publicAPI` group: that group caches by
+  URL alone, so one caller's answer would be served to every caller. Give it its
+  own group with the same `RequireAPIKey`, and set `Cache-Control: private`.
+- Never take a price, a total or a discount from a request body. Take an id and
+  a quantity; read every figure from the database.
+
+### Variants
+
+`grit add variants --resource Product` installs the option and variant tables, a
+matrix editor in the admin, and one public endpoint:
+
+```
+GET /api/v1/public/products/:key/variants
+```
+
+It returns the options to draw, every combination with its resolved price and
+stock, and the price range, **in one response**. Do not fetch options, then
+variants, then a price per swatch click, and do not re-apply option deltas in
+the browser: the price in that payload is the server's.
+
+A product with no variants gets empty lists and a range of its own price, so one
+component renders both cases.
+
+---
+
+## Mistakes that cost the most time
+
+1. **Hand-writing a resource** instead of running the generator. The files are
+   right and nothing is wired up.
+2. **Deleting resource files by hand.** Use `grit remove resource`.
+3. **Business logic in the handler.** It cannot be tested or reused, and the
+   next generated handler will not match it.
+4. **Building an in-the-box feature.** See step 4 first.
+5. **`float` for money.** Use the money type.
+6. **Importing `services` from `models`.** Import cycle.
+7. **Editing generated wiring by hand** (`routes.go` injections, resource
+   registries) when re-running the generator would do it correctly.
+8. **Assuming an upgrade rewrote a file you own.** `grit upgrade` deliberately
+   leaves project-owned files (`routes.go`, your models) alone and reports what
+   it could not do. Read its output.
+9. **Reporting success without building.** Step 5.
+10. **Sorting on `price`** when the column is `price_amount`. A money field is
+    two columns.
+11. **Adding a per-caller endpoint to the `/public` group.** It is cached by URL
+    alone.
+12. **Raw SQL against a generated join table.** The column names are the
+    generator's, and the association is already loaded. Preload it.
+
+---
+
+## Worked examples
+
+Each of these is a complete application, start to finish:
+
+- [Build your first Grit app](https://gritframework.dev/blog/build-your-first-grit-app)
+- [Build a CRM](https://gritframework.dev/blog/build-a-crm-with-grit)
+- [Build a storefront](https://gritframework.dev/blog/build-a-storefront-with-grit)
+- [Build an invoice app](https://gritframework.dev/blog/build-an-invoice-app-with-grit)
+- [Build a mobile app](https://gritframework.dev/blog/build-mobile-app-with-grit)
+- [Build a desktop app](https://gritframework.dev/blog/build-desktop-app-with-grit)
+- [Your table, our machinery](https://gritframework.dev/blog/your-table-our-machinery): how the generator thinks
+- [Roles, permissions and automatic backups](https://gritframework.dev/blog/roles-permissions-and-automatic-backups)
+- [Plugins: what they are and how to build one](https://gritframework.dev/blog/grit-plugins-what-they-are-and-how-to-build-one)
+- [GDPR and access reviews](https://gritframework.dev/blog/gdpr-and-access-reviews)
+- [Why I built Grit](https://gritframework.dev/blog/why-i-built-grit)
+
+Two of them are checked-in code rather than prose, built and tested by CI:
+[`examples/commerce`](https://github.com/MUKE-coder/grit/tree/main/examples/commerce)
+(a shop: catalogue, variant matrix, server-side basket, with a
+[TUTORIAL.md](https://github.com/MUKE-coder/grit/blob/main/examples/commerce/TUTORIAL.md)
+that builds it from an empty directory) and
+[`examples/library`](https://github.com/MUKE-coder/grit/tree/main/examples/library).
+
+Tutorials: [blog](https://gritframework.dev/docs/tutorials/blog) ·
+[contact app](https://gritframework.dev/docs/tutorials/contact-app) ·
+[e-commerce](https://gritframework.dev/docs/tutorials/ecommerce) ·
+[SaaS](https://gritframework.dev/docs/tutorials/saas) ·
+[custom endpoints](https://gritframework.dev/docs/tutorials/custom-endpoints)
+
+---
+
+## Deploying
+
+```bash
+grit deploy --host user@server.com --domain myapp.com
+```
+
+SSH + systemd + Caddy with automatic TLS. Also documented for Railway, Render,
+Fly.io, Coolify, Dokploy and plain VPS:
+https://gritframework.dev/docs/deployment
+
+Pre-flight list: https://gritframework.dev/docs/deployment/checklist
+
+---
+
+## Where to look when stuck
+
+- Full docs: https://gritframework.dev/docs
+- CLI reference: https://gritframework.dev/docs/cli
+- Start here: https://gritframework.dev/docs/start
+- Changelog: https://gritframework.dev/docs/changelog
+- What is stable and what is not: https://gritframework.dev/docs/stability
+- Machine-readable guide for LLMs: https://gritframework.dev/docs/ai-skill/llm-guide
+- MCP server: https://gritframework.dev/docs/ai-workflows/mcp
+
+---
+
+# CLI reference
+
+Every command, by category. The file effects were captured from real runs against a
+freshly scaffolded project rather than written from memory.
+
+## Scaffold
+
+### `grit new`
+
+Scaffold a new project: Go API, Next.js or Vite frontends, admin panel.
+
+```bash
+grit new myapp --triple --next
+```
+
+The one command that turns an empty folder into a running full-stack project. It writes around 426 files: a Gin + GORM API with auth, roles, jobs, mail, storage and audit already wired, the frontends you asked for, a shared package of Zod schemas and TypeScript types, and the Docker compose file for Postgres, Redis, MinIO and Mailhog.
+
+Flags:
+
+- `--arch string`: Architecture: single, double, triple, api, mobile
+- `--frontend string`: Frontend framework: next, vite (TanStack)
+- `--single / --double / --triple / --api / --mobile`: Shorthand for --arch
+- `--next / --vite`: Shorthand for --frontend
+- `--full`: Everything: API + web + admin + desktop + Expo + docs site
+- `--desktop`: Include a Wails desktop app sharing the monorepo API
+- `--expo`: Include an Expo mobile app
+- `--i18n`: Add internationalisation (next-intl, translated API messages)
+- `--style string`: Admin style: default, modern, minimal, glass
+- `--theme string`: Full theme: atlas, aurora, pulse
+- `--here`: Scaffold into the current directory
+- `--force`: Allow scaffolding into a non-empty directory
+
+Worth knowing:
+
+- Interactive by default. Passing --triple --next (or any other pair) skips the prompts.
+- `pnpm install` is not run for you. `grit start` fails on a missing module if you skip it.
+- The database defaults to Postgres on port 5434. Set DATABASE_URL=sqlite:./app.db in .env to skip Docker entirely.
+
+### `grit new-desktop`
+
+Create a Wails desktop application that shares the monorepo API.
+
+```bash
+grit new-desktop
+```
+
+Adds a Wails desktop shell to a project that already has an API, so the same Go backend and the same typed client serve a native window.
+
+Worth knowing:
+
+- Needs the Wails CLI installed separately.
+- `grit compile` and `grit package` build and distribute it.
+
+### `grit init`
+
+Write CLAUDE.md / AGENTS.md convention docs into an existing project.
+
+```bash
+grit init
+```
+
+Drops the framework conventions into the project root where a coding agent will find them: the folder structure, the naming rules, the response format, the markers a generator injects into.
+
+## Generate
+
+### `grit generate resource`
+
+A full-stack CRUD resource: model, service, handler, schemas, types, hooks, admin page.
+
+```bash
+grit generate resource Product --fields "name:string,slug:slug,price:float,stock:int,images:files,active:bool" --public --faker
+```
+
+The command Grit is really for. One resource definition produces the Go model, a service holding the business logic, a thin handler, the routes, the Zod schemas, the TypeScript types, the React Query hooks and a working admin page with a table and a form. It also injects itself into fourteen existing files, which is the part you would otherwise forget half of.
+
+Flags:
+
+- `--fields string`: Inline field definitions, e.g. "title:string,published:bool"
+- `--from string`: YAML file defining the resource
+- `-i, --interactive`: Define fields at a prompt
+- `--public`: Read-only list + detail under /api/v1/public/, API-key guarded
+- `--tree`: Hierarchical: parent, materialized path, depth, sibling order, move endpoint
+- `--items string`: Has-many child as a line-items table inside this resource's form
+- `--roles string`: Restrict routes to roles, e.g. "ADMIN,EDITOR"
+- `--seed / --faker`: One example record, or many rows with gofakeit
+- `--count int`: Rows for the faker seeder (default 10)
+- `--force`: Generate even when the name collides with a built-in model
+
+Worth knowing:
+
+- Your .custom.tsx is written once and never again. Cell renderers and page overrides live there so a regenerate cannot take them back.
+- The --public handler is also written only once, because the allowlist inside it is yours to edit. Delete it and regenerate to pick up newer generator features.
+- Run `grit migrate` afterwards. The model is the source of truth and GORM adds the columns.
+
+### `grit generate field`
+
+Add one column to a resource that already exists, in place.
+
+```bash
+grit generate field Product weight:float
+```
+
+The small change you actually make most often. It injects the column into the Go model, both Zod schemas, the TypeScript type and the admin form and table, at the auto markers, so nothing you wrote by hand around them moves.
+
+Worth knowing:
+
+- Scalar, select and toggle only. For a relationship, file, slug or array field, regenerate the resource.
+- No migration file is written. The model is the source of truth and `grit migrate` adds the column.
+- A new string field arrives with binding:"required". Drop it by hand if the column is optional.
+
+### `grit generate seeder`
+
+A seeder for an existing resource, with one example row or many faked ones.
+
+```bash
+grit generate seeder Product --faker --count 40
+```
+
+Reads the already-generated Go model and writes a seeder that matches its columns, registered in seed.go so `grit seed` picks it up.
+
+Flags:
+
+- `--faker`: Fill many rows with gofakeit instead of one example
+- `--count int`: How many rows (default 10)
+
+Worth knowing:
+
+- A resource with a required belongs_to refuses to seed until the parent has rows. The error names which parent.
+
+### `grit generate sequence`
+
+A gap-free sequential number: INV-202605-0001.
+
+```bash
+grit generate sequence Invoice
+```
+
+Human-facing reference numbers that auditors and customers read out loud. A row-locked counter, so two invoices created in the same millisecond cannot take the same number, and no gaps when one transaction rolls back.
+
+Worth knowing:
+
+- Call sequence.Next directly from the model hook, never through a service. models importing services is an import cycle.
+
+### `grit generate perf`
+
+A k6 load test for this API.
+
+```bash
+grit generate perf
+```
+
+Writes a k6 script pointed at your own endpoints, so the first load test is a command rather than an afternoon.
+
+Worth knowing:
+
+- Needs k6 installed separately.
+
+### `grit remove resource`
+
+Delete a resource and unpick every injection it made.
+
+```bash
+grit remove resource Product
+```
+
+The inverse of generate. Deleting the files by hand leaves fourteen injections behind, and the API stops compiling on the first one you miss.
+
+Worth knowing:
+
+- It does not drop the table. The rows are still there after the code is gone.
+- Your .custom.tsx is deleted with everything else. Commit before you run it.
+
+## Add
+
+### `grit add variants`
+
+Product options, values and a combination matrix, attached to one resource.
+
+```bash
+grit add variants --resource Product
+```
+
+One shirt in four colours and four sizes is one product and sixteen buyable things, each with its own stock. Five tables model that: options and their values shared across the shop, which options a given product offers, the combinations, and the join between them. A variant price is resolved rather than stored, so a product price change cannot leave stale copies behind.
+
+Flags:
+
+- `--resource string`: The resource that offers variants (default Product)
+
+Worth knowing:
+
+- Run it again for a second resource and only that resource's tables are added. Options stay shared.
+- Then `grit migrate` and `grit seed`: the seed writes a Colour and Size matrix so there is something on screen.
+- Changing which options a product offers clears its combinations, because a variant is defined by the axes it was generated from.
+
+### `grit add web-auth`
+
+Login, register and password-reset pages for apps/web, plus route protection.
+
+```bash
+grit add web-auth
+```
+
+The admin has auth out of the box; apps/web does not, because plenty of web apps are anonymous. This adds the whole customer-facing half: the five auth screens themed to match the project, a session marker the middleware reads, and a matcher-based guard so protecting /checkout is one line.
+
+Worth knowing:
+
+- Files that already exist are left alone. If your (auth) folder is empty after a run, something was there first.
+- The pages follow the project theme, so they match whatever --theme you scaffolded with.
+
+### `grit add role`
+
+A new role across the Go enum, the Zod schema, the types and the constants.
+
+```bash
+grit add role MANAGER
+```
+
+A role is named in four places that have to agree: the Go model, the Zod schema that validates a user update, the TypeScript union and the shared constants. Adding it by hand means finding all four.
+
+Worth knowing:
+
+- Permissions for the new role are granted in the admin, not here.
+
+### `grit add i18n`
+
+next-intl on both frontends, translated API messages, en/fr/sw.
+
+```bash
+grit add i18n
+```
+
+Translation that reaches the API too. A validation error in French is the half most i18n setups skip, so the locale middleware and a translated response helper come with the frontend wiring.
+
+Worth knowing:
+
+- Run `pnpm install` afterwards: it adds next-intl to both frontends.
+- `grit new --i18n` does the same thing at scaffold time.
+
+### `grit add offline`
+
+Offline-first sync: local mirror, outbox and version-checked conflicts.
+
+```bash
+grit add offline
+```
+
+The same mirror, outbox and version-checked conflict handling in TypeScript, over a storage interface, so web, mobile and desktop share one engine instead of three.
+
+Worth knowing:
+
+- Sync policy is declared per resource and published at GET /api/sync/policy, so a client cannot keep a copy that drifts.
+- `grit sync doctor` exists because every mistake in this area is silent.
+
+### `grit expose form`
+
+A public page carrying a resource's form, at a path you choose.
+
+```bash
+grit expose form Product --to apps/web/app/submit-product/page.tsx
+```
+
+Takes the form the admin already renders for a resource and writes it into your public app as a page, so a contact form or a submission page is not a second implementation of the same validation.
+
+Flags:
+
+- `--to string`: Destination path (required)
+- `--public-share`: Submit via /api/public/forms/<token>/submit instead of the auth'd hook
+- `--token string`: FormShare token; falls back to NEXT_PUBLIC_FORM_TOKEN
+- `--force`: Overwrite the destination
+
+Worth knowing:
+
+- --to is required. Without it the command prints usage and exits.
+
+### `grit expose table`
+
+A public page carrying a resource's table.
+
+```bash
+grit expose table Product --to apps/web/app/catalogue/page.tsx
+```
+
+The read-only twin of expose form: the admin table, in your public app, with its sorting, filtering and pagination already wired.
+
+Flags:
+
+- `--to string`: Destination path (required)
+- `--force`: Overwrite the destination
+
+## Run
+
+### `grit start`
+
+Run every service in the project, or one of them.
+
+```bash
+grit start
+```
+
+One command instead of three terminals. Subcommands run a single piece when you only want that piece.
+
+Flags:
+
+- `server`: The Go API only
+- `client`: The frontends only
+- `web / admin / expo / desktop`: One app
+
+Worth knowing:
+
+- Fails on a missing module if `pnpm install` has not been run.
+
+### `grit studio`
+
+Open GORM Studio, the database browser.
+
+```bash
+grit studio
+```
+
+A visual browser over the real tables, embedded in the API rather than a separate tool with its own connection string to get wrong.
+
+### `grit routes`
+
+List every registered API route with its handler and group.
+
+```bash
+grit routes
+```
+
+Reads routes.go and prints what is actually mounted, including which auth group each route sits in. Faster than reading a 900-line routes file, and it tells you the thing you usually want: is this endpoint public.
+
+### `grit test`
+
+Run every test suite in the project.
+
+```bash
+grit test
+```
+
+Go tests, Vitest on both frontends and Playwright end-to-end, behind one command, so CI and your terminal run the same thing.
+
+### `grit ui`
+
+Browse and install Grit UI components and blocks.
+
+```bash
+grit ui add ecommerce-product-grids-grid-with-ratings
+```
+
+The component registry: marketing sections, ecommerce blocks, dashboard pieces. Installed as source into your repo, the shadcn model, so there is no version to track and no upstream fix that silently changes your page.
+
+Worth knowing:
+
+- A block prop you do not pass keeps its sample default. Pass an empty value for every prop your schema does not have, or the page will show sample ratings and colours you do not sell.
+- Every scaffolded frontend ships a components.json, so `npx shadcn add` works with no prompts.
+
+### `grit swap`
+
+Replace an admin component everywhere at once.
+
+```bash
+grit swap button
+```
+
+Changing a primitive in the admin means changing every call site, and a half-finished swap leaves two button styles in the same screen. This does the whole set in one pass.
+
+### `grit mcp`
+
+Expose the project to AI coding agents over MCP.
+
+```bash
+grit mcp serve
+```
+
+A Model Context Protocol server over the project, so an agent can list resources, read a schema and generate code through the real CLI rather than guessing at file layouts.
+
+### `grit env`
+
+Create .env from .env.example with fresh secrets, for a project you cloned.
+
+```bash
+grit env
+```
+
+grit new writes a .env with generated secrets and a .env.example with CHANGE_ME in their place, and only the example is committed. A teammate who clones the project has no .env, and the API refuses to start on a placeholder. grit env does what grit new did: it copies the example and generates every CHANGE_ME in the shape that variable takes. It prints the names it filled, never a value.
+
+Worth knowing:
+
+- It never changes a value you have set. Running it on a finished .env does nothing.
+- A new FIELD_ENCRYPTION_KEY cannot read data encrypted with another one. On a database you share, use the team's key.
+- For production, generate secrets on the server and keep them in your secret store, not in a file on a laptop.
+
+## Data
+
+### `grit migrate`
+
+Create and alter database tables from the Go models.
+
+```bash
+grit migrate
+```
+
+The model is the source of truth, so there are no migration files to write or order. GORM creates what is missing and alters what changed, and the command prints the before-and-after column diff rather than migrating silently.
+
+Flags:
+
+- `--fresh`: Drop every table first. Development only.
+
+Worth knowing:
+
+- It adds and alters. It does not drop a column you removed from a model.
+- --fresh destroys data. There is no confirmation in a script.
+
+### `grit seed`
+
+Run every registered seeder.
+
+```bash
+grit seed
+```
+
+Fills a fresh database with enough to look at: an admin user you can log in as, API keys written into the frontend env files, and whatever your resources seed.
+
+Worth knowing:
+
+- Seeders skip when their table already has rows, so running it twice is safe.
+- The default admin password only applies outside production. Set SEED_ADMIN_PASSWORD for a real deployment.
+
+### `grit sync`
+
+Regenerate TypeScript types and Zod schemas from the Go models.
+
+```bash
+grit sync
+```
+
+The Go model is the single definition of a shape. This projects it into TypeScript and Zod so the frontend cannot drift from the backend, and adds any new column to the admin table and form at the auto markers.
+
+Flags:
+
+- `doctor`: Check offline sync health rather than regenerate types
+
+Worth knowing:
+
+- A resource file missing its grit:cols:auto-end markers is skipped with a warning rather than rewritten.
+
+### `grit backup`
+
+Back up the entire database to an archive.
+
+```bash
+grit backup
+```
+
+A full dump you can restore, driven by the same code the admin's Data & Backup page uses, so a scheduled backup and a manual one produce the same artifact.
+
+### `grit restore`
+
+Restore the database from a backup archive.
+
+```bash
+grit restore backups/2026-08-20-093000.tar.gz
+```
+
+The other half of backup. Replaces the current contents with the archive's.
+
+Worth knowing:
+
+- Destructive. It replaces what is there now.
+
+## Ship
+
+### `grit deploy`
+
+Cross-compile, upload, and configure systemd and Caddy with TLS.
+
+```bash
+grit deploy --host example.com
+```
+
+Turns a Grit project into a running server on a box you own: the Go binary cross-compiled, uploaded, supervised by systemd, and fronted by Caddy with automatic certificates.
+
+Worth knowing:
+
+- Work through the deployment checklist first. For a shop, three items are not optional: HTTPS everywhere, the webhook secret set in production, and backups on.
+
+### `grit compile`
+
+Build the desktop application executable.
+
+```bash
+grit compile
+```
+
+Wails build for the current platform, wired to the monorepo API.
+
+### `grit package`
+
+Build a distributable desktop installer.
+
+```bash
+grit package
+```
+
+The installer a user double-clicks: .exe on Windows, .app on macOS, a binary on Linux.
+
+Worth knowing:
+
+- A signed release needs Authenticode or Apple Developer certificates, which are yours to obtain.
+
+### `grit down`
+
+Put the application in maintenance mode.
+
+```bash
+grit down
+```
+
+A switch, not a redeploy. Every request answers 503 with a maintenance page while you run a migration that cannot happen under traffic.
+
+### `grit up`
+
+Bring the application back online.
+
+```bash
+grit up
+```
+
+The other half of down.
+
+## Meta
+
+### `grit upgrade`
+
+Bring a project's scaffold files up to the current Grit version.
+
+```bash
+grit upgrade
+```
+
+Updates the framework files inside an existing project. It reads .grit/manifest.json to know which generator wrote which file, at which version, with what content hash, so a file you edited is left alone rather than overwritten. Everything you wrote yourself, resource definitions and API code included, is preserved.
+
+Flags:
+
+- `--diff`: Also print what the new version would change in the files it left alone
+- `--force`: Overwrite every file, including ones you have edited
+
+Worth knowing:
+
+- --diff is NOT a dry run. It performs the upgrade and additionally prints the diff for the edited files it skipped. There is no preview-only mode, so commit first.
+- Files you edited are skipped by content hash, not by timestamp, so reformatting one counts as editing it.
+- Run `pnpm install` afterwards when a new version added a dependency.
+
+### `grit update`
+
+Update the Grit CLI itself to the latest release.
+
+```bash
+grit update
+```
+
+Replaces the binary in place from the latest GitHub release.
+
+Worth knowing:
+
+- Updates the CLI, not your projects. `grit upgrade` does that.
+
+### `grit plugin`
+
+Install and manage Grit plugins.
+
+```bash
+grit plugin add webhooks
+```
+
+Optional modules that inject into the same markers a generator uses: webhooks, multi-tenancy, impersonation, saved views, push notifications, video. Code in your repo, not a runtime dependency.
+
+Flags:
+
+- `add <name>`: Install a plugin
+- `list`: What is available and what is installed
+- `remove <name>`: Uninstall, unpicking its injections
+
+### `grit version`
+
+Print the CLI version.
+
+```bash
+grit version
+```
+
+Which binary you are running, which is the first question in every bug report.

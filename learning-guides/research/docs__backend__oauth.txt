@@ -1,0 +1,311 @@
+Backend (Go API)
+Social Login (OAuth2)
+
+Grit includes Google and GitHub OAuth2 authentication out of the box via Gothic. Social login buttons appear on all login and register pages across every admin style variant. This guide walks you through setting up both providers.
+
+How It Works
+
+When a user clicks “Sign in with Google” or “Sign in with GitHub”, they are redirected to the provider's consent screen. After granting access, the provider redirects back to your API, which creates or links the user account and issues JWT tokens.
+
+User / BrowserGo APIOAuth provider
+Provider handles consent; Grit links or creates the user and issues its own JWTs
+OAuth Routes
+
+These routes are automatically registered in your API:
+
+OAuth endpoints
+Copy to clipboard
+
+GET /api/auth/oauth/google            → Start Google login
+
+GET /api/auth/oauth/google/callback   → Google callback (handles redirect)
+
+GET /api/auth/oauth/github            → Start GitHub login
+
+GET /api/auth/oauth/github/callback   → GitHub callback (handles redirect)
+
+Step 1 — Google OAuth Setup
+
+Create OAuth2 credentials in the Google Cloud Console to allow users to sign in with their Google account.
+
+1
+
+Create a Google Cloud Project
+
+Go to the Google Cloud Console and create a new project (or select an existing one).
+
+2
+
+Configure the OAuth Consent Screen
+
+Navigate to APIs & Services → OAuth consent screen:
+
+• Choose External user type
+
+• Fill in App name (e.g. “My Grit App”)
+
+• Add your support email
+
+• Under Scopes, add email, profile, and openid
+
+• Add test users if the app is in “Testing” mode
+
+3
+
+Create OAuth2 Credentials
+
+Go to APIs & Services → Credentials → Create Credentials → OAuth client ID:
+
+• Application type: Web application
+
+• Name: anything (e.g. “Grit Web Client”)
+
+• Authorized redirect URIs — add both:
+
+Authorized redirect URIs
+Copy to clipboard
+
+# Development
+
+http://localhost:8080/api/auth/oauth/google/callback
+
+# Production (replace with your domain)
+
+https://api.yourdomain.com/api/auth/oauth/google/callback
+
+After creating, copy the Client ID and Client Secret.
+
+4
+
+Add to .env
+
+Paste the credentials into your project's .env file:
+
+.env
+Copy to clipboard
+
+GOOGLE_CLIENT_ID=123456789-abcdefg.apps.googleusercontent.com
+
+GOOGLE_CLIENT_SECRET=GOCSPX-your-secret-here
+
+Step 2 — GitHub OAuth Setup
+
+Create an OAuth App on GitHub to allow users to sign in with their GitHub account.
+
+1
+
+Create a GitHub OAuth App
+
+Go to GitHub → Settings → Developer settings → OAuth Apps and click New OAuth App.
+
+2
+
+Fill in the App Details
+
+Fill in the following fields:
+
+FieldValue
+
+Application nameMy Grit App
+
+Homepage URLhttp://localhost:3001
+
+Authorization callback URLhttp://localhost:8080/api/auth/oauth/github/callback
+
+For production, replace the callback URL with your live API domain:
+
+Production callback URL
+Copy to clipboard
+
+https://api.yourdomain.com/api/auth/oauth/github/callback
+
+3
+
+Generate a Client Secret
+
+After creating the app, click Generate a new client secret. Copy both the Client ID and Client Secret immediately — the secret is only shown once.
+
+4
+
+Add to .env
+
+Add the GitHub credentials to your .env:
+
+.env
+Copy to clipboard
+
+GITHUB_CLIENT_ID=Ov23li...
+
+GITHUB_CLIENT_SECRET=abc123...
+
+Step 3 — Set the Frontend Callback URL
+
+After a successful OAuth login, the API redirects the user to your admin frontend with JWT tokens in the URL. Set the OAUTH_FRONTEND_URL in your .env:
+
+.env
+Copy to clipboard
+
+# Where to redirect after OAuth callback
+
+# Development — your admin panel URL
+
+OAUTH_FRONTEND_URL=http://localhost:3001
+
+# Production
+
+OAUTH_FRONTEND_URL=https://admin.yourdomain.com
+
+Complete .env Example
+
+Here is the full OAuth section for your .env file:
+
+.env
+Copy to clipboard
+
+# OAuth2 — Social Login
+
+# Get Google credentials: https://console.cloud.google.com/apis/credentials
+
+GOOGLE_CLIENT_ID=123456789-abcdefg.apps.googleusercontent.com
+
+GOOGLE_CLIENT_SECRET=GOCSPX-your-secret-here
+
+# Get GitHub credentials: https://github.com/settings/developers
+
+GITHUB_CLIENT_ID=Ov23li...
+
+GITHUB_CLIENT_SECRET=abc123...
+
+# Where to redirect after successful OAuth login
+
+OAUTH_FRONTEND_URL=http://localhost:3001
+
+What the provider knew
+
+A social login learns things only the provider knows: the GitHub login, the avatar, the locale, the verified email. Grit stores the ones every app needs and drops the rest, which is the wrong trade the moment your app has a use for one of them. A shop that invites customers to a private repository needs their GitHub username, and it was asking for it on a form, having just been handed it at sign-in.
+
+Register a hook at boot. It runs after every social login, not only the first, with the account the login resolved to and the profile the provider returned:
+
+apps/api/internal/routes/routes.go
+Copy to clipboard
+
+services.OnOAuthLogin(func(ctx context.Context, user *models.User, profile goth.User) error {
+
+if profile.Provider != "github" || profile.NickName == "" {
+
+return nil
+
+}
+
+// NickName is the provider's handle: the GitHub login, the Twitter @.
+
+return db.WithContext(ctx).Model(user).Update("github_username", profile.NickName).Error
+
+})
+
+The user row already exists and has been linked to the provider, so a hook may write to it. Because it runs on every login and not only the first, it is also how you fill in something you added to the schema after people had already signed up.
+
+A hook that fails is logged, the rest still run, and the login still succeeds. That is deliberate: these hooks decorate an account with what the provider knew, and refusing somebody a session because their avatar URL would not save is a worse failure than the one it reports. A check that must be able to refuse a login belongs in the callback itself.
+
+Account Linking
+
+Grit automatically handles account linking by email:
+
+Existing user with same email: The OAuth provider ID (GoogleID or GithubID) is linked to the existing account. The user can continue logging in with either email/password or the social provider.
+
+New user: A new account is created with the provider set to "google" or "github" and an empty password. The user can set a password later via the profile page.
+
+Password-less login attempt: If an OAuth-only user tries to log in with email/password, they get a helpful error: "This account uses social login. Please sign in with Google/GitHub."
+
+User Model Fields
+
+The following fields are added to the User model for OAuth support:
+
+apps/api/internal/models/user.go
+Copy to clipboard
+
+type User struct {
+
+// ... existing fields ...
+
+Provider string `gorm:"size:50;default:'local'" json:"provider"`
+
+GoogleID string `gorm:"size:255" json:"-"`
+
+GithubID string `gorm:"size:255" json:"-"`
+
+}
+
+FieldDescription
+
+Provider"local", "google", or "github"
+
+GoogleIDGoogle account ID (hidden from API responses)
+
+GithubIDGitHub account ID (hidden from API responses)
+
+Conditional Providers
+
+Providers are initialized conditionally in main.go. If a provider's credentials are empty, it is simply skipped — the app starts normally without it. This means you can:
+
+Enable only Google (leave GitHub credentials empty)
+
+Enable only GitHub (leave Google credentials empty)
+
+Enable both by filling in all credentials
+
+Disable both by leaving all credentials empty (social buttons still show but won't work)
+
+Frontend Callback Page
+
+Grit scaffolds a callback page at apps/admin/app/(auth)/callback/page.tsxthat handles the OAuth redirect. It:
+
+Extracts access_token and refresh_token from the URL
+
+Stores them in cookies via js-cookie
+
+Fetches /api/auth/me to get the user's role
+
+Redirects to /dashboard (ADMIN/EDITOR) or /profile (USER)
+
+The social login buttons on the login and register pages are simple <a> tags that navigate to the API OAuth endpoints. No JavaScript is needed — it's a full-page redirect flow.
+
+Production Checklist
+
+☐Set APP_URL in .env to your production API URL (used for callback URLs)
+
+☐Update Google redirect URI to your production callback URL
+
+☐Update GitHub callback URL to your production callback URL
+
+☐Set OAUTH_FRONTEND_URL to your production admin panel URL
+
+☐Publish your Google OAuth consent screen (move from "Testing" to "Production")
+
+☐Ensure your production domain uses HTTPS
+
+☐Test both login and registration flows with each provider
+
+Troubleshooting
+
+"redirect_uri_mismatch" error from Google
+
+The callback URL in your Google Cloud Console must exactly match your API URL + /api/auth/oauth/google/callback. Check for trailing slashes, http vs https, and port numbers.
+
+OAuth works locally but not in production
+
+Make sure APP_URL is set to your production API URL (e.g. https://api.yourdomain.com). The callback URLs are built from APP_URL + the OAuth path.
+
+User created with empty name
+
+Some GitHub accounts have no display name set. The OAuth handler falls back to the email username. Users can update their name via the profile page.
+
+"This account uses social login" error
+
+The user signed up via Google/GitHub and has no password set. They need to use the same social provider to log in, or set a password in their profile first.
+
+Callback page shows error or blank screen
+
+Check that OAUTH_FRONTEND_URL matches your admin panel URL exactly (including port). Verify the callback page exists at apps/admin/app/(auth)/callback/page.tsx.
+
+AuthenticationAPI Response Format

@@ -1,0 +1,120 @@
+Mobile
+Offline & Caching
+
+What the Expo scaffold does — and honestly, does not — do when the network drops. Grit Mobile is an online-first, API-backed app with React Query caching and persistent auth. It is not an offline-first sync engine, and this page is precise about the difference.
+
+Online-firstCached fallback
+Online-first: React Query serves the last cached data offline and auth persists — it is not a sync engine
+
+The short version
+
+Out of the box the Expo scaffold is online-first: React Query's in-memory cache keeps recently viewed data instant and survives brief blips, and tokens persist across restarts. Writes go straight to the API and fail when it is not there.
+
+Offline writes are one command away. grit add offline installs the local mirror, the outbox and the version-checked conflict handling that Grit Desktop has had since v3.60, as a package the mobile, web and admin apps share. See Offline Sync.
+
+React Query caching
+
+Every generated hook is a React Query query, and the scaffold configures a shared client in lib/query-client.ts. Two defaults shape the offline-ish behaviour: a five-minute staleTime (data is considered fresh for five minutes, so re-visiting a screen renders cached data immediately instead of showing a spinner) and one retry on failure.
+
+apps/expo/lib/query-client.ts
+Copy to clipboard
+
+import { QueryClient } from "@tanstack/react-query";
+
+export const queryClient = new QueryClient({
+
+defaultOptions: {
+
+queries: {
+
+staleTime: 1000 * 60 * 5, // fresh for 5 minutes
+
+retry: 1,                 // one retry before surfacing an error
+
+},
+
+},
+
+});
+
+Because the cache is in memory, it is warm for the life of the running app — navigate away and back and the data is there — but it is cleared when the app process is killed. To make it survive restarts you'd add a persister; see “Going further” below.
+
+What actually persists
+
+One thing genuinely survives an app restart: the auth session. Tokens are written to expo-secure-store (the iOS Keychain / Android Keystore), so users stay logged in between launches even with no network at open time.
+
+StateWhere it livesSurvives restart?
+
+Access / refresh tokensSecureStore (Keychain / Keystore)Yes — encrypted
+
+Fetched resource dataReact Query cache (memory)No — cleared on kill
+
+Theme preferenceSecureStoreYes
+
+In-flight mutationsNone — sent live to the APINo
+
+Networking that fails fast
+
+A flaky connection shouldn't freeze the UI. Grit's API client wraps every request in a 15-second timeout, so a request against an unreachable API aborts instead of hanging — that timeout is specifically what keeps the splash screen from getting stuck at launch. The client also handles token refresh: on a 401 it calls /auth/refresh once and retries, and unsafe methods carry a stable idempotency key so a retried write can't double-apply.
+
+apps/expo/lib/api.ts (excerpt)
+Copy to clipboard
+
+const REQUEST_TIMEOUT_MS = 15000; // fail fast instead of hanging for minutes
+
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+
+const controller = new AbortController();
+
+const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+try {
+
+return await fetch(url, { ...init, signal: controller.signal });
+
+} finally {
+
+clearTimeout(timer);
+
+}
+
+}
+
+What happens when the network drops
+
+offline behaviour
+Copy to clipboard
+
+Screen mounts
+
+│
+
+├─ Data cached & fresh (< 5 min)  → renders instantly from cache
+
+├─ Data cached but stale          → shows cache, refetches in background
+
+└─ Nothing cached                 → shows loading, then an error after
+
+the retry + 15s timeout
+
+Writes (create / update / delete)
+
+└─ Sent live to the API. Offline → the mutation errors; the screen
+
+surfaces it (e.g. an Alert). There is no local queue that replays
+
+the write when connectivity returns.
+
+Going further: true offline support
+
+If your product genuinely needs to work with no connection — capture data on a plane, in a warehouse, in the field — you can layer it on with standard React Query + Expo pieces. Grit doesn't generate this, but it composes cleanly with what's there:
+
+Persist the query cache. Add @tanstack/react-query-persist-client with an AsyncStorage persister so cached reads survive app restarts.
+
+Detect connectivity. Use @react-native-community/netinfo with React Query's onlineManager so queries pause offline and resume on reconnect.
+
+Queue writes. React Query's mutation persistence / resumePausedMutations() lets you replay mutations made while offline once the device is back online.
+
+Or go desktop. If offline-first is central, Grit Desktop ships a full sync engine (local SQLite mirror + outbox) today — see Building an Offline-First Desktop App.
+
+Building & PublishingMobile Overview

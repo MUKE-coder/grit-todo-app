@@ -1,0 +1,140 @@
+Plugin
+
+Multi-tenancy
+
+One user, many organizations, a different role in each — with query scoping that can't be forgotten.
+
+grit plugin add multitenant
+
+cd apps/api && go run cmd/migrate/main.go
+
+Copy to clipboard
+
+Why a plugin
+
+Most apps are single-tenant, and putting org_id on every table is a schema decision no framework should make for you. Install it when you need it.
+
+Marking a model as tenant-owned
+
+Embed tenant.Owned. That's what opts a table into isolation:
+
+type Invoice struct {
+
+ID     string
+
+Amount int
+
+tenant.Owned   // adds OrgID + the index
+
+}
+
+Copy to clipboard
+
+Generated resources are shared until you do this.
+
+grit generate resource does not know this plugin is installed, so a model it writes has no OrgID and no scoping. That is the right default for a shared table like a country list, and the wrong one for anything belonging to a customer. Open the model and embed tenant.Owned for each resource that belongs to an organization, and remember it again after any --force regeneration.
+
+Scoping applies per model, so a table without OrgID is simply never filtered. Nothing warns you: the endpoint works, returns rows, and returns everyone's.
+
+Then just query normally — scoping is applied for you:
+
+// Only the active organization's invoices.
+
+db.WithContext(ctx).Find(&invoices)
+
+// OrgID is stamped on insert; you never set it.
+
+db.WithContext(ctx).Create(&Invoice{Amount: 100})
+
+Copy to clipboard
+
+Scoping fails closed
+
+A query against a tenant-owned model with no active organization returns an error — it does not quietly return every tenant's rows. Hand-written scoping fails the other way: forget one WHERE and you get a silent cross-tenant leak that no test catches, because the query returns more rows rather than failing.
+
+Cross-tenant work
+
+Platform admin screens and background sweeps need to see everything. Opt out explicitly — each call is deliberate and greppable:
+
+tenant.Unscoped(db).Find(&allInvoices)
+
+Copy to clipboard
+
+How the active organization is chosen
+
+From the X-Organization-ID header, or automatically when the user belongs to exactly one. No subdomains — they force DNS and TLS decisions on every deployment and make local development awkward.
+
+curl https://api.example.com/api/invoices \
+
+-H "Authorization: Bearer ..." \
+
+-H "X-Organization-ID: 01H..."
+
+Copy to clipboard
+
+Membership is always verified against the database. Trusting the header alone would let any signed-in user read another tenant's data by editing one request header.
+
+Requesting an organization you don't belong to returns 404, not 403 — a 403 confirms it exists and lets an attacker enumerate tenants.
+
+When there is no active organization
+
+A tenant-owned row cannot be read or written without one, and the scoping callback fails closed rather than guessing. The caller is told so: 400 with the code NO_ORGANIZATION, which happens when they belong to no organization, or to several and named none.
+
+400 Bad Request
+Copy to clipboard
+
+{
+
+"error": {
+
+"code": "NO_ORGANIZATION",
+
+"message": "no active organization: send it as X-Organization-ID, or join one"
+
+}
+
+}
+
+Until v3.233.0 this arrived as a 500 saying "Failed to fetch deals", because the error reached the generic handler and nothing knew what it meant.
+
+Roles per organization
+
+Membership carries a role, so somebody can be an editor in one organization and a viewer in another. It reuses the roles you already have, with no parallel permission system.
+
+# Give Dave the "Deal Closer" role, in this organization only
+
+curl -X POST https://api.example.com/api/v1/organizations/01H.../members \
+
+-H "Authorization: Bearer ..." \
+
+-d '{"user_id": "01H...", "role_id": "01H..."}'
+
+Copy to clipboard
+
+The semantics, because they are a choice: an organization role adds permissions inside that organization. Platform roles, the ones assigned with PUT /users/:id/roles, stay global. So an organization can grant but cannot take away, and a project with no membership roles behaves exactly as it did.
+
+This is what v3.233.0 fixed: the membership role was stored, put on the request context, and read by nothing, so being an administrator of one organization meant being one in every organization you belonged to.
+
+Single sign-on does not join an organization
+
+A user provisioned by SSO or a social login belongs to no organization, so every tenant-owned endpoint answers NO_ORGANIZATION for them until somebody puts them in one. That is deliberate: which organization a new user joins is a policy the framework cannot guess, and guessing would be a cross-tenant bug rather than a convenience. Map it where you know it, from the email domain, the SSO connection, or a group the identity provider releases. grit doctor reminds you when both are present.
+
+Endpoints
+
+GET    /api/organizations                       orgs you belong to
+
+POST   /api/organizations                       create (you become owner)
+
+GET    /api/organizations/:id/members
+
+POST   /api/organizations/:id/members
+
+DELETE /api/organizations/:id/members/:userId
+
+Copy to clipboard
+
+Adding this to an existing app
+
+Existing rows have no org_id. Before adding tenant.Owned to a model that already has data, create a default organization and backfill it — otherwise those rows become invisible to every scoped query.
+
+PluginsRoles & Permissions

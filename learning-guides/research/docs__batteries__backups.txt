@@ -1,0 +1,83 @@
+Batteries
+
+Data & Backup
+
+Every Grit app ships a full database backup system — no add-on, no cron file to write. Manual and scheduled dumps stream straight to your object storage, you can download any of them, and — the part that actually matters — you can restore them.
+
+The backup dashboard lives in the admin under System Hub → Data & Backup. Everything below is also available over the API and, for restore, the grit CLI.
+
+Take a backup now
+
+One click on Backup now creates a full snapshot. The API dumps every table, zips it, and uploads the archive to object storage (MinIO in dev; S3, R2 or B2 in production). The archive is self-describing:
+
+backup-2026-07-21-<id>.zip
+
+├── tables/
+
+│   ├── users.csv
+
+│   ├── roles.csv
+
+│   └── … one CSV per table
+
+├── dump.sql        # INSERTs, parent → child, wrapped in a transaction
+
+└── metadata.json   # table list + per-table row counts
+
+Copy to clipboard
+
+Backups run asynchronously — the request returns immediately with a RUNNING status, and the row flips to READY with its size once the dump finishes.
+
+Scheduled backups
+
+Set a schedule — daily, weekly, monthly or yearly, at a time you choose — and the scheduler picks it up on its next tick. No restart, no redeploy. Set a daily backup once and forget it; the same way the rest of Grit's batteries work: present, wired, and out of your way until you need them.
+
+Download
+
+Downloading a backup mints a short-lived (15-minute) pre-signed URL, so the archive comes straight from object storage and never proxies through your API. Click Download in the dashboard, or hit the endpoint:
+
+GET /api/backups/:id/download
+
+# → { "data": { "url": "https://…storage…/backup.zip?X-Amz-…", "expires_in": 900 } }
+
+Copy to clipboard
+
+Restore
+
+A backup you've never restored is a hope, not a backup. Grit ships restore as a first-class command:
+
+# Restore into a database. Runs migrations to create the schema, then replays
+
+# the archive's dump.sql inside a single transaction — every row lands or none does.
+
+grit restore backup-2026-07-21-abc123.zip
+
+# If the schema already exists, skip the migration step:
+
+grit restore backup.zip --no-migrate
+
+Copy to clipboard
+
+Restore clears the backed-up tables before replaying the dump, so the seeded default rows (the built-in roles) can't collide with the archive's copy of them, and the restored database matches the backup exactly. The whole replay runs in one transaction — if anything fails, nothing is left half-applied.
+
+Rows are replayed in foreign-key order, worked out from the models' relationships, so a table is always filled after the tables it points at. Append-only tables are let through for the length of the restore transaction and guarded again before it commits. Both matter more than they sound: before v3.212.0 a project with line items, or with append-only records, took backups it could not restore. Erasures made after the backup was taken are re-applied from the deletion journal, so a restore does not bring back someone who asked to be forgotten.
+
+Restore onto the right database
+
+The archive carries data, not schema. Point grit restore at the database you want to overwrite — it replaces the contents of the backed-up tables with the archive's. To restore into a fresh, empty database, let it run migrations first (the default); to reset an existing app to a known-good snapshot, --no-migrate skips straight to the replay.
+
+Where backups go
+
+Backups use the same storage layer as uploads. In development that's the bundled MinIO; in production, set STORAGE_DRIVER to s3, r2 or b2 and your archives land in your own bucket. See File Storage for provider configuration.
+
+Use cases
+
+• A nightly safety net you set once and never think about.
+
+• Snapshot before a risky migration or bulk operation, so rollback is one command.
+
+• Clone production data into a staging database to reproduce an issue.
+
+• Point-in-time export for compliance or archival.
+
+Security (Sentinel)Turning modules off

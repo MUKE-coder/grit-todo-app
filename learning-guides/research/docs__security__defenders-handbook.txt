@@ -1,0 +1,451 @@
+Security · Handbook mapping
+Defender's Handbook ↔ Grit
+
+JB's Defender's Handbook walks every attack hackers use to break in — recon, brute-force, SQLi, hash cracking, 2FA bypass, phishing, network attacks. This page is the answer to "OK, so how does Grit stop each of these out of the box?" One attack per section, with the actual file path and code.
+
+AttackBlocked by default
+Each common attack maps to a specific Grit defense — blocked at the edge and logged
+
+How to read this page:
+
+›Chapters mirror the handbook 1:1. Read them in order or jump to the attack you care about.
+
+›Each attack section answers two things: what the attacker does and how Grit defends — by default, in code.
+
+›The Bonus section at the bottom lists defences Grit ships that the handbook doesn't cover at all.
+
+ch.1Reconnaissance & network scanning
+
+Before an attacker breaks in, they map the door. nmap probes open ports, fingerprints the OS, and reads version banners so they can lookup CVEs for the exact build you're running.
+
+Active port + version scanning (nmap -sV / -O / -A)
+
+AttackerProbes live hosts and reads version banners to map applicable CVEs to your stack.
+
+Grit
+
+Grit's scaffolded Docker setup exposes only port 8080 for the API and lets the reverse proxy terminate everything else. The SecurityHeaders middleware strips identifying server banners:Server and X-Powered-By never appear in responses, so version-to-CVE lookup is starved.
+
+Sentinel WAF's Anomaly module flags fast sequential probes (the canonical scan signature) and the IP lands in the dashboard's suspicious-actors list. In production mode rate-limiting kicks in after the first burst.
+
+.env
+Copy to clipboard
+
+APP_ENV=production            # release-mode Gin, no debug banners
+
+SENTINEL_ENABLED=true
+
+TRUSTED_PROXIES=10.0.0.0/8            # forwarded headers from the LB only (Gin and Sentinel)
+
+ch.2Hidden pages & directory brute-forcing
+
+Gobuster hammers the URL space with wordlists looking for unlinked admin panels, .git directories, backup files, and stray dotfiles.
+
+Path / directory brute-forcing (Gobuster + SecLists)
+
+AttackerSprays thousands of common paths against your server; a 200 or 403 confirms the path exists even when nothing links to it.
+
+Grit
+
+Every admin route lives behind authz.RequireRoles("ADMIN") and returns 404 — not 403 — when access is denied, so brute-force tools can't distinguish "does exist, you're blocked" from "doesn't exist". No path leaks via status code.
+
+Sentinel rate-limits requests per IP (default: 100/min) and triggers AuthShield lockouts on high-velocity 401/404 patterns. The WAF's ruleset already blocks dotfile probes (/.git/, /.env, .bak, .swp) by default.
+
+apps/api/internal/routes/routes.go
+Copy to clipboard
+
+admin := api.Group("/admin")
+
+admin.Use(authz.RequireRoles("ADMIN"))   // role gate
+
+{
+
+admin.GET("/users", ...)   // brute-forcer sees 404, never 403
+
+}
+
+ch.3Brute-forcing logins
+
+Hydra throws lists of usernames and passwords at login forms, RDP, or any auth endpoint until something gives. Credential stuffing replays leaked breach databases against unrelated sites.
+
+Web form brute-force (Hydra http-post-form)
+
+AttackerTries thousands of username/password pairs against /api/auth/login.
+
+Grit
+
+Sentinel rate-limits /api/v1/auth/login to 5 attempts / 15 min per IP. After repeated failures, AuthShield places the account in a cool-down window per user, not just per IP — defeating distributed brute-force from a botnet.
+
+internal/routes/routes.go
+Copy to clipboard
+
+RateLimit: sentinel.RateLimitConfig{
+
+Enabled: true,
+
+ByIP:    &sentinel.Limit{Requests: 100, Window: time.Minute},
+
+ByRoute: map[string]sentinel.Limit{
+
+"/api/" + APIVersion + "/auth/login": {Requests: 5, Window: 15 * time.Minute},
+
+},
+
+},
+
+AuthShield: sentinel.AuthShieldConfig{
+
+Enabled: true,
+
+LoginRoute: "/api/" + APIVersion + "/auth/login",
+
+},
+
+Username enumeration via timing or error-message diff
+
+AttackerDifferences in error text or response time reveal which usernames exist, narrowing the password search.
+
+Grit
+
+The handler returns the literal string "invalid credentials" whether the email exists, the password is wrong, or the account is locked. The response time is equalised by always running bcrypt.CompareHashAndPassword against either the real hash or a precomputed dummy hash, so the timing channel is closed too.
+
+internal/handlers/auth.go
+Copy to clipboard
+
+if err := db.First(&user, "email = ?", payload.Email).Error; err != nil {
+
+bcrypt.CompareHashAndPassword(dummyHash, []byte(payload.Password))   // constant-time
+
+c.JSON(401, gin.H{"error": gin.H{"code":"INVALID_CREDENTIALS","message":"invalid credentials"}})
+
+return
+
+}
+
+Credential stuffing (leaked-breach replay)
+
+AttackerReplays billions of username/password pairs from past breaches against unrelated sites; works because users reuse passwords.
+
+Grit
+
+Three layers ship by default. First, TOTP 2FA via internal/totp — a leaked password isn't enough. Second, Sentinel's Anomaly module flags repeated logins with bot-shaped headers. Third, the user model exposes an optional BreachedPasswordCheck hook that you can wire to an offline copy of HaveIBeenPwned's k-anonymity API at registration / password change.
+
+RDP / SSH brute-force on exposed services
+
+AttackerTargets public RDP (3389) or SSH (22) with credential lists. "RDP is uniquely dangerous because it's often exposed directly with no lockout."
+
+Grit
+
+Grit's production Docker setup never exposes the API container directly — only the reverse-proxy (Traefik / Caddy / nginx) faces the internet. The scaffolded docker-compose.prod.yml binds Postgres and Redis to 127.0.0.1 so they aren't reachable from outside the host even if the firewall is misconfigured.
+
+For server access, the scaffold's deploy guide (/docs/deployment/vps) defaults to SSH-key-only authentication, with password auth disabled in the recommended sshd_config.
+
+ch.4SQL injection
+
+Hostile input is glued into a query string and reinterpreted as code, not data — the single most chain-breaking vulnerability class.
+
+Classic SQLi, UNION SELECT exfiltration, blind / time-based
+
+AttackerAdds ' OR 1=1-- to a login form, appends UNION SELECT to leak the users table, or uses SLEEP(5) to infer values bit-by-bit when errors are suppressed.
+
+Grit
+
+Closed at the protocol level by GORM. Every Where, First, Create, Update, and db.Raw uses parameterised queries. The Grit codebase has zero string-concatenated SQL.
+
+ok and not ok
+Copy to clipboard
+
+// OK — parameterised
+
+db.Where("email = ?", email).First(&user)
+
+db.Raw("SELECT * FROM users WHERE email = ?", email).Scan(&user)
+
+// NEVER do this
+
+db.Raw("SELECT * FROM users WHERE email = '" + email + "'")
+
+The DB account used by the API is created via docker-compose.prod.yml with the minimum privileges needed — no SUPERUSER, no CREATE on other schemas. Sentinel WAF's SQLi ruleset gives a second layer if a custom db.Raw ever slips a hostile string in.
+
+Errors never leak. The error handler returns the generic { "code": "INTERNAL_ERROR" }  envelope in production — no SQL fragments, no driver messages, no DB column hints reach the client.
+
+ch.5Password hash cracking
+
+A breach + a list of password hashes turns into an offline brute-force race. MD5 and SHA-1 are billions/sec on GPU. Salt-less hashes can be reversed via precomputed rainbow tables.
+
+Dictionary attack on MD5 / SHA-1 hashes (John, Hashcat)
+
+AttackerHashes every candidate from a wordlist and matches; weak passwords fall in seconds because the hash is too fast.
+
+Grit
+
+Grit only hashes passwords with bcrypt via golang.org/x/crypto/bcrypt. Verify is constant-time. The library default cost (10) is rotated up by internal/auth.RehashIfWeak on successful login, so when the recommended cost moves to 12 the next time a user signs in their hash upgrades silently.
+
+internal/services/auth.go
+Copy to clipboard
+
+hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+
+// ...
+
+err := bcrypt.CompareHashAndPassword(user.PasswordHash, []byte(payload.Password))
+
+Rainbow tables on unsalted hashes
+
+AttackerPrecomputed hash→password tables reverse unsalted hashes "almost instantly".
+
+Grit
+
+bcrypt generates and stores a unique 16-byte salt per password as part of the hash output. Two identical passwords produce two different hashes. Rainbow tables are useless against the column.
+
+Cracking the JWT signing secret
+
+AttackerEven with strong password hashing, a leaked weak JWT_SECRET lets the attacker forge tokens for any user.
+
+Grit
+
+v3.25.1 generates a 32-byte hex JWT_SECRET (64 characters) at scaffold time via crypto/rand — no more shipping with your-super-secret-jwt-key-change-in-production. The config loader refuses to boot if the secret is shorter than 32 characters. The verifier pins the signing algorithm so the alg:none attack is impossible.
+
+ch.6Defeating two-factor authentication
+
+TOTP, SMS, and even push 2FA all have known bypasses — seed theft via SQLi, SIM swaps, and adversary-in-the-middle phishing proxies (Evilginx).
+
+TOTP seed theft from the database
+
+AttackerTOTP's entire security is the seed. If SQLi or a backup leak exposes the seed column, the attacker generates valid codes forever.
+
+Grit
+
+Grit's TOTP module stores the seed encrypted with AES-GCM, keyed by a derivative of JWT_SECRET. SQLi or a DB dump leaks only ciphertext — useless without the env-var key, which lives outside the database. The decryption happens at the moment of code verification and the plaintext seed never lands in any log.
+
+internal/totp/store.go
+Copy to clipboard
+
+func (s *Store) StoreSeed(userID, seed string) error {
+
+encrypted, err := s.aead.Seal(nil, nonce, []byte(seed), nil)
+
+// ...
+
+return s.db.Save(&UserTOTP{UserID: userID, EncryptedSeed: encrypted}).Error
+
+}
+
+SIM swapping (SMS 2FA defeated)
+
+AttackerCarrier social-engineering moves the phone number; every SMS code goes to the attacker.
+
+Grit
+
+SMS-OTP is intentionally not a built-in factor in Grit. The scaffolded internal/totp module is app-based TOTP only. The doc'd 2FA upgrade path is FIDO2 / WebAuthn passkeys via the planned internal/webauthn package — phishing-resistant and bound to the real site's origin, defeating both SIM swap and real-time proxy phishing.
+
+Adversary-in-the-Middle phishing (Evilginx)
+
+AttackerA proxy between user and the real site captures password, OTP, AND the resulting session cookie in real time — 2FA bypassed.
+
+Grit
+
+Three controls ship today. (1) Session cookies are HttpOnly, Secure, SameSite=Strict. (2) JWTs are bound to a device fingerprint at issue time — token reuse from a different UA / IP family triggers a forced re-auth via the Anomaly module. (3) Access tokens are short-lived (15 min); the refresh ceremony re-validates the fingerprint.
+
+ch.7Phishing, trojans & reverse shells
+
+Most breaches start with a click. A trojan (Meterpreter, AsyncRAT) lands on a developer or operator's machine and opens an outbound tunnel back to the attacker.
+
+Spear phishing with malware attachment
+
+AttackerConvincing email impersonates a trusted contact; the attachment is a trojan disguised with a double extension (picture.jpeg.exe).
+
+Grit
+
+Server-side, Grit can't stop the click — but it can stop the consequences from spreading. The scaffolded jobs/worker.go and main.go never run as root. The Docker setup uses an unprivileged grit user inside the container; the host firewall config in docs/infrastructure/deployment blocks all inbound except 80/443. internal/storage never executes uploaded files — uploads go to object storage by content-hash filename, no execution bit.
+
+Reverse shell callback (Meterpreter on Metasploit)
+
+AttackerVictim's machine opens an outbound connection to attacker's listener — firewalls usually allow outbound so the tunnel works.
+
+Grit
+
+Grit's production Docker network is egress-filtered by default: the API container can talk to Postgres + Redis + the AI Gateway + the configured S3 endpoint, and nothing else. A reverse shell trying to call out to a random IP gets a packet-drop instead of a TCP handshake. The compose file:
+
+docker-compose.prod.yml
+Copy to clipboard
+
+api:
+
+networks: [internal]
+
+networks:
+
+internal:
+
+driver: bridge
+
+internal: false   # we toggle this to true when you list explicit egress hosts
+
+Stealing saved browser passwords post-compromise
+
+AttackerOnce attacker is code-running-as-you, browser-saved passwords come out in plaintext — the OS-tied key decrypts them.
+
+Grit
+
+Grit's admin / web apps never invite browser password autofill for the Sentinel and Pulse dashboards — both surfaces use autocomplete="off" on credential inputs and ship hardware-key prompts where the password manager would normally pop. Recommended: route admin auth through SSO (Auth0 / WorkOS / Clerk) so the local credential cache never holds valid material.
+
+ch.8Network & Wi-Fi attacks
+
+Packet sniffing, MITM, SSL stripping, evil twins, ARP poisoning, DNS hijacking, and DDoS — all the attacks that ride the network layer.
+
+SSL stripping + plaintext sniffing on public Wi-Fi
+
+AttackerDowngrades HTTPS to HTTP while talking to the real site over HTTPS — no warning. Plaintext credentials become readable on the wire.
+
+Grit
+
+SecurityHeaders middleware emits Strict-Transport-Security: max-age=63072000; includeSubDomains; preload the moment the connection lands on TLS. The Grit deploy guide submits the production domain to the Chrome HSTS preload list so even the first-ever request never sees plain HTTP.
+
+The scaffolded Traefik / Caddy templates auto-issue Let's Encrypt certs and enforce TLS 1.2+ with the Mozilla Modern cipher suite — TLS 1.0 / 1.1 and weak ciphers are disabled.
+
+Evil twin / rogue access point auto-connect
+
+AttackerClones a trusted Wi-Fi SSID with stronger signal; the victim's laptop auto-connects to the fake.
+
+Grit
+
+Web-side defence is the same as SSL stripping above: HSTS+preload makes the browser refuse to talk HTTP no matter what DNS or AP it's on. Any cert that doesn't match preload-pinned settings triggers a hard fail — no "proceed anyway" button.
+
+DDoS via botnet (IoT, Mirai-style)
+
+AttackerBotnet of compromised devices floods the public service with traffic — Twitter, Netflix, Reddit all went offline this way.
+
+Grit
+
+Layered: Sentinel does per-IP and per-route rate limiting at app level. The deploy guide puts Cloudflare (or BunnyShield) in front of the origin for L3/L4 absorption — a free Cloudflare account stops volumetric floods you'd never survive at the origin.
+
+Pulse's real-time metrics dashboard at /pulse/ui exposes p50/p95/p99 latency, RPS, and per-route 4xx/5xx rates so the on-call sees the spike before the customer does. Hook the alerts webhook to PagerDuty / Slack and you're paged within seconds.
+
+ch.9Defence in depth — the cross-cutting controls
+
+The handbook closes on the controls that aren't tied to one attack: least privilege, logging, dependency hygiene, segmentation, secrets management.
+
+Least privilege everywhere
+
+AttackerWhen something gets compromised, blast radius = whatever that something could do. A broad-permission DB user or a root-running container turns a small bug into a takeover.
+
+Grit
+
+Grit's production Docker runs as an unprivileged user (added in v3.25 review patch). The Postgres role used by the API hasCREATE only on its own schema, no SUPERUSER, and no read access to pg_authid. Role-based access in app code uses authz.RequireRoles — every privileged route is explicit, none are gated by "is-authenticated" alone.
+
+Security logging + alerting
+
+AttackerNo logs, no alerts → no detection. Successful attacks last for months because nothing fires.
+
+Grit
+
+middleware.LogSecurityEvent(ctx, db, userID, event, ip, ua) writes typed events (login, logout, password change, role change, AuthZ denial, suspicious request, TOTP enable/disable, account lock) into the tamper-evident activity log — every row stores a SHA-256 hash of the previous row + its canonical fields, so retroactive deletion breaks the chain at verification time. Use this for SOC 2 / ISO 27001 / GDPR audits.
+
+Alerts route through Sentinel webhooks to Slack / PagerDuty / email for spikes in failed logins, AuthZ denials, or WAF blocks. The dashboard at /sentinel/ui shows everything in real time.
+
+Dependency hygiene (Sony Pictures, Equifax)
+
+AttackerA bug in a transitive dep is your bug too. Equifax fell to a months-old Struts CVE no one had patched.
+
+Grit
+
+Every scaffolded project ships:
+
+.github/dependabot.yml — weekly PRs for Go modules, npm, and GitHub Actions.
+
+.github/workflows/security.yml — runs govulncheck (Go CVE DB) + pnpm audit (high+ gate) + CodeQL static analysis on every PR and weekly.
+
+.github/workflows/ci.yml, which runs the API's tests and the frontend's lint (Biome), type-check, tests and build on every pull request.
+
+go.sum checksum verification on every go mod command, and pnpm install --frozen-lockfile in CI once the lockfile is committed, so a typosquat or a compromised tag fails the build.
+
+Secrets management
+
+AttackerPlaintext passwords in a file literally named "Computer Passwords" is real — that's how Sony fell.
+
+Grit
+
+No secret ever lives in code. .env is in .gitignore from the first commit; the scaffold ships only .env.example. As of v3.25.1 every fresh .env ships with crypto-random JWT_SECRET, SENTINEL_SECRET_KEY, SENTINEL_PASSWORD, and PULSE_PASSWORD — no "change-me-in-production" placeholders that someone forgot to change.
+
+Production deploys are documented to read from a secrets manager (AWS Secrets Manager, Doppler, Infisical, Vault) via the same env-var interface — no app-code change needed to move from .env to a vault.
+
+Bonus — defences Grit ships beyond the handbook
+
+The handbook is a great map of the attacks most hackers use. These are the ones Grit defends against by default that didn't make the handbook's table of contents — either because they're newer, more enterprise-y, or operationally invisible.
+
+SSRF defence (the safefetch package)
+
+The handbook walks recon → SQLi → brute-force, but doesn't cover Server-Side Request Forgery — the attack where a hostile user makes your server fetch a URL it shouldn't (cloud metadata, internal services). It's now folded into OWASP A01:2025 for a reason — Capital One's 2019 breach was SSRF.
+
+Grit ships internal/safefetch for any HTTP request whose URL came from a user (webhooks, image-from-URL, PDF render, OEmbed). It blocks loopback, RFC1918, link-local, CGNAT, AWS / GCP / Azure metadata IPs, and re-validates the resolved IP at TCP-connect time via a custom dialer — closing the DNS-rebinding TOCTOU window most SSRF guards miss.
+
+IDOR defence by-default (the authz package)
+
+The handbook doesn't cover Insecure Direct Object Reference — the attack where the user changes /orders/42 to /orders/43 and gets someone else's order. It's OWASP's #1 risk three years running.
+
+Grit ships authz.MustOwn(c, db, &model, c.Param("id")) for this. The helper loads the row, verifies ownership against the authenticated user, and returns 404 (not 403) on a mismatch so existence isn't leaked. Implement GetOwnerID() on the model and call it at the top of any handler that reads or writes a row by id.
+
+Or let the generator do it. --owned-by names the field that says who a row belongs to, and wires every path that reaches a row: the list, the export and bulk actions are scoped to the caller; read, PDF, update, patch and delete check ownership by id, as does a workflow transition; create stamps the owner from the session rather than trusting the request body, and so does the CSV importer. An ADMIN is exempt throughout, because the admin panel calls the same endpoints, and is the only role that may name another owner in an import. --tree cannot be combined with it yet, because the tree endpoints have no notion of an owner.
+
+grit generate resource Invoice --fields "number:string,total:money" --owned-by user
+
+Copy to clipboard
+
+Without it, the rows are shared, and permissions decide. The generator cannot guess which resources are per-user and which are shared data, so a resource generated without --owned-by or --tenant-owned is shared: every row is visible to whoever may see the resource at all. Since v3.241.0 that is decided per verb: each route asks for <resource>.view, .create, .edit or .delete, which an ADMIN holds and a role grants. Before it, only delete asked, and any signed-in account could read and write every row, which on an app with open registration is anybody. grit upgrade moves routes generated that way behind their permissions. If you wrote a route by hand on m.Protected, it is still open to every account you have issued.
+
+Rich text is sanitised before it is stored
+
+HTML that one account writes and another reads is the classic stored XSS, and an admin panel on the same origin turns it into an account takeover. Grit cleans it in the API: internal/sanitize is installed on the database handle when the API connects, and every field tagged sanitize:"html" is cleaned on every write that has a model. Create, update, PATCH, bulk edit, CSV import, sync push and GORM Studio are all covered. Generated richtext fields and the blog are tagged for you, and the blog pages render through DOMPurify as well.
+
+type Page struct {
+
+Body string `gorm:"type:text" json:"body" sanitize:"html"`
+
+}
+
+Copy to clipboard
+
+Raw SQL and db.Table("pages") without a model bypass it. If you render stored HTML with dangerouslySetInnerHTML anywhere else, sanitise it there too.
+
+CSRF middleware (double-submit + SameSite)
+
+The handbook leans on JWT / session security but doesn't spell out CSRF. Grit ships a double-submit-cookie CSRF middleware for cookie-based sessions, plus SameSite=Strict on every cookie issued. The middleware is registered on every state-changing route group (POST / PUT / PATCH / DELETE) automatically.
+
+HMAC-verified webhook receivers
+
+The handbook says "don't trust unverified data" — Grit operationalises it. internal/webhooks verifies HMAC signatures for Stripe, GitHub, Twilio, Resend, and a generic ed25519 receiver before any business logic runs. The verifier rejects timing-leaked comparisons by using hmac.Equal and replays are blocked by a timestamp tolerance window.
+
+Idempotency-Key middleware (replay defence)
+
+A retry of a payment, a duplicate webhook delivery, a flaky network on a POST — all can re-charge a card or double-process a write. Grit's idempotency middleware caches the response on the first non-safe request and replays it on retries with the same Idempotency-Key header, preventing duplicate writes from at-least-once delivery. Stripe and AWS both do this — most app frameworks don't.
+
+Tamper-evident audit log (SHA-256 hash chain)
+
+The handbook says "monitor your logs". Grit's logs go further: every row in the activity log stores a SHA-256 hash of the previous row plus its canonical fields. Retroactive tampering — deleting an incriminating row, editing a timestamp — breaks the chain at the next verify-job run. The pattern is the same one git uses for commits and blockchains for blocks.
+
+Sentinel WAF + AuthShield + Anomaly + Geo (in-process)
+
+The handbook mentions WAFs but only as bolt-on infrastructure. Grit embeds Sentinel directly in the API process — a WAF ruleset that runs at sub-millisecond latency, AuthShield brute-force lockouts, an Anomaly module for behavioural detection, and Geo for country-level blocking. The admin sees everything at /sentinel/ui.
+
+Pulse observability (in-app, no Datadog bill)
+
+You can't defend what you can't see. Pulse mounts at /pulse/ui and exposes p50 / p95 / p99 latency, RPS per route, error rates, per-handler timings, and recent slow queries — the dashboard the handbook tells you to build, already built. SQLite-backed storage means zero extra infra; production deploys can swap to Postgres.
+
+k6 load + 6-test methodology shipped
+
+The handbook says "test regularly". Grit's tests/k6/ directory ships six pre-written tests — smoke, average load, stress, spike, soak, breakpoint — with thresholds that turn the suite into a pass/fail in CI. See the Testing page for the full methodology, and the Learnings walkthrough for a step-by-step bench from scaffold to committed latency chart.
+
+JWT alg pinning + 32-byte secret minimum
+
+The auth middleware rejects any JWT whose alg doesn't match the one we signed with — the classic alg:none attack is impossible. The config loader refuses to start with a JWT_SECRET shorter than 32 characters. As of v3.25.1 the scaffold generates a 32-byte hex secret automatically.
+
+Want the OWASP-by-category view too?
+
+The same defences mapped against OWASP Top 10:2025 — the audit checklist clients walk with you line by line. To prove the defences hold, see Performance & Pentest Testing for the k6 + Burp + nuclei methodology.
+
+OWASP viewTesting methodology
+
+None of this replaces testing. A defence that's "shipped" but never exercised may have rotted in a refactor. Walk the pentest methodology before every prod release — sqlmap on a sandbox, nuclei template scan, Burp Suite auth tampering, k6 average-load. Real attackers don't care what your docs say.
+
+Security Guide (OWASP)Performance & Pentest Testing

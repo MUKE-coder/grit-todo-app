@@ -1,0 +1,525 @@
+Admin Panel
+Dashboard & Widgets
+
+The admin dashboard is the home page of the admin panel. It displays a collection of widgets — stats cards, charts, and activity feeds — assembled from your resource definitions and custom API endpoints.
+
+Resource countsCustom endpoints
+Widgets assemble from resource counts and custom endpoints — stats, charts, and activity
+
+Dashboard Page
+
+When an admin user opens the admin panel, the first page they see is the dashboard (apps/admin/app/page.tsx). It aggregates widgets from all registered resources — both the preset widgets every resource gets automatically and any custom widgets you declare in the resource'sdashboard section.
+
+The dashboard layout uses a responsive grid. Each widget claims a number of columns through its colSpan property (1–4), and the grid collapses to fewer columns on smaller screens:
+
+Desktop (lg+) — 4-column grid; a colSpan: 2 widget takes half the row.
+
+Tablet (md) — 2-column grid; wide widgets span the full width.
+
+Mobile (sm) — single column, all widgets stacked vertically.
+
+Widgets load their data independently using React Query, so the dashboard renders progressively — fast widgets appear immediately while slower ones show skeleton loaders.
+
+Preset Widgets (Opt-Out)
+
+Every generated resource automatically gets a set of preset dashboard widgets — a Total stat with a sparkline and aLatest N activity list. You do not need to configure anything to get them. They are opt-out: to hide a resource's preset widgets from the dashboard, set enabled: false on itsdashboard definition.
+
+Hide the preset widgets
+Copy to clipboard
+
+dashboard: {
+
+enabled: false,   // hides the preset Total + Latest N widgets for this resource
+
+}
+
+Declaring widgets does not disable the presets — your custom widgets render alongside the presets unless you also setenabled: false.
+
+Widget Types
+
+Every dashboard widget shares a single shape, WidgetDefinition. The type field selects the kind of widget, and for charts thechartType field selects the visualization. Import the types (anddefineResource) from @/lib/resource.
+
+apps/admin/lib/resource.ts
+Copy to clipboard
+
+export type WidgetType = "stat" | "chart" | "activity";
+
+export type ChartType = "line" | "bar" | "pie";
+
+export type WidgetFormat = "number" | "currency" | "percentage";
+
+export interface WidgetDefinition {
+
+type: WidgetType;
+
+label: string;
+
+endpoint?: string;         // where the widget fetches its data
+
+icon?: string;             // Lucide icon name
+
+color?: string;            // accent color
+
+format?: WidgetFormat;     // how "stat" values are formatted
+
+chartType?: ChartType;     // only for type "chart"
+
+limit?: number;            // e.g. how many rows for an "activity" widget
+
+colSpan?: 1 | 2 | 3 | 4;   // grid width
+
+}
+
+export interface DashboardDefinition {
+
+enabled?: boolean;              // false hides the preset per-resource widgets
+
+widgets?: WidgetDefinition[];   // custom widgets
+
+}
+
+The three widget types, and the chartType matrix for charts:
+
+typechartTypeRenders
+
+stat—A single metric value (formatted by format), icon, and color.
+
+chartlineA time-series line chart.
+
+chartbarA categorical bar chart.
+
+chartpieA proportional pie chart.
+
+activity—A list of the latest limit records/events.
+
+Stat Widget
+
+A compact card that displays a single metric fetched from itsendpoint. The format property controls how the value is rendered: "number", "currency", or "percentage".
+
+Stat widget
+Copy to clipboard
+
+{
+
+type: 'stat',
+
+label: 'Total Revenue',
+
+endpoint: '/api/orders/stats/revenue',
+
+format: 'currency',
+
+icon: 'DollarSign',
+
+color: 'green',
+
+colSpan: 1,
+
+}
+
+Chart Widget
+
+Charts render with Recharts. Set type: 'chart' and pick a chartType of'line' (trends over time), 'bar'(categorical comparisons), or 'pie' (proportions of a whole). The widget fetches an array of data points from itsendpoint.
+
+Chart widgets
+Copy to clipboard
+
+// Line chart — revenue over time
+
+{
+
+type: 'chart',
+
+chartType: 'line',
+
+label: 'Revenue Over Time',
+
+endpoint: '/api/orders/stats/revenue-by-month',
+
+format: 'currency',
+
+color: 'purple',
+
+colSpan: 2,
+
+}
+
+// Bar chart — orders grouped by status
+
+{
+
+type: 'chart',
+
+chartType: 'bar',
+
+label: 'Orders by Status',
+
+endpoint: '/api/orders/stats/by-status',
+
+color: 'blue',
+
+colSpan: 2,
+
+}
+
+// Pie chart — share of orders per category
+
+{
+
+type: 'chart',
+
+chartType: 'pie',
+
+label: 'Orders by Category',
+
+endpoint: '/api/orders/stats/by-category',
+
+colSpan: 2,
+
+}
+
+Activity Widget
+
+The activity widget displays a chronological list of the most recent records or events. Use limit to control how many rows it shows; the widget requests them from its endpoint.
+
+Activity widget
+Copy to clipboard
+
+{
+
+type: 'activity',
+
+label: 'Recent Orders',
+
+endpoint: '/api/orders?sort=-created_at',
+
+limit: 10,
+
+colSpan: 2,
+
+}
+
+Grid Layout
+
+The dashboard is a 4-column grid on desktop. Each widget'scolSpan (1–4) decides how many columns it occupies; widgets flow left-to-right and wrap onto the next row when the current one fills. A typical layout — a row of four colSpan: 1 stats, then twocolSpan: 2 charts, then a full-width activity feed — looks like this:
+
+Dashboard grid (colSpan)
+Copy to clipboard
+
+┌──────────┬──────────┬──────────┬──────────┐
+
+│  stat    │  stat    │  stat    │  stat    │   colSpan: 1  ×4
+
+│  (1)     │  (1)     │  (1)     │  (1)     │
+
+├──────────┴──────────┼──────────┴──────────┤
+
+│  chart · line       │  chart · bar        │   colSpan: 2  ×2
+
+│  (2)                │  (2)                │
+
+├─────────────────────┴─────────────────────┤
+
+│  activity · Recent Orders                 │   colSpan: 4
+
+│  (4)                                      │
+
+└───────────────────────────────────────────┘
+
+On tablet the grid collapses to 2 columns and on mobile to a single column, so a colSpan: 2 widget becomes full-width and everything stacks.
+
+Custom Widget Endpoints
+
+Each widget names an endpoint, and the admin fetches that URL directly with React Query — there is no query DSL or translation layer. Your Go handler decides what the widget shows; return the payload under adata key following the standard Grit response format.
+
+A stat widget expects a single value, a chart widget expects an array of { label, value } points, and anactivity widget expects an array of records.
+
+apps/api/internal/handlers/stats.go
+Copy to clipboard
+
+// GET /api/orders/stats/revenue  →  feeds a { type: 'stat' } widget
+
+func (h *StatsHandler) GetRevenue(c *gin.Context) {
+
+total, err := h.service.SumOrderTotals(c)
+
+if err != nil {
+
+c.JSON(500, gin.H{"error": gin.H{"message": err.Error()}})
+
+return
+
+}
+
+c.JSON(200, gin.H{
+
+"data": total, // e.g. 84350.00 — rendered with format: 'currency'
+
+})
+
+}
+
+// GET /api/orders/stats/revenue-by-month  →  feeds a { type: 'chart' } widget
+
+func (h *StatsHandler) GetRevenueByMonth(c *gin.Context) {
+
+points, err := h.service.RevenueByMonth(c)
+
+if err != nil {
+
+c.JSON(500, gin.H{"error": gin.H{"message": err.Error()}})
+
+return
+
+}
+
+// points: []gin.H{{"label": "Sep 2025", "value": 12400}, ...}
+
+c.JSON(200, gin.H{"data": points})
+
+}
+
+Register the endpoints in your routes file:
+
+apps/api/internal/routes/routes.go
+Copy to clipboard
+
+// Order stats endpoints
+
+orders := api.Group("/orders/stats")
+
+orders.Use(middleware.AuthMiddleware(), middleware.RequireRole("admin"))
+
+{
+
+orders.GET("/revenue", statsHandler.GetRevenue)
+
+orders.GET("/revenue-by-month", statsHandler.GetRevenueByMonth)
+
+orders.GET("/by-status", statsHandler.GetOrdersByStatus)
+
+}
+
+Stat Cards Above the Table
+
+Separate from dashboard widgets, every resource page can show a row ofstat cards above its data table. These are configured with the resource's stats property, which accepts either a boolean or aStatsConfig object:
+
+Omit stats — you get 4 auto-generated cards (Total, This Week, This Month, Updated Recently).
+
+stats: false — disables the stat cards for this resource page.
+
+stats: { cards: [...] } — fully custom cards.
+
+apps/admin/lib/resource.ts
+Copy to clipboard
+
+export interface StatsConfig {
+
+enabled?: boolean;
+
+cards?: StatCardConfig[];
+
+}
+
+export interface StatCardConfig {
+
+label: string;
+
+icon?: string;
+
+color?: "default" | "success" | "warning" | "danger" | "info";
+
+value?: string | number;         // a fixed value, or…
+
+endpoint?: string;               // …fetch the value from here
+
+field?: string;                  // which field in the response to read
+
+trend?: { value: number; direction: "up" | "down" };
+
+}
+
+Custom stat cards
+Copy to clipboard
+
+stats: {
+
+cards: [
+
+{
+
+label: 'Total Orders',
+
+icon: 'ShoppingCart',
+
+color: 'default',
+
+endpoint: '/api/orders/stats/count',
+
+field: 'value',
+
+},
+
+{
+
+label: 'Revenue',
+
+icon: 'DollarSign',
+
+color: 'success',
+
+endpoint: '/api/orders/stats/revenue',
+
+field: 'value',
+
+trend: { value: 12.5, direction: 'up' },
+
+},
+
+{
+
+label: 'Pending',
+
+icon: 'Clock',
+
+color: 'warning',
+
+value: 18,
+
+},
+
+],
+
+}
+
+Full Resource Example
+
+Putting it together — a resource with custom dashboard widgets and custom stat cards. The preset dashboard widgets are hidden here withdashboard.enabled: false so only the custom widgets show.
+
+apps/admin/resources/orders.ts
+Copy to clipboard
+
+import { defineResource } from '@/lib/resource'
+
+export default defineResource({
+
+name: 'Order',
+
+slug: 'orders',
+
+endpoint: '/api/orders',
+
+icon: 'ShoppingCart',
+
+table: { /* ... columns and filters ... */ },
+
+form: { /* ... fields ... */ },
+
+// Custom stat cards above the orders table
+
+stats: {
+
+cards: [
+
+{ label: 'Total Orders', icon: 'ShoppingCart', endpoint: '/api/orders/stats/count', field: 'value' },
+
+{ label: 'Revenue', icon: 'DollarSign', color: 'success', endpoint: '/api/orders/stats/revenue', field: 'value', trend: { value: 12.5, direction: 'up' } },
+
+{ label: 'Pending', icon: 'Clock', color: 'warning', value: 18 },
+
+],
+
+},
+
+// Dashboard widgets (presets hidden via enabled: false)
+
+dashboard: {
+
+enabled: false,
+
+widgets: [
+
+{ type: 'stat', label: 'Total Revenue', endpoint: '/api/orders/stats/revenue', format: 'currency', icon: 'DollarSign', color: 'green', colSpan: 1 },
+
+{ type: 'stat', label: 'Total Orders', endpoint: '/api/orders/stats/count', format: 'number', icon: 'ShoppingCart', color: 'purple', colSpan: 1 },
+
+{ type: 'chart', chartType: 'line', label: 'Revenue Over Time', endpoint: '/api/orders/stats/revenue-by-month', format: 'currency', color: 'purple', colSpan: 2 },
+
+{ type: 'chart', chartType: 'bar', label: 'Orders by Status', endpoint: '/api/orders/stats/by-status', color: 'blue', colSpan: 2 },
+
+{ type: 'activity', label: 'Recent Orders', endpoint: '/api/orders?sort=-created_at', limit: 10, colSpan: 4 },
+
+],
+
+},
+
+})
+
+Widget API Response Format
+
+Widget endpoints return their payload under a data key. The shape of data depends on the widget type consuming it.
+
+Widget API responses
+Copy to clipboard
+
+// stat widget  →  GET /api/orders/stats/revenue
+
+{ "data": 84350.00 }
+
+// chart widget →  GET /api/orders/stats/revenue-by-month
+
+{
+
+"data": [
+
+{ "label": "Sep 2025", "value": 12400 },
+
+{ "label": "Oct 2025", "value": 15800 },
+
+{ "label": "Nov 2025", "value": 13200 },
+
+{ "label": "Dec 2025", "value": 19500 }
+
+]
+
+}
+
+// activity widget →  GET /api/orders?sort=-created_at
+
+{
+
+"data": [
+
+{ "id": 1247, "status": "paid", "total": 129.00, "created_at": "2026-02-11T14:30:00Z" },
+
+{ "id": 1246, "status": "pending", "total": 84.50, "created_at": "2026-02-11T14:15:00Z" }
+
+]
+
+}
+
+Widget Styling
+
+All widgets follow the Grit dark theme aesthetic. Cards have subtle borders (border-border/40), slightly elevated backgrounds (bg-card/80), and consistent padding. Charts use the purple accent color by default with gradient fills. Stat widgets and stat cards render their icon and accent using the color property.
+
+Skeleton loaders match the exact dimensions of each widget type, preventing layout shift during initial load. Error states display a subtle error message inside the widget area without breaking the grid layout.
+
+What's Next?
+
+Web App (Frontend)
+
+Learn about the Next.js frontend application and its structure.
+
+React Query Hooks
+
+Auto-generated data fetching hooks for your resources.
+
+File Storage
+
+S3-compatible file uploads and management.
+
+Background Jobs
+
+Redis-backed job queue with admin dashboard.
+
+Form BuilderWeb App

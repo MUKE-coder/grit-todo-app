@@ -1,0 +1,813 @@
+Backend (Go API)
+Middleware
+
+Middleware functions intercept HTTP requests before they reach your handlers. Grit ships with four built-in middleware: Auth (JWT validation), CORS, Logger, and Cache. You can also create custom middleware.
+
+Middleware Order & Registration
+
+Middleware is registered in routes/routes.go. The order matters -- middleware executes in the order it is registered.
+
+Global (all routes)Protected groupAdmin group
+1–3 run on every route; 4 is added on protected groups, 5 on admin groups (dashed = conditional)
+
+apps/api/internal/routes/routes.go
+Copy to clipboard
+
+func Setup(db *gorm.DB, cfg *config.Config, svc *Services) *gin.Engine {
+
+r := gin.New()
+
+// ── Global middleware (applied to ALL routes) ────────
+
+r.Use(middleware.Logger())       // 1. Log every request
+
+r.Use(gin.Recovery())            // 2. Recover from panics
+
+r.Use(middleware.CORS(cfg.CORSOrigins)) // 3. Handle CORS
+
+// ── Public routes (no auth required) ────────────────
+
+auth := r.Group("/api/auth")
+
+{
+
+auth.POST("/register", authHandler.Register)
+
+auth.POST("/login", authHandler.Login)
+
+}
+
+// ── Protected routes (auth middleware applied) ──────
+
+protected := r.Group("/api")
+
+protected.Use(middleware.Auth(db, authService)) // 4. Require JWT
+
+{
+
+protected.GET("/posts", postHandler.List)
+
+}
+
+// ── Admin routes (auth + role check) ────────────────
+
+admin := r.Group("/api")
+
+admin.Use(middleware.Auth(db, authService))     // 4. Require JWT
+
+admin.Use(middleware.RequireRole("ADMIN"))       // 5. Require admin role
+
+{
+
+admin.GET("/users", userHandler.List)
+
+admin.DELETE("/users/:id", userHandler.Delete)
+
+}
+
+return r
+
+}
+
+Execution order: Logger runs first, then Recovery, then CORS, then Auth (if on a protected route), then RequireRole (if on an admin route), then finally the handler itself.
+
+Auth Middleware
+
+The Auth middleware extracts the JWT token from the Authorization header, validates it, loads the user from the database, and stores the user in the Gin context for downstream handlers.
+
+apps/api/internal/middleware/auth.go
+Copy to clipboard
+
+func Auth(db *gorm.DB, authService *services.AuthService) gin.HandlerFunc {
+
+return func(c *gin.Context) {
+
+// 1. Extract the Authorization header
+
+authHeader := c.GetHeader("Authorization")
+
+if authHeader == "" {
+
+c.JSON(http.StatusUnauthorized, gin.H{
+
+"error": gin.H{
+
+"code":    "UNAUTHORIZED",
+
+"message": "Authorization header is required",
+
+},
+
+})
+
+c.Abort()
+
+return
+
+}
+
+// 2. Parse "Bearer <token>"
+
+parts := strings.SplitN(authHeader, " ", 2)
+
+if len(parts) != 2 || parts[0] != "Bearer" {
+
+c.JSON(http.StatusUnauthorized, gin.H{
+
+"error": gin.H{
+
+"code":    "UNAUTHORIZED",
+
+"message": "Invalid authorization header format",
+
+},
+
+})
+
+c.Abort()
+
+return
+
+}
+
+// 3. Validate the JWT token
+
+claims, err := authService.ValidateToken(parts[1])
+
+if err != nil {
+
+c.JSON(http.StatusUnauthorized, gin.H{
+
+"error": gin.H{
+
+"code":    "UNAUTHORIZED",
+
+"message": "Invalid or expired token",
+
+},
+
+})
+
+c.Abort()
+
+return
+
+}
+
+// 4. Load user from database
+
+var user models.User
+
+if err := db.First(&user, claims.UserID).Error; err != nil {
+
+c.JSON(http.StatusUnauthorized, gin.H{
+
+"error": gin.H{
+
+"code":    "UNAUTHORIZED",
+
+"message": "User not found",
+
+},
+
+})
+
+c.Abort()
+
+return
+
+}
+
+// 5. Check if the account is active
+
+if !user.Active {
+
+c.JSON(http.StatusForbidden, gin.H{
+
+"error": gin.H{
+
+"code":    "ACCOUNT_DISABLED",
+
+"message": "Your account has been disabled",
+
+},
+
+})
+
+c.Abort()
+
+return
+
+}
+
+// 6. Store user data in context for handlers
+
+c.Set("user", user)
+
+c.Set("user_id", user.ID)
+
+c.Set("user_role", user.Role)
+
+c.Next()
+
+}
+
+}
+
+After this middleware runs, handlers can access the authenticated user:
+
+accessing user in handler
+Copy to clipboard
+
+func (h *PostHandler) Create(c *gin.Context) {
+
+// Get the full user object
+
+user, _ := c.Get("user")
+
+currentUser := user.(models.User)
+
+// Or get individual fields
+
+userID, _ := c.Get("user_id")    // string (UUID)
+
+role, _ := c.Get("user_role")     // string
+
+}
+
+Identify Middleware
+
+Identify is Auth without the wall. It reads the session if there is one and lets the request through either way, which is what a public page that is not the same page for everybody needs: a catalogue that marks what the reader already owns, a pricing page that knows their current plan, an article with their own comment on it. Each has to be readable signed out, so it cannot sit behind Auth, and without Identify the handler cannot tell who is reading even when they are signed in.
+
+apps/api/internal/routes/routes.go
+Copy to clipboard
+
+// Readable by anyone. Signed in, the same page says which of them you own.
+
+catalogue := v1.Group("/catalogue", middleware.Identify(db, authService))
+
+{
+
+catalogue.GET("", shopHandler.List)
+
+catalogue.GET("/:slug", shopHandler.Detail)
+
+}
+
+// In the handler: a reader, or nobody.
+
+func (h *ShopHandler) Detail(c *gin.Context) {
+
+// "" when the request is anonymous.
+
+userID := c.GetString("user_id")
+
+...
+
+}
+
+It sets exactly what Auth sets, so c.GetString("user_id") reads the same on both kinds of route, and it looks in the same two places: the HttpOnly cookie browsers use, then the Authorization: Bearer header native clients use. A missing, malformed, expired or revoked token is simply an anonymous request rather than a 401.
+
+It is not a guard. A handler behind Identify must treat "there is a user" as information, never as permission. Anything that must not be served to a stranger belongs behind Auth, with RequireRole after it where a role or permission is required.
+
+RequireRole Middleware
+
+RequireRole checks if the authenticated user has one of the specified roles. It must be used after the Auth middleware (which sets user_rolein the context).
+
+apps/api/internal/middleware/auth.go
+Copy to clipboard
+
+// RequireRole checks if the user has one of the required roles.
+
+func RequireRole(roles ...string) gin.HandlerFunc {
+
+return func(c *gin.Context) {
+
+userRole, exists := c.Get("user_role")
+
+if !exists {
+
+c.JSON(http.StatusUnauthorized, gin.H{
+
+"error": gin.H{
+
+"code":    "UNAUTHORIZED",
+
+"message": "Not authenticated",
+
+},
+
+})
+
+c.Abort()
+
+return
+
+}
+
+role, ok := userRole.(string)
+
+if !ok {
+
+c.JSON(http.StatusInternalServerError, gin.H{
+
+"error": gin.H{
+
+"code":    "INTERNAL_ERROR",
+
+"message": "Invalid user role",
+
+},
+
+})
+
+c.Abort()
+
+return
+
+}
+
+for _, r := range roles {
+
+if role == r {
+
+c.Next()
+
+return
+
+}
+
+}
+
+c.JSON(http.StatusForbidden, gin.H{
+
+"error": gin.H{
+
+"code":    "FORBIDDEN",
+
+"message": "You do not have permission to access this resource",
+
+},
+
+})
+
+c.Abort()
+
+}
+
+}
+
+Usage examples:
+
+role_examples.go
+Copy to clipboard
+
+// Admin only
+
+admin.Use(middleware.RequireRole("ADMIN"))
+
+// Admin or editor
+
+editors.Use(middleware.RequireRole("ADMIN", "EDITOR"))
+
+// Any authenticated user (no RequireRole needed, just Auth middleware)
+
+CORS Middleware
+
+The CORS middleware allows your Next.js frontend (running on a different port) to make API requests to the Go backend. It reads the allowed origins from the CORS_ORIGINS environment variable.
+
+apps/api/internal/middleware/cors.go
+Copy to clipboard
+
+func CORS(allowedOrigins []string) gin.HandlerFunc {
+
+originsMap := make(map[string]bool)
+
+for _, origin := range allowedOrigins {
+
+originsMap[origin] = true
+
+}
+
+return func(c *gin.Context) {
+
+origin := c.GetHeader("Origin")
+
+if originsMap[origin] {
+
+c.Header("Access-Control-Allow-Origin", origin)
+
+}
+
+c.Header("Access-Control-Allow-Methods",
+
+"GET, POST, PUT, PATCH, DELETE, OPTIONS")
+
+c.Header("Access-Control-Allow-Headers",
+
+"Origin, Content-Type, Accept, Authorization")
+
+c.Header("Access-Control-Allow-Credentials", "true")
+
+c.Header("Access-Control-Max-Age", "86400")
+
+if c.Request.Method == http.MethodOptions {
+
+c.AbortWithStatus(http.StatusNoContent)
+
+return
+
+}
+
+c.Next()
+
+}
+
+}
+
+Configure allowed origins in your .env file:
+
+.env
+Copy to clipboard
+
+CORS_ORIGINS=http://localhost:3000,http://localhost:3001
+
+Logger Middleware
+
+The Logger middleware logs every HTTP request with its status code, method, path, client IP, and response latency. It runs before all other middleware so it captures the total request time.
+
+apps/api/internal/middleware/logger.go
+Copy to clipboard
+
+func Logger() gin.HandlerFunc {
+
+return func(c *gin.Context) {
+
+start := time.Now()
+
+path := c.Request.URL.Path
+
+query := c.Request.URL.RawQuery
+
+c.Next()
+
+latency := time.Since(start)
+
+status := c.Writer.Status()
+
+method := c.Request.Method
+
+clientIP := c.ClientIP()
+
+if query != "" {
+
+path = path + "?" + query
+
+}
+
+log.Printf("[%d] %s %s | %s | %v",
+
+status, method, path, clientIP, latency,
+
+)
+
+}
+
+}
+
+Example output:
+
+[200] GET /api/users?page=1 | 127.0.0.1 | 3.241ms
+
+[201] POST /api/posts | 127.0.0.1 | 12.507ms
+
+[401] GET /api/auth/me | 127.0.0.1 | 0.128ms
+
+Copy to clipboard
+
+Cache Middleware
+
+The CacheResponse middleware caches the full HTTP response for GET requests in Redis. Subsequent identical requests are served from cache with an X-Cache: HIT header.
+
+apps/api/internal/middleware/cache.go
+Copy to clipboard
+
+func CacheResponse(
+
+cacheService *cache.Cache, ttl time.Duration,
+
+) gin.HandlerFunc {
+
+return func(c *gin.Context) {
+
+// Only cache GET requests
+
+if cacheService == nil || c.Request.Method != http.MethodGet {
+
+c.Next()
+
+return
+
+}
+
+// Build cache key from the full URL (path + query)
+
+key := fmt.Sprintf("http:%x",
+
+sha256.Sum256([]byte(c.Request.URL.String())),
+
+)
+
+// Try to serve from cache
+
+var cached cachedResponse
+
+found, err := cacheService.Get(c.Request.Context(), key, &cached)
+
+if err == nil && found {
+
+c.Header("X-Cache", "HIT")
+
+c.Data(cached.Status, cached.ContentType, cached.Body)
+
+c.Abort()
+
+return
+
+}
+
+// Capture the response
+
+writer := &responseCapture{
+
+ResponseWriter: c.Writer,
+
+body: make([]byte, 0),
+
+}
+
+c.Writer = writer
+
+c.Header("X-Cache", "MISS")
+
+c.Next()
+
+// Cache successful responses
+
+if writer.status == http.StatusOK && len(writer.body) > 0 {
+
+resp := cachedResponse{
+
+Status:      writer.status,
+
+ContentType: writer.Header().Get("Content-Type"),
+
+Body:        writer.body,
+
+}
+
+_ = cacheService.Set(c.Request.Context(), key, resp, ttl)
+
+}
+
+}
+
+}
+
+Apply it to specific routes:
+
+cache_usage.go
+Copy to clipboard
+
+// Cache the posts list for 5 minutes
+
+protected.GET("/posts",
+
+middleware.CacheResponse(svc.Cache, 5*time.Minute),
+
+postHandler.List,
+
+)
+
+// Cache individual post for 10 minutes
+
+protected.GET("/posts/:id",
+
+middleware.CacheResponse(svc.Cache, 10*time.Minute),
+
+postHandler.GetByID,
+
+)
+
+Creating Custom Middleware
+
+A Gin middleware is any function that returns gin.HandlerFunc. Here is the pattern for creating your own:
+
+apps/api/internal/middleware/rate_limit.go
+Copy to clipboard
+
+package middleware
+
+import (
+
+"net/http"
+
+"sync"
+
+"time"
+
+"github.com/gin-gonic/gin"
+
+)
+
+// RateLimit creates a simple in-memory rate limiter.
+
+// maxRequests is the maximum number of requests allowed
+
+// within the given window duration per IP address.
+
+func RateLimit(maxRequests int, window time.Duration) gin.HandlerFunc {
+
+type client struct {
+
+count    int
+
+lastSeen time.Time
+
+}
+
+var mu sync.Mutex
+
+clients := make(map[string]*client)
+
+// Clean up old entries periodically
+
+go func() {
+
+for {
+
+time.Sleep(window)
+
+mu.Lock()
+
+for ip, c := range clients {
+
+if time.Since(c.lastSeen) > window {
+
+delete(clients, ip)
+
+}
+
+}
+
+mu.Unlock()
+
+}
+
+}()
+
+return func(c *gin.Context) {
+
+ip := c.ClientIP()
+
+mu.Lock()
+
+cl, exists := clients[ip]
+
+if !exists {
+
+clients[ip] = &client{count: 1, lastSeen: time.Now()}
+
+mu.Unlock()
+
+c.Next()
+
+return
+
+}
+
+if time.Since(cl.lastSeen) > window {
+
+cl.count = 1
+
+cl.lastSeen = time.Now()
+
+mu.Unlock()
+
+c.Next()
+
+return
+
+}
+
+cl.count++
+
+cl.lastSeen = time.Now()
+
+if cl.count > maxRequests {
+
+mu.Unlock()
+
+c.JSON(http.StatusTooManyRequests, gin.H{
+
+"error": gin.H{
+
+"code":    "RATE_LIMITED",
+
+"message": "Too many requests, please try again later",
+
+},
+
+})
+
+c.Abort()
+
+return
+
+}
+
+mu.Unlock()
+
+c.Next()
+
+}
+
+}
+
+Register it on routes that need rate limiting:
+
+routes.go
+Copy to clipboard
+
+// Limit auth endpoints to 10 requests per minute per IP
+
+auth := r.Group("/api/auth")
+
+auth.Use(middleware.RateLimit(10, 1*time.Minute))
+
+{
+
+auth.POST("/login", authHandler.Login)
+
+auth.POST("/register", authHandler.Register)
+
+}
+
+Middleware Anatomy
+
+Every Gin middleware follows the same structure:
+
+middleware_anatomy.go
+Copy to clipboard
+
+func MyMiddleware() gin.HandlerFunc {
+
+return func(c *gin.Context) {
+
+// ── BEFORE the handler ──────────────────────
+
+// Check conditions, set context values, etc.
+
+// Option A: Continue to next middleware/handler
+
+c.Next()
+
+// ── AFTER the handler ───────────────────────
+
+// Log results, clean up, etc.
+
+// Option B: Stop the chain (use instead of c.Next())
+
+// c.Abort()
+
+// c.JSON(http.StatusForbidden, gin.H{...})
+
+}
+
+}
+
+c.Next() passes control to the next middleware or handler in the chain. Code after c.Next() runs after the handler returns.
+
+c.Abort() stops the chain. No further middleware or handlers will execute.
+
+c.Set(key, value) stores data in the context for downstream middleware and handlers.
+
+c.Get(key) retrieves data stored by upstream middleware.
+
+Built-in Middleware Summary
+
+MiddlewareFilePurpose
+
+Logger()middleware/logger.goLogs every request with status, method, path, latency
+
+CORS(origins)middleware/cors.goSets CORS headers, handles preflight OPTIONS
+
+Auth(db, svc)middleware/auth.goValidates JWT, loads user, sets context
+
+Identify(db, svc)middleware/auth.goReads the session on a public route, never refuses the request
+
+RequireRole(roles...)middleware/auth.goChecks user role against allowed list
+
+CacheResponse(cache, ttl)middleware/cache.goCaches GET responses in Redis
+
+ServicesAuthentication

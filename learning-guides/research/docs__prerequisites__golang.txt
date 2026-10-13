@@ -1,0 +1,5367 @@
+Prerequisites
+Go for Grit Developers
+
+Everything you need to know about Go to work with Grit's backend. This guide assumes you know another language like JavaScript or Python and walks you through Go's key concepts as they apply to building full-stack applications with Grit.
+
+Want to practice as you learn?
+
+Try the code examples in our interactive Go Playground.
+
+Open Playground
+
+1. Go Basics
+
+Go (often called Golang) is a statically typed, compiled language created at Google. It compiles to a single binary with no runtime dependencies, starts up in milliseconds, and handles concurrency natively. These qualities make it ideal for building API servers.
+
+Every Go file belongs to a package. The special package main is the entry point for executables. The func main() function insidepackage main is where your program starts. You import other packages using the import keyword.
+
+Go uses modules for dependency management. You initialize a module with go mod init and run your program with go run .
+
+main.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+func main() {
+
+fmt.Println("Hello, Grit!")
+
+}
+
+Four things in that file are worth naming, because every Go program has them. The package line comes first. The import block lists what the file uses. func main() is where execution starts. Anything after // is a comment. Here is the same program with a little more in it — still no variables, which arrive in the next section.
+
+anatomy.go
+Copy to clipboard
+
+package main
+
+// One import here; several are grouped in parentheses.
+
+import "fmt"
+
+/*
+
+A block comment. Handy for a paragraph, though most
+
+Go code uses // for everything.
+
+*/
+
+func main() {
+
+// Print writes exactly what you give it: no spaces, no newline
+
+fmt.Print("Starting")
+
+fmt.Print("...")
+
+fmt.Println("ready")
+
+// Println puts a space between arguments and ends the line
+
+fmt.Println("Grit", "API", 2026)
+
+// Strings are joined with +
+
+fmt.Println("Hello, " + "Grit" + "!")
+
+// A raw string literal keeps line breaks exactly as typed
+
+fmt.Println(`usage:
+
+go run .`)
+
+}
+
+In Grit
+
+The entry point for every Grit backend is apps/api/cmd/server/main.go. This file initializes the database connection, sets up middleware, registers routes, and starts the Gin HTTP server. You rarely edit it directly -- the code generator handles injecting new routes and models automatically.
+
+Try This
+
+Write a program from scratch: the package line, the import, and a main function that prints. No variables yet — just the shape of a Go program.
+
+Try ItSee Solution
+
+Try This
+
+Control where the line breaks fall. Println adds a newline and spaces out its arguments; Print does neither, and a raw string keeps exactly what you typed.
+
+Try ItSee Solution
+
+2. Variables & Types
+
+Go is statically typed -- every variable has a fixed type determined at compile time. You can declare variables with var (explicit) or := (short assignment, which infers the type). The short form is used inside functions and is by far the most common style in Go code.
+
+The basic types you will encounter are string, int,bool, and float64. Go also has uint (unsigned integer, used for database IDs), byte, and rune (for Unicode characters). Constants are declared with const and cannot be changed after assignment.
+
+variables.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+const AppName = "my-saas"
+
+func main() {
+
+// Explicit declaration
+
+var name string = "Grit"
+
+var port int = 8080
+
+// Short assignment (type inferred)
+
+host := "localhost"
+
+debug := true
+
+price := 29.99
+
+// Multiple assignment
+
+width, height := 1920, 1080
+
+fmt.Println(name, host, port, debug, price, width, height)
+
+fmt.Println("App:", AppName)
+
+}
+
+Two things surprise people arriving from JavaScript or Python. Every type has a zero value — declare a variable without assigning one and it is0, "", false or nil, never undefined. And Go never converts implicitly: adding an int to afloat64 is a compile error until you convert one of them yourself.
+
+One thing in the next example runs ahead of itself. Turning a string into a number can fail, so strconv.Atoi hands back two values: the number and an error. Read if err != nil as "if something went wrong" for now — section 4 covers errors properly, and this is the only place before then that needs them.
+
+conversion.go
+Copy to clipboard
+
+package main
+
+import (
+
+"fmt"
+
+"strconv"
+
+)
+
+func main() {
+
+// Zero values — declared but not assigned
+
+var count int    // 0
+
+var name string  // "" (empty, not nil)
+
+var active bool  // false
+
+var user *string // nil
+
+fmt.Printf("%d %q %t %v
+
+", count, name, active, user)
+
+// Numeric conversion is always explicit
+
+total := 10   // int
+
+price := 2.5  // float64
+
+// fmt.Println(total * price)        // compile error: mismatched types
+
+fmt.Println(float64(total) * price)  // 25
+
+// Integer division truncates — convert BEFORE dividing
+
+fmt.Println(7 / 2)                   // 3
+
+fmt.Println(float64(7) / float64(2)) // 3.5
+
+// Strings are not numbers: strconv returns a value AND an error
+
+port, err := strconv.Atoi("8080")
+
+if err != nil {
+
+fmt.Println("bad port:", err)
+
+return
+
+}
+
+fmt.Println("port + 1 =", port+1)
+
+// The other direction
+
+fmt.Println("as string: " + strconv.Itoa(port))
+
+fmt.Println("as float:  " + strconv.FormatFloat(price, 'f', 2, 64))
+
+// Something that is not a number gives you an error, not a panic
+
+if _, err := strconv.Atoi("not-a-port"); err != nil {
+
+fmt.Println("expected failure:", err)
+
+}
+
+}
+
+Format Specifiers
+
+Go's fmt.Printf and fmt.Sprintf use format verbs to control how values are printed. You will use these constantly when logging, building strings, and debugging. Here are the ones you need to know:
+
+SpecifierUseExample
+
+%sStringfmt.Printf("%s", "text")
+
+%dIntegerfmt.Printf("%d", 42)
+
+%fFloatfmt.Printf("%.2f", 3.14159)
+
+%tBooleanfmt.Printf("%t", true)
+
+%vAny valuefmt.Printf("%v", anything)
+
+%+vStruct with field namesfmt.Printf("%+v", person)
+
+%TType of valuefmt.Printf("%T", variable)
+
+\nNewlinefmt.Printf("line1\nline2")
+
+In Grit
+
+You will see := everywhere in handlers and services. Config values loaded from .env are stored in typed struct fields (like Port int,JWTSecret string). Constants are used for role names (RoleAdmin = "ADMIN") and error codes. Format specifiers are used in error wrapping (fmt.Errorf("failed to create user: %w", err)) and logging throughout the codebase.
+
+Try This
+
+Declare variables of different types (string, int, float64, bool), convert an int to float64, and print all values with their types.
+
+Try ItSee Solution
+
+Try This
+
+Environment variables always arrive as strings. Convert them to the types you need and handle the failure, which is exactly what config loading does in a real API.
+
+Try ItSee Solution
+
+3. Control Flow
+
+Go has three keywords for control flow and no more: if, for and switch. There is no while — the for keyword covers every loop shape — and no ternary operator, so a conditional value is written as an ordinary if.
+
+Two details catch people out. Parentheses around a condition are not used, but braces are always required, even for a single statement. And switch does not fall through: each case ends by itself, so there is no break to forget.
+
+control_flow.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+func main() {
+
+// if — no parentheses, braces always required
+
+port := 8080
+
+if port < 1024 {
+
+fmt.Println("privileged port")
+
+} else if port > 49151 {
+
+fmt.Println("ephemeral port")
+
+} else {
+
+fmt.Println("user port")
+
+}
+
+// for — the classic three-part form
+
+for i := 1; i <= 3; i++ {
+
+fmt.Println("attempt", i)
+
+}
+
+// for as a while loop: one condition, nothing else
+
+n := 1
+
+for n < 10 {
+
+n *= 2
+
+}
+
+fmt.Println("n:", n)
+
+// switch on a value
+
+env := "staging"
+
+switch env {
+
+case "production":
+
+fmt.Println("be careful")
+
+case "staging", "qa":
+
+fmt.Println("safe to experiment")
+
+default:
+
+fmt.Println("unknown environment")
+
+}
+
+// switch with no value tests conditions instead — often clearer
+
+// than a chain of else-ifs
+
+status := 404
+
+switch {
+
+case status >= 500:
+
+fmt.Println("server error")
+
+case status >= 400:
+
+fmt.Println("client error")
+
+default:
+
+fmt.Println("ok")
+
+}
+
+}
+
+break leaves a loop entirely and continue skips to the next iteration. An if can also carry a short statement before its condition, which is where most Go code puts the variable it is about to test — it keeps that variable scoped to the branch that uses it.
+
+loops.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+func main() {
+
+// continue skips the rest of this iteration
+
+for i := 1; i <= 6; i++ {
+
+if i%2 != 0 {
+
+continue // odd numbers are skipped
+
+}
+
+fmt.Print(i, " ")
+
+}
+
+fmt.Println()
+
+// break leaves the loop
+
+total := 0
+
+for i := 1; ; i++ { // no condition: loops until something breaks it
+
+total += i
+
+if total > 20 {
+
+fmt.Println("stopped at i =", i, "total =", total)
+
+break
+
+}
+
+}
+
+// A short statement inside if: remainder exists only in these branches
+
+if remainder := 17 % 5; remainder == 0 {
+
+fmt.Println("divides evenly")
+
+} else {
+
+fmt.Println("remainder is", remainder)
+
+}
+
+// Nested loops, and a label to break out of both at once
+
+outer:
+
+for row := 1; row <= 3; row++ {
+
+for col := 1; col <= 3; col++ {
+
+if row*col > 4 {
+
+fmt.Println("stopping at", row, col)
+
+break outer
+
+}
+
+fmt.Print(row*col, " ")
+
+}
+
+}
+
+fmt.Println()
+
+}
+
+In Grit
+
+The shape you will write most often is the guard clause: an if that checks one thing and returns early. Handlers are a stack of them — reject the bad request, reject the unauthorised user, then do the work — which keeps the happy path at the left margin instead of nested four levels deep.
+
+Try This
+
+Loop over a range of numbers and classify each one with a switch. No break statements — Go does not fall through.
+
+Try ItSee Solution
+
+Try This
+
+Skip what you do not want, stop when you have enough, and write the early-return shape that every request handler is built from.
+
+Try ItSee Solution
+
+4. Functions & Error Handling
+
+Go functions can return multiple values. This is fundamental to Go's error handling: instead of throwing exceptions, functions return anerror value as the last return. If the error is nil, the operation succeeded. If not, you handle it immediately.
+
+The if err != nil pattern appears on nearly every line that calls another function. It may look verbose at first, but it makes error flow explicit and easy to trace. Use fmt.Errorf("context: %w", err) to wrap errors with additional context as they bubble up the call stack.
+
+errors.go
+Copy to clipboard
+
+package main
+
+import (
+
+"errors"
+
+"fmt"
+
+)
+
+// Functions return (result, error)
+
+func divide(a, b float64) (float64, error) {
+
+if b == 0 {
+
+return 0, errors.New("cannot divide by zero")
+
+}
+
+return a / b, nil
+
+}
+
+func calculateDiscount(price, percent float64) (float64, error) {
+
+result, err := divide(price * percent, 100)
+
+if err != nil {
+
+// Wrap the error with context
+
+return 0, fmt.Errorf("calculating discount: %w", err)
+
+}
+
+return result, nil
+
+}
+
+func main() {
+
+discount, err := calculateDiscount(100.0, 20.0)
+
+if err != nil {
+
+fmt.Println("Error:", err)
+
+return
+
+}
+
+fmt.Println("Discount:", discount) // 20.0
+
+}
+
+Wrapping with %w is only half the pattern. The other half is asking what an error was, further up the stack. A sentinel is a package-level error value you compare with errors.Is; a package-level error value you compare with errors.Is, and it sees through any number of %w wraps. That is what lets a handler map a failure raised deep in a service onto the right status code without ever reading the message. (Errors that also carry fields need a struct and a method, so they wait until after those sections.)
+
+sentinel_errors.go
+Copy to clipboard
+
+package main
+
+import (
+
+"errors"
+
+"fmt"
+
+)
+
+// Sentinels: single values, compared by identity rather than by message
+
+var (
+
+ErrNotFound  = errors.New("record not found")
+
+ErrForbidden = errors.New("not allowed")
+
+)
+
+func findUser(id int) error {
+
+if id != 1 {
+
+// Wrapped, so the caller still finds ErrNotFound underneath
+
+return fmt.Errorf("findUser %d: %w", id, ErrNotFound)
+
+}
+
+return nil
+
+}
+
+func deletePost(role string) error {
+
+if role != "ADMIN" {
+
+return fmt.Errorf("deletePost as %s: %w", role, ErrForbidden)
+
+}
+
+return nil
+
+}
+
+func main() {
+
+// errors.Is matches through the wrapping, however deep it goes
+
+err := findUser(99)
+
+fmt.Println("error:", err)
+
+if errors.Is(err, ErrNotFound) {
+
+fmt.Println("-> respond 404")
+
+}
+
+err = deletePost("USER")
+
+fmt.Println("error:", err)
+
+if errors.Is(err, ErrForbidden) {
+
+fmt.Println("-> respond 403")
+
+}
+
+// One sentinel never matches another
+
+fmt.Println("forbidden is not-found?", errors.Is(err, ErrNotFound))
+
+// The happy path
+
+fmt.Println("as admin:", deletePost("ADMIN"))
+
+}
+
+In Grit
+
+Every service function in internal/services/ returns (result, error). Handlers call services, check for errors, and return the appropriate HTTP response. For example, user, err := service.GetUserByID(id) followed by an if err != nil block that sends a 404 or 500 JSON response.
+
+Try This
+
+Write a sqrt function that returns an error for negative numbers. Test it with both positive and negative inputs.
+
+Try ItSee Solution
+
+Try This
+
+Define a sentinel error, wrap it with context, then match it with errors.Is — the pattern a handler uses to choose between 409 and 500.
+
+Try ItSee Solution
+
+5. Structs & Tags
+
+A struct is Go's way of defining a custom data type -- similar to a class in other languages, but without inheritance. Structs group related fields together. Each field has a name, a type, and optional struct tags (metadata in backtick strings after the type).
+
+Grit models use three kinds of tags:
+
+json:"name" -- controls how the field appears in JSON responses. Use json:"-" to hide a field entirely.
+
+gorm:"..." -- controls the database schema (column type, indexes, constraints, foreign keys).
+
+binding:"required" -- tells Gin to validate incoming request data. If validation fails, Gin returns a 400 error automatically.
+
+models/user.go
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"gorm.io/gorm"
+
+)
+
+type User struct {
+
+ID        uint           `gorm:"primarykey" json:"id"`
+
+Name      string         `gorm:"size:255;not null" json:"name" binding:"required"`
+
+Email     string         `gorm:"size:255;uniqueIndex;not null" json:"email" binding:"required,email"`
+
+Password  string         `gorm:"size:255;not null" json:"-"`
+
+Role      string         `gorm:"size:20;default:USER" json:"role"`
+
+Active    bool           `gorm:"default:true" json:"active"`
+
+CreatedAt time.Time      `json:"created_at"`
+
+UpdatedAt time.Time      `json:"updated_at"`
+
+DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+
+}
+
+That struct is not runnable on its own — it imports GORM. This one is, and it shows the tags doing their job: json:"-" keeps the password out of every response, and json:"created_at" renames the field on the way out. Embedding a struct promotes its fields, which is how a project shares ID and timestamps across every model without repeating them.
+
+struct_json.go
+Copy to clipboard
+
+package main
+
+import (
+
+"encoding/json"
+
+"fmt"
+
+)
+
+// Embedded into every model — the common fields, declared once
+
+type Base struct {
+
+ID        uint   `json:"id"`
+
+CreatedAt string `json:"created_at"`
+
+}
+
+type User struct {
+
+Base            // embedded: User gets ID and CreatedAt for free
+
+Name     string `json:"name"`
+
+Email    string `json:"email"`
+
+Password string `json:"-"`                    // never serialised
+
+Nickname string `json:"nickname,omitempty"`   // dropped when empty
+
+}
+
+func main() {
+
+u := User{
+
+Base:     Base{ID: 1, CreatedAt: "2026-01-15"},
+
+Name:     "Ada Lovelace",
+
+Email:    "ada@example.com",
+
+Password: "super-secret",
+
+}
+
+// Promoted fields are read as if they were declared on User itself
+
+fmt.Println("id:", u.ID, "created:", u.CreatedAt)
+
+out, _ := json.MarshalIndent(u, "", "  ")
+
+fmt.Println(string(out))
+
+// No "password" key, and no "nickname" because it is empty
+
+}
+
+In Grit
+
+Every model in internal/models/ is a struct with these three tag types. When you run grit generate resource Product, the CLI creates a struct with properly tagged fields, registers it for migration, and generates the matching Zod schema and TypeScript type on the frontend.
+
+Try This
+
+Create a Product struct with Name (string), Price (float64), and InStock (bool) fields. Create two products and print them.
+
+Try ItSee Solution
+
+Try This
+
+Build an Order that embeds a shared Base and uses json tags to rename one field, hide another, and drop an empty one. Then marshal it and read the output.
+
+Try ItSee Solution
+
+6. Slices & Maps
+
+A slice is Go's dynamic array. Unlike arrays (which have a fixed size), slices can grow and shrink. You create them with []Type{} ormake([]Type, length) and add items with append().
+
+A map is a key-value data structure (like a JavaScript object or Python dictionary). The type map[string]interface{} (or the modern alias map[string]any) can hold any value type -- this is what Gin uses for JSON responses.
+
+The range keyword iterates over slices and maps, giving you both the index/key and value on each iteration.
+
+collections.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+func main() {
+
+// Slices
+
+names := []string{"Alice", "Bob", "Charlie"}
+
+names = append(names, "Diana")
+
+for i, name := range names {
+
+fmt.Printf("%d: %s\n", i, name)
+
+}
+
+// Maps — every value has the same type here; mixed-type maps need
+
+// "any", which arrives with interfaces
+
+user := map[string]string{
+
+"name":  "Alice",
+
+"email": "alice@example.com",
+
+}
+
+for key, value := range user {
+
+fmt.Printf("%s = %v\n", key, value)
+
+}
+
+// Access a single value
+
+fmt.Println("Name:", user["name"])
+
+}
+
+A slice is a view onto an array: a pointer, a length and a capacity. That is worth knowing because it explains the one behaviour that catches everybody — two slices can share the same backing array, so writing through one changes the other. Maps have their own rule: reading a missing key returns the zero value rather than an error, and iteration order is deliberately random, so sort the keys when output has to be stable.
+
+slice_mechanics.go
+Copy to clipboard
+
+package main
+
+import (
+
+"fmt"
+
+"sort"
+
+)
+
+func main() {
+
+// len is what is there; cap is how much room before a reallocation
+
+s := make([]int, 0, 4)
+
+fmt.Println(len(s), cap(s)) // 0 4
+
+// Sub-slicing shares the SAME underlying array
+
+nums := []int{1, 2, 3, 4, 5}
+
+view := nums[1:3] // [2 3]
+
+view[0] = 99
+
+fmt.Println(nums) // [1 99 3 4 5] — nums changed too
+
+// copy() when you want an independent slice
+
+safe := make([]int, len(view))
+
+copy(safe, view)
+
+safe[0] = 0
+
+fmt.Println(view, safe) // [99 3] [0 3] — separate now
+
+// Comma-ok tells "missing" apart from "present but zero"
+
+stock := map[string]int{"apples": 0}
+
+n, ok := stock["apples"]
+
+fmt.Println(n, ok) // 0 true  — present, and genuinely zero
+
+n, ok = stock["pears"]
+
+fmt.Println(n, ok) // 0 false — absent
+
+delete(stock, "apples")
+
+fmt.Println("size:", len(stock))
+
+// Map iteration order is random — sort the keys for stable output
+
+scores := map[string]int{"carol": 9, "alice": 7, "bob": 8}
+
+keys := make([]string, 0, len(scores))
+
+for k := range scores {
+
+keys = append(keys, k)
+
+}
+
+sort.Strings(keys)
+
+for _, k := range keys {
+
+fmt.Printf("%s=%d ", k, scores[k])
+
+}
+
+fmt.Println()
+
+}
+
+In Grit
+
+GORM query results are always slices: var users []models.User. Gin JSON responses use gin.H{} which is just a shortcut for map[string]any. For example, c.JSON(200, gin.H{"data": users, "message": "success"}).
+
+Try This
+
+Build a word frequency counter: split a sentence into words, count how many times each word appears using a map, and print the results.
+
+Try ItSee Solution
+
+Try This
+
+Group records by a key into a map of slices, then sort the keys so the output is identical on every run — the shape of almost every reporting query.
+
+Try ItSee Solution
+
+7. Pointers
+
+A pointer holds the memory address of a value. Use & to get the address of a variable and * to read the value at that address (dereference). Pointers let you modify a value in place without copying it, and they indicate that a value might be nil (absent).
+
+In Go, function arguments are passed by value (copied). If you want a function to modify the original value, pass a pointer. This is also why GORM methods take pointers to structs: db.Create(&user) writes the new ID back into your user variable.
+
+pointers.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+func doubleValue(n int) {
+
+n = n * 2 // Modifies the COPY, not the original
+
+}
+
+func doublePointer(n *int) {
+
+*n = *n * 2 // Modifies the ORIGINAL via pointer
+
+}
+
+func main() {
+
+x := 10
+
+doubleValue(x)
+
+fmt.Println(x) // Still 10 — the copy was doubled
+
+doublePointer(&x)
+
+fmt.Println(x) // Now 20 — modified through pointer
+
+// Nil pointer: indicates "no value"
+
+var name *string = nil
+
+if name == nil {
+
+fmt.Println("Name is not set")
+
+}
+
+}
+
+The place pointers stop being academic is for ... range. The loop variable is a copy of the element, so assigning to it changes nothing — a bug that produces no error and no output, just a slice that stubbornly refuses to update. Reach for the index instead. The same copying rule is why the next section's methods need a pointer receiver whenever they change anything.
+
+pointer_gotchas.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+type Product struct {
+
+Name  string
+
+Price float64
+
+}
+
+// Takes a copy: this discount goes nowhere
+
+func discountBroken(p Product, pct float64) {
+
+p.Price = p.Price * (1 - pct/100)
+
+}
+
+// Takes a pointer: changes the original
+
+func discount(p *Product, pct float64) {
+
+p.Price = p.Price * (1 - pct/100)
+
+}
+
+func main() {
+
+items := []Product{
+
+{Name: "Laptop", Price: 1000},
+
+{Name: "Mouse", Price: 50},
+
+}
+
+// WRONG: item is a copy of the element
+
+for _, item := range items {
+
+item.Price = 0
+
+}
+
+fmt.Println("after range-copy:", items) // unchanged
+
+// RIGHT: address the element through its index
+
+for i := range items {
+
+discount(&items[i], 10)
+
+}
+
+fmt.Println("after discount:  ", items)
+
+// Passing a copy silently does nothing
+
+discountBroken(items[0], 50)
+
+fmt.Println("after broken:    ", items)
+
+// Pointers also let you say "no value" — but check before dereferencing
+
+var missing *Product
+
+fmt.Println("missing == nil?", missing == nil)
+
+if missing != nil {
+
+fmt.Println(missing.Name) // would panic if reached with nil
+
+}
+
+// A pointer into the slice: one element, shared
+
+first := &items[0]
+
+first.Price = 1.23
+
+fmt.Println("via pointer:     ", items)
+
+}
+
+In Grit
+
+GORM uses pointers for nullable database fields. A regular string defaults to "" (empty), but *string can be nil -- meaning the database column is NULL. You will see *time.Time for optional timestamps like EmailVerifiedAt and gorm.DeletedAt for soft deletes. All GORM operations take pointers: db.Create(&user), db.First(&user, id).
+
+Try This
+
+Write a tripleValue function that uses a pointer to modify the original variable, and a swap function that swaps two integers using pointers.
+
+Try ItSee Solution
+
+Try This
+
+Fix the classic range-copy bug: a loop that looks like it updates a slice and quietly does nothing. Then write the pointer-receiver method that does work.
+
+Try ItSee Solution
+
+8. Methods
+
+A method is a function attached to a type. The difference between a function and a method is one thing: the receiver. A function stands alone, but a method has a receiver parameter before the function name that binds it to a specific type.
+
+The receiver can be a value receiver (func (u User) FullName()) or a pointer receiver (func (u *User) SetName(name string)). Use a pointer receiver when the method needs to modify the struct or when the struct is large (to avoid copying). In practice, most methods in Grit use pointer receivers.
+
+Methods are how Go achieves object-oriented behavior without classes. Instead ofclass User {...}, you define a struct and attach methods to it.
+
+methods.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+type User struct {
+
+FirstName string
+
+LastName  string
+
+Email     string
+
+}
+
+// A regular function — takes User as an argument
+
+func getFullName(u User) string {
+
+return u.FirstName + " " + u.LastName
+
+}
+
+// A method — attached to User with a value receiver
+
+// Use value receiver when you only READ the struct
+
+func (u User) FullName() string {
+
+return u.FirstName + " " + u.LastName
+
+}
+
+// A method with a pointer receiver
+
+// Use pointer receiver when you MODIFY the struct
+
+func (u *User) SetEmail(email string) {
+
+u.Email = email // Modifies the original, not a copy
+
+}
+
+func main() {
+
+user := User{FirstName: "John", LastName: "Doe"}
+
+// Calling a function — pass the struct as argument
+
+fmt.Println(getFullName(user)) // "John Doe"
+
+// Calling a method — use dot notation on the struct
+
+fmt.Println(user.FullName()) // "John Doe"
+
+// Pointer receiver method modifies the original
+
+user.SetEmail("john@example.com")
+
+fmt.Println(user.Email) // "john@example.com"
+
+}
+
+Methods are not limited to structs. You can attach them to any type you declare in your own package, including one built on string or a slice. That is how a bare string becomes a Role that knows what it is allowed to do, and it is how String() works: implement that one method and every fmt function starts printing your type the way you want.
+
+named_types.go
+Copy to clipboard
+
+package main
+
+import (
+
+"fmt"
+
+"strings"
+
+)
+
+// A named type built on string — now it can carry behaviour
+
+type Role string
+
+const (
+
+RoleAdmin  Role = "ADMIN"
+
+RoleEditor Role = "EDITOR"
+
+RoleUser   Role = "USER"
+
+)
+
+// Methods on a named string type
+
+func (r Role) CanPublish() bool {
+
+return r == RoleAdmin || r == RoleEditor
+
+}
+
+func (r Role) Label() string {
+
+lower := strings.ToLower(string(r))
+
+return strings.ToUpper(lower[:1]) + lower[1:]
+
+}
+
+// A named slice type, with a method that reads it
+
+type Cart []float64
+
+func (c Cart) Total() float64 {
+
+sum := 0.0
+
+for _, price := range c {
+
+sum += price
+
+}
+
+return sum
+
+}
+
+// Pointer receiver, because this one replaces the slice
+
+func (c *Cart) Add(price float64) {
+
+*c = append(*c, price)
+
+}
+
+type Money struct {
+
+Cents int
+
+}
+
+// String() satisfies fmt.Stringer — fmt calls it for you
+
+func (m Money) String() string {
+
+return fmt.Sprintf("$%d.%02d", m.Cents/100, m.Cents%100)
+
+}
+
+func main() {
+
+fmt.Println(RoleEditor.CanPublish(), RoleUser.CanPublish()) // true false
+
+fmt.Println(RoleAdmin.Label())                              // Admin
+
+cart := Cart{19.99, 5.00}
+
+cart.Add(3.50)
+
+fmt.Printf("%d items, total %.2f\n", len(cart), cart.Total())
+
+// No .String() call anywhere — fmt finds it
+
+fmt.Println("price:", Money{Cents: 2599})
+
+}
+
+In Grit
+
+Methods are the foundation of Grit's architecture. Services are structs with a DB *gorm.DB field, and all their operations are methods:func (s *ProductService) GetByID(id uint). Handlers are the same pattern:func (h *AuthHandler) Login(c *gin.Context). GORM hooks are also methods:func (u *User) BeforeCreate(tx *gorm.DB) error runs automatically before inserting a user into the database.
+
+Try This
+
+Create a Rectangle struct with Width and Height, then add Area() and Perimeter() methods. Use a pointer receiver to add a Scale() method.
+
+Try ItSee Solution
+
+Try This
+
+Give a named type its own methods, then implement String() so fmt prints it your way without anyone calling a formatter.
+
+Try ItSee Solution
+
+9. Interfaces
+
+An interface defines a set of method signatures. Any type that implements all those methods automatically satisfies the interface — there is noimplements keyword. This is called implicit implementation (or structural typing), and it is one of Go's most powerful features.
+
+Think of an interface like a job posting: it lists the skills required (e.g. "must be able to Drive() and Refuel()"), not who you are. Anyone who has those skills qualifies — whether it's a human or a robot.
+
+Interfaces enable polymorphism and are essential for testing. You can swap a real database service for a mock that implements the same interface, making unit tests fast and isolated.
+
+7.1 Defining & Implementing an Interface
+
+Define an interface with the type keyword and a list of method signatures. Any type whose methods match is considered an implementation — no explicit declaration needed. This is sometimes called duck typing: "if it walks like a duck and quacks like a duck, then it's a duck."
+
+interfaces.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+// ---- THE JOB POSTING (Interface) ----
+
+// This is like a job ad that says:
+
+// "We need someone who can Drive() and Refuel()"
+
+type TruckDriver interface {
+
+Drive() string
+
+Refuel() string
+
+}
+
+// ---- CANDIDATE 1: John (Struct) ----
+
+// John never said "I am a TruckDriver"
+
+// He just happens to know how to Drive() and Refuel()
+
+type John struct {
+
+Name string
+
+Age  int
+
+}
+
+func (j John) Drive() string {
+
+return j.Name + " is driving the truck!"
+
+}
+
+func (j John) Refuel() string {
+
+return j.Name + " is refueling the truck!"
+
+}
+
+// ---- CANDIDATE 2: Robot (Struct) ----
+
+// Robot also never said "I am a TruckDriver"
+
+// But it also knows how to Drive() and Refuel()
+
+type Robot struct {
+
+Model string
+
+}
+
+func (r Robot) Drive() string {
+
+return "Robot " + r.Model + " is driving the truck!"
+
+}
+
+func (r Robot) Refuel() string {
+
+return "Robot " + r.Model + " is refueling the truck!"
+
+}
+
+// ---- THE COMPANY (Function that accepts the interface) ----
+
+// The company doesn't care WHO you are.
+
+// It only cares: "Can you Drive() and Refuel()?"
+
+func HireDriver(d TruckDriver) {
+
+fmt.Println("Hired!")
+
+fmt.Println("  ", d.Drive())
+
+fmt.Println("  ", d.Refuel())
+
+fmt.Println()
+
+}
+
+func main() {
+
+// John applies — he can Drive() and Refuel() -> HIRED
+
+john := John{Name: "John", Age: 35}
+
+fmt.Println("John applies for the job:")
+
+HireDriver(john)
+
+// Robot applies — it can Drive() and Refuel() -> HIRED
+
+robot := Robot{Model: "TX-500"}
+
+fmt.Println("Robot applies for the job:")
+
+HireDriver(robot)
+
+}
+
+Notice that neither John nor Robot declares "I am a TruckDriver." They just have the Drive() andRefuel() methods with the right signatures. The compiler checks this for you at build time — if you misspell a method or get the return type wrong, you get a compile error, not a runtime crash. The HireDriver function doesn't care about the concrete type — it only cares that the candidate satisfies the TruckDriver contract.
+
+Here's the same pattern in a more real-world context — a notification system where different channels (email, Slack) all satisfy the same Notifier interface:
+
+notifier.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+// Notifier — any type that can send a notification
+
+type Notifier interface {
+
+Send(to string, message string) error
+
+}
+
+// EmailNotifier implements Notifier (implicitly)
+
+type EmailNotifier struct {
+
+From string
+
+}
+
+func (e *EmailNotifier) Send(to string, message string) error {
+
+fmt.Printf("Email from %s to %s: %s\n", e.From, to, message)
+
+return nil
+
+}
+
+// SlackNotifier also implements Notifier
+
+type SlackNotifier struct {
+
+Channel string
+
+}
+
+func (s *SlackNotifier) Send(to string, message string) error {
+
+fmt.Printf("Slack #%s -> %s: %s\n", s.Channel, to, message)
+
+return nil
+
+}
+
+// Works with ANY Notifier — email, slack, SMS, webhook...
+
+func alert(n Notifier, user string) {
+
+n.Send(user, "Your report is ready")
+
+}
+
+func main() {
+
+email := &EmailNotifier{From: "noreply@app.com"}
+
+slack := &SlackNotifier{Channel: "alerts"}
+
+alert(email, "alice@example.com") // Email from noreply@app.com to alice@example.com: Your report is ready
+
+alert(slack, "alice")             // Slack #alerts -> alice: Your report is ready
+
+}
+
+7.2 Why Interfaces Matter
+
+Interfaces solve three real problems:
+
+Reduce boilerplate — Write a function once that works with any type matching the interface. The SaveData function below works with files, network connections, in-memory buffers, and anything else that implements io.Writer.
+
+Enable testing — Swap real services for mocks without changing your business logic. Define a Mailer interface, use the real Resend mailer in production, and a fake one in tests.
+
+Decouple architecture — Your handler layer depends on an interface, not a concrete struct. You can replace the database, switch cloud providers, or refactor internals without touching the code that uses the service.
+
+why_interfaces.go
+Copy to clipboard
+
+package main
+
+import (
+
+"bytes"
+
+"fmt"
+
+"io"
+
+"os"
+
+)
+
+// SaveData works with ANY io.Writer — files, buffers, HTTP responses, etc.
+
+func SaveData(w io.Writer, data []byte) error {
+
+_, err := w.Write(data)
+
+return err
+
+}
+
+func main() {
+
+data := []byte("Hello, Grit!")
+
+// Write to a file
+
+file, _ := os.Create("output.txt")
+
+SaveData(file, data)
+
+file.Close()
+
+// Write to an in-memory buffer (same function!)
+
+var buf bytes.Buffer
+
+SaveData(&buf, data)
+
+fmt.Println(buf.String()) // Hello, Grit!
+
+// Write to stdout (same function!)
+
+SaveData(os.Stdout, data) // Hello, Grit!
+
+}
+
+7.3 The Empty Interface & any
+
+The empty interface interface{} has zero methods, which means every type satisfies it. It's Go's way of saying "any type at all." Since Go 1.18, you can write any instead — they are identical.
+
+You'll see empty interfaces in generic data structures, JSON unmarshalling, and functions that need to accept truly unpredictable types. But use them sparingly — you lose type safety, so prefer concrete types or named interfaces whenever possible.
+
+empty_interface.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+func printAnything(v any) {
+
+fmt.Printf("Value: %v (type: %T)\n", v, v)
+
+}
+
+func main() {
+
+printAnything(42)          // Value: 42 (type: int)
+
+printAnything("hello")     // Value: hello (type: string)
+
+printAnything(true)        // Value: true (type: bool)
+
+printAnything(3.14)        // Value: 3.14 (type: float64)
+
+// Common in JSON-like data structures
+
+person := map[string]any{
+
+"name":  "Alice",
+
+"age":   30,
+
+"admin": true,
+
+}
+
+fmt.Println(person) // map[admin:true age:30 name:Alice]
+
+}
+
+7.4 Type Assertions
+
+When you have an interface value, you can extract the underlying concrete type with a type assertion. The syntax is value.(Type). Always use the two-return form val, ok := value.(Type) to avoid panics if the assertion fails.
+
+type_assertions.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+func describe(v any) {
+
+// Two-return form — safe, won't panic
+
+if str, ok := v.(string); ok {
+
+fmt.Printf("String of length %d: %q\n", len(str), str)
+
+return
+
+}
+
+if num, ok := v.(int); ok {
+
+fmt.Printf("Integer: %d (doubled: %d)\n", num, num*2)
+
+return
+
+}
+
+fmt.Printf("Unknown type: %T\n", v)
+
+}
+
+func main() {
+
+describe("hello")  // String of length 5: "hello"
+
+describe(42)        // Integer: 42 (doubled: 84)
+
+describe(true)      // Unknown type: bool
+
+// DANGER: single-return form panics on mismatch!
+
+// s := someValue.(string) // panics if someValue isn't a string
+
+}
+
+7.5 Type Switch
+
+When you need to handle multiple types, a type switch is cleaner than chaining type assertions. It's like a regular switch but branches on the type of the value using value.(type).
+
+type_switch.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+func process(v any) string {
+
+switch val := v.(type) {
+
+case string:
+
+return fmt.Sprintf("string: %q", val)
+
+case int:
+
+return fmt.Sprintf("int: %d", val)
+
+case bool:
+
+if val {
+
+return "bool: yes"
+
+}
+
+return "bool: no"
+
+case []string:
+
+return fmt.Sprintf("string slice with %d items", len(val))
+
+default:
+
+return fmt.Sprintf("unhandled type: %T", val)
+
+}
+
+}
+
+func main() {
+
+fmt.Println(process("Go"))              // string: "Go"
+
+fmt.Println(process(2024))              // int: 2024
+
+fmt.Println(process(true))              // bool: yes
+
+fmt.Println(process([]string{"a","b"})) // string slice with 2 items
+
+fmt.Println(process(3.14))              // unhandled type: float64
+
+}
+
+7.6 Common Standard Library Interfaces
+
+Go's standard library is built around small, composable interfaces. Learning these will make you dramatically more productive:
+
+InterfaceMethodUsed For
+
+fmt.StringerString() stringCustom string representation (like Python's __str__)
+
+errorError() stringCustom error types with extra context
+
+io.ReaderRead(p []byte) (n int, err error)Reading data — files, HTTP bodies, buffers
+
+io.WriterWrite(p []byte) (n int, err error)Writing data — files, HTTP responses, buffers
+
+io.CloserClose() errorReleasing resources — files, connections, streams
+
+http.HandlerServeHTTP(w, r)HTTP request handling — middleware, routers
+
+sort.InterfaceLen, Less, SwapCustom sorting for any collection
+
+stringer_error.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+// Implementing fmt.Stringer — controls how your type prints
+
+type User struct {
+
+Name string
+
+Role string
+
+}
+
+func (u User) String() string {
+
+return fmt.Sprintf("%s (%s)", u.Name, u.Role)
+
+}
+
+// Implementing the error interface — custom error types
+
+type ValidationError struct {
+
+Field   string
+
+Message string
+
+}
+
+func (e *ValidationError) Error() string {
+
+return fmt.Sprintf("validation failed on %s: %s", e.Field, e.Message)
+
+}
+
+func validateEmail(email string) error {
+
+if email == "" {
+
+return &ValidationError{Field: "email", Message: "cannot be empty"}
+
+}
+
+return nil
+
+}
+
+func main() {
+
+user := User{Name: "Alice", Role: "ADMIN"}
+
+fmt.Println(user) // Alice (ADMIN) — fmt.Stringer in action
+
+if err := validateEmail(""); err != nil {
+
+fmt.Println(err) // validation failed on email: cannot be empty
+
+}
+
+}
+
+7.7 Interface Composition
+
+Go encourages small, focused interfaces. You compose larger interfaces by embedding smaller ones. This is why the standard library hasio.Reader, io.Writer, and io.Closer separately, then composes them into io.ReadWriter, io.ReadCloser,io.WriteCloser, and io.ReadWriteCloser.
+
+The Go proverb is: "The bigger the interface, the weaker the abstraction." Keep interfaces small (1-3 methods), and compose when needed.
+
+composition.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+// Small, focused interfaces
+
+type Reader interface {
+
+Read(id string) ([]byte, error)
+
+}
+
+type Writer interface {
+
+Write(id string, data []byte) error
+
+}
+
+type Deleter interface {
+
+Delete(id string) error
+
+}
+
+// Compose them into a full storage interface
+
+type Storage interface {
+
+Reader
+
+Writer
+
+Deleter
+
+}
+
+// A function that only needs to read — accepts the smallest interface
+
+func loadConfig(r Reader) ([]byte, error) {
+
+return r.Read("config.json")
+
+}
+
+// MemoryStore implements all three — so it satisfies Storage
+
+type MemoryStore struct {
+
+data map[string][]byte
+
+}
+
+func (m *MemoryStore) Read(id string) ([]byte, error) {
+
+d, ok := m.data[id]
+
+if !ok {
+
+return nil, fmt.Errorf("not found: %s", id)
+
+}
+
+return d, nil
+
+}
+
+func (m *MemoryStore) Write(id string, data []byte) error {
+
+m.data[id] = data
+
+return nil
+
+}
+
+func (m *MemoryStore) Delete(id string) error {
+
+delete(m.data, id)
+
+return nil
+
+}
+
+func main() {
+
+store := &MemoryStore{data: make(map[string][]byte)}
+
+store.Write("config.json", []byte("port=8080"))
+
+// Pass the full Storage where only Reader is needed — works fine
+
+config, _ := loadConfig(store)
+
+fmt.Println(string(config)) // port=8080
+
+}
+
+7.8 Best Practices
+
+RuleWhy
+
+Accept interfaces, return structsFunctions should accept the smallest interface they need, but return concrete types so callers get full functionality
+
+Keep interfaces small (1-3 methods)Small interfaces are easier to implement, mock, and compose. io.Reader has 1 method and is used everywhere
+
+Define interfaces where they're used, not where they're implementedThe consumer knows what it needs. The implementer doesn't need to know about every consumer
+
+Prefer any over interface{}Since Go 1.18, any is the idiomatic alias. Use it for readability
+
+Don't use empty interfaces when you can be specificEvery any you use is type safety you lose. Define a named interface instead
+
+Quick Reference
+
+SyntaxWhat It Does
+
+type X interface { M() }Define interface X with method M
+
+func (t T) M() { }T implicitly satisfies X (has method M)
+
+val, ok := i.(string)Type assertion (safe, two-return form)
+
+switch v := i.(type)Type switch — branch on underlying type
+
+type RW interface { Reader; Writer }Compose interfaces by embedding
+
+anyAlias for interface{} — accepts any type
+
+In Grit
+
+Grit services follow the interface pattern for testability and flexibility. The mailer service, storage service, cache service, and AI service all define interfaces internally. For example, you could define a UserService interface with methods like GetByID, Create, and Delete, then swap in a mock implementation during tests. The routes.Services struct accepts these interfaces, making it easy to inject different implementations per environment.
+
+Try This
+
+Define a Describable interface with a Describe() string method. Implement it for a Book and a Movie type, then write a function that accepts any Describable.
+
+Try ItSee Solution
+
+Try This
+
+Write one function against an interface and hand it two different implementations. This is the whole argument for interfaces: the caller stops caring which one it got.
+
+Try ItSee Solution
+
+10. Goroutines & Channels
+
+Concurrency is one of Go's most powerful features. Go achieves concurrency through two key primitives: goroutines and channels.
+
+What is a Goroutine?
+
+A goroutine is a lightweight thread of execution managed by the Go runtime, not the operating system. You start one by putting the go keyword before a function call. Goroutines are extremely cheap — you can run thousands simultaneously, each using only a few kilobytes of memory. This is unlike OS threads which are expensive to create and manage.
+
+When you call a function normally, it runs synchronously — your program waits for it to finish before moving to the next line. When you prefix it with go, it runs asynchronously — execution continues immediately while the goroutine runs in the background.
+
+goroutines-basic.go
+Copy to clipboard
+
+package main
+
+import (
+
+"fmt"
+
+"time"
+
+)
+
+func sayHello(name string) {
+
+fmt.Printf("Hello, %s!\n", name)
+
+}
+
+func main() {
+
+// Synchronous — runs and completes before moving on
+
+sayHello("direct call")
+
+// Asynchronous — starts a new goroutine
+
+go sayHello("goroutine")
+
+// Anonymous goroutine — common pattern
+
+go func(msg string) {
+
+fmt.Println(msg)
+
+}("anonymous goroutine")
+
+// Without this sleep, main() would exit before
+
+// the goroutines have a chance to run!
+
+time.Sleep(100 * time.Millisecond)
+
+fmt.Println("main done")
+
+}
+
+Important: When the main() function returns, the program exits — even if goroutines are still running. Using time.Sleep to wait is fragile. In real code, you need proper synchronization, which is where sync.WaitGroup and channels come in.
+
+WaitGroup — Waiting for Goroutines to Finish
+
+A sync.WaitGroup is a counter that lets you wait for a collection of goroutines to finish. Call wg.Add(1) before launching each goroutine, call wg.Done() inside the goroutine when it finishes, and call wg.Wait() to block until the counter reaches zero.
+
+waitgroup.go
+Copy to clipboard
+
+package main
+
+import (
+
+"fmt"
+
+"sync"
+
+"time"
+
+)
+
+func fetchData(source string, wg *sync.WaitGroup) {
+
+defer wg.Done() // Signal completion when function returns
+
+time.Sleep(100 * time.Millisecond) // Simulate work
+
+fmt.Println("Fetched from:", source)
+
+}
+
+func main() {
+
+var wg sync.WaitGroup
+
+sources := []string{"database", "cache", "api"}
+
+for _, src := range sources {
+
+wg.Add(1)           // Increment counter
+
+go fetchData(src, &wg) // Run concurrently
+
+}
+
+wg.Wait() // Block until all goroutines call Done()
+
+fmt.Println("All data fetched!")
+
+// All 3 goroutines run at the same time (~100ms total, not 300ms)
+
+}
+
+How the Pieces Connect
+
+Think of WaitGroup as a simple counter with a blocking mechanism:
+
+wg.Add(1) — increments the internal counter. You're telling the WaitGroup:"one more goroutine is about to start working." After the loop, the counter is at 3.
+
+go fetchData(src, &wg) — launches a goroutine. It runs concurrently, meaning it doesn't block the loop. The loop keeps going and launches all three goroutines almost instantly.
+
+wg.Done() — decrements the counter by 1. Each goroutine calls this (via defer) when it finishes. It's essentially wg.Add(-1).
+
+wg.Wait() — blocks the calling goroutine (here, main) until the counter reaches 0. Once all three goroutines call Done(), the counter hits 0, Wait() unblocks, and main continues.
+
+Timeline
+Copy to clipboard
+
+Time 0ms:
+
+main:       wg.Add(1), go fetchData("database")  → counter = 1
+
+wg.Add(1), go fetchData("cache")     → counter = 2
+
+wg.Add(1), go fetchData("api")       → counter = 3
+
+wg.Wait()  ← main is now BLOCKED
+
+Time 0-100ms:
+
+goroutine1: sleeping... (database)
+
+goroutine2: sleeping... (cache)
+
+goroutine3: sleeping... (api)
+
+Time ~100ms:
+
+goroutine1: wg.Done() → counter = 2
+
+goroutine2: wg.Done() → counter = 1
+
+goroutine3: wg.Done() → counter = 0  ← Wait() unblocks!
+
+main:       prints "All data fetched!"
+
+Two Key Details
+
+Why pass &wg (a pointer)? If you passed wg by value, each goroutine would get its own copy of the WaitGroup. Calling Done() on a copy wouldn't decrement the original counter, so Wait() would block forever — a deadlock.
+
+Why defer wg.Done()? Using defer ensures Done() is called even if the function panics. Without it, a panic would leave the counter above 0, and Wait() would block forever.
+
+Mental Model
+
+Add = "I'm starting work", Done = "I'm finished",Wait = "hold here until everyone's finished." The WaitGroup is just the shared scoreboard that makes this coordination possible across goroutines.
+
+Channels — Communication Between Goroutines
+
+A channel is a pipe that lets goroutines talk to each other:
+
+How channels work
+Copy to clipboard
+
+Goroutine A  ── sends data ──→  [channel]  ──→  receives data ── Goroutine B
+
+You create a channel with make(chan Type). The two key operations are:
+
+Send: channel <- value — pushes a value into the pipe. The sender stops and waits until someone is ready to receive on the other end.
+
+Receive: value := <-channel — pulls a value out of the pipe. The receiver stops and waits until someone sends something.
+
+This waiting is the magic — it forces goroutines to synchronize without needing WaitGroups or sleep. By default, channels are unbuffered — like a phone call where both sides must be on the line at the same time.
+
+channels.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+func main() {
+
+// Create an unbuffered channel of strings
+
+messages := make(chan string)
+
+// Launch a goroutine that sends a value
+
+go func() {
+
+messages <- "ping" // Send blocks until someone receives
+
+}()
+
+// Receive blocks until someone sends
+
+msg := <-messages
+
+fmt.Println(msg) // "ping"
+
+// --- Channel for returning results ---
+
+results := make(chan int)
+
+go func() {
+
+sum := 0
+
+for i := 1; i <= 100; i++ {
+
+sum += i
+
+}
+
+results <- sum // Send the computed result back
+
+}()
+
+total := <-results
+
+fmt.Println("Sum 1..100 =", total) // 5050
+
+}
+
+Walking Through the Code
+
+Example 1 — Simple message passing:
+
+Timeline: message passing
+Copy to clipboard
+
+Time 0:
+
+main:       creates channel "messages"
+
+launches goroutine
+
+hits  msg := <-messages  ← BLOCKED (nothing sent yet)
+
+goroutine:  hits  messages <- "ping" ← finds main is waiting!
+
+── handoff happens ──
+
+main:       msg now equals "ping", prints it
+
+goroutine:  finishes and exits
+
+The two sides meet at the channel like a hand-to-hand delivery. Neither side can continue until the other shows up.
+
+Example 2 — Returning a result:
+
+Timeline: returning results
+Copy to clipboard
+
+main:       creates channel "results"
+
+launches goroutine
+
+hits  total := <-results  ← BLOCKED (waiting for answer)
+
+goroutine:  calculates sum (1+2+...+100 = 5050)
+
+hits  results <- 5050     ← delivers the answer
+
+── handoff happens ──
+
+main:       total now equals 5050, prints it
+
+This is the pattern: send work to a goroutine, get results back through a channel.
+
+Channels vs WaitGroups
+
+WaitGroupChannel
+
+Just says "I'm done"Sends actual data back
+
+Only synchronizationSynchronization + communication
+
+wg.Done() signals completionSending a value signals completion
+
+The Go Proverb
+
+"Don't communicate by sharing memory; share memory by communicating." Channels are that communication. An unbuffered channel (make(chan string)) is like a phone call — both sides must be on the line at the same time. The sender blocks until the receiver is ready, and vice versa.
+
+Buffered Channels
+
+By default, channels are unbuffered — a send blocks until a receiver is ready. A buffered channel has a capacity and can hold values without a receiver being ready, up to the buffer size. You create one by passing the capacity as the second argument to make.
+
+buffered-channels.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+func main() {
+
+// Buffered channel — can hold up to 2 values
+
+ch := make(chan string, 2)
+
+// These sends don't block because the buffer has space
+
+ch <- "first"
+
+ch <- "second"
+
+// Receives pull values out in FIFO order
+
+fmt.Println(<-ch) // "first"
+
+fmt.Println(<-ch) // "second"
+
+}
+
+Channel Directions
+
+When passing channels as function parameters, you can restrict them to be send-only or receive-only. This adds type-safety — the compiler prevents you from accidentally reading from a write-only channel or vice versa.
+
+chan<- string — send-only channel (can only send strings into it)
+
+<-chan string — receive-only channel (can only receive strings from it)
+
+chan string — bidirectional channel (can send and receive)
+
+channel-directions.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+// producer can ONLY send to the channel
+
+func producer(ch chan<- string, msg string) {
+
+ch <- msg
+
+// <-ch  // This would be a compile error!
+
+}
+
+// consumer can ONLY receive from the channel
+
+func consumer(ch <-chan string) string {
+
+return <-ch
+
+// ch <- "x"  // This would be a compile error!
+
+}
+
+func main() {
+
+ch := make(chan string, 1)
+
+producer(ch, "hello from producer")
+
+msg := consumer(ch)
+
+fmt.Println(msg) // "hello from producer"
+
+}
+
+Ranging Over Channels & Closing
+
+You can iterate over values received from a channel using for range. The loop continues until the channel is closed. The sender closes a channel with close(ch) to signal that no more values will be sent. Closing a channel is important — without it, a range loop would block forever waiting for more values.
+
+range-channels.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+func generateNumbers(count int, ch chan<- int) {
+
+for i := 1; i <= count; i++ {
+
+ch <- i
+
+}
+
+close(ch) // Signal: no more values will be sent
+
+}
+
+func main() {
+
+ch := make(chan int)
+
+go generateNumbers(5, ch)
+
+// range automatically stops when channel is closed
+
+for num := range ch {
+
+fmt.Printf("Received: %d\n", num)
+
+}
+
+fmt.Println("Channel closed, done!")
+
+// Output:
+
+// Received: 1
+
+// Received: 2
+
+// Received: 3
+
+// Received: 4
+
+// Received: 5
+
+// Channel closed, done!
+
+}
+
+Select — Waiting on Multiple Channels
+
+The select statement lets you wait on multiple channel operations at once. It's like a switch statement, but for channels: it blocks until one of its cases is ready, then executes that case. If multiple are ready, one is chosen at random.
+
+select is commonly used for timeouts, cancellation, and multiplexing data from multiple sources.
+
+select.go
+Copy to clipboard
+
+package main
+
+import (
+
+"fmt"
+
+"time"
+
+)
+
+func main() {
+
+ch1 := make(chan string)
+
+ch2 := make(chan string)
+
+// Goroutine 1: slow operation (200ms)
+
+go func() {
+
+time.Sleep(200 * time.Millisecond)
+
+ch1 <- "result from service A"
+
+}()
+
+// Goroutine 2: fast operation (100ms)
+
+go func() {
+
+time.Sleep(100 * time.Millisecond)
+
+ch2 <- "result from service B"
+
+}()
+
+// Receive results from whichever finishes first
+
+for i := 0; i < 2; i++ {
+
+select {
+
+case msg1 := <-ch1:
+
+fmt.Println("Got:", msg1)
+
+case msg2 := <-ch2:
+
+fmt.Println("Got:", msg2)
+
+}
+
+}
+
+// Output (service B finishes first):
+
+// Got: result from service B
+
+// Got: result from service A
+
+}
+
+Practical Pattern: Fan-out / Fan-in
+
+A common real-world pattern is fan-out / fan-in: launch multiple goroutines (fan-out), each doing work in parallel, then collect all their results through a channel (fan-in). This is the pattern you'll see in API servers that need to fetch data from multiple sources simultaneously.
+
+fan-out-fan-in.go
+Copy to clipboard
+
+package main
+
+import (
+
+"fmt"
+
+"time"
+
+)
+
+// Simulates fetching data from different services
+
+func fetch(service string, ch chan<- string) {
+
+time.Sleep(100 * time.Millisecond) // Simulate network call
+
+ch <- fmt.Sprintf("data from %s", service)
+
+}
+
+func main() {
+
+ch := make(chan string)
+
+// Fan-out: launch 3 goroutines concurrently
+
+services := []string{"users-api", "orders-api", "payments-api"}
+
+for _, svc := range services {
+
+go fetch(svc, ch)
+
+}
+
+// Fan-in: collect all results
+
+for i := 0; i < len(services); i++ {
+
+result := <-ch
+
+fmt.Println(result)
+
+}
+
+// All 3 fetches run in parallel (~100ms total, not 300ms)
+
+}
+
+Quick Reference
+
+OperationSyntaxBlocks?
+
+Start goroutinego func()No — runs async
+
+Create channelmake(chan T)No
+
+Create buffered channelmake(chan T, size)No
+
+Send to channelch <- valueYes (until receiver ready, or buffer has space)
+
+Receive from channelv := <-chYes (until sender sends)
+
+Close channelclose(ch)No
+
+Range over channelfor v := range chUntil channel is closed
+
+Wait on multipleselect { case ... }Until one case is ready
+
+In Grit
+
+Grit's background job system (powered by asynq) uses goroutines under the hood to process tasks like sending emails, resizing images, and running cleanup jobs. The Gin web server itself handles each HTTP request in its own goroutine — this is how it achieves high concurrency without you writing any goroutine code. Pulse's observability tracing also runs in its own goroutines to avoid slowing down your API. You generally do not need to write goroutine code directly — asynq, Gin, and Pulse manage concurrency for you.
+
+Try This
+
+Create 3 goroutines that each compute a result and send it through a channel. Collect all results in main and print the total.
+
+Try ItSee Solution
+
+Try This
+
+Fan work out to a fixed number of workers over a channel and collect the results. Sort before printing, because concurrent work never finishes in a predictable order.
+
+Try ItSee Solution
+
+11. Packages & Project Structure
+
+Go organizes code into packages. Each directory is a package, and the package name matches the directory name. A name that starts with an uppercase letter(like GetUser) is exported (public) -- accessible from other packages. A lowercase name (like parseToken) is unexported (private) -- only accessible within the same package.
+
+The internal/ directory is special in Go: packages inside it cannot be imported by code outside the parent module. This is a convention enforced by the compiler, not just a naming pattern. It keeps your application logic private.
+
+project structure
+Copy to clipboard
+
+apps/api/
+
+├── cmd/server/
+
+│   └── main.go          # Entry point (package main)
+
+├── cmd/migrate/
+
+│   └── main.go          # Migration CLI (go run cmd/migrate)
+
+├── cmd/seed/
+
+│   └── main.go          # Seeder CLI (go run cmd/seed)
+
+├── internal/
+
+│   ├── config/
+
+│   │   └── config.go    # package config — Config struct, Load()
+
+│   ├── database/
+
+│   │   ├── database.go  # package database — Connect()
+
+│   │   ├── migrate.go   # DropAll() for fresh migrations
+
+│   │   └── seed.go      # Seed() — populate dev data
+
+│   ├── models/
+
+│   │   ├── user.go      # package models — User struct (exported)
+
+│   │   └── upload.go    # package models — Upload struct (exported)
+
+│   ├── handlers/
+
+│   │   ├── auth.go      # package handlers — Login(), Register()
+
+│   │   └── user.go      # package handlers — UserHandler CRUD
+
+│   ├── services/
+
+│   │   └── auth.go      # package services — AuthService (JWT)
+
+│   ├── middleware/
+
+│   │   ├── auth.go      # package middleware — Auth(), RequireRole()
+
+│   │   ├── cors.go      # CORS configuration
+
+│   │   └── logger.go    # Request logging
+
+│   └── routes/
+
+│       └── routes.go    # package routes — Setup() wires everything
+
+└── go.mod               # Module definition
+
+Go has no public or private keyword. Visibility is decided by the first letter: capitalised identifiers are exported from the package, lowercase ones are not. That single rule is why service structs expose CreateProduct while their helpers stay lowercase — the compiler enforces the boundary for you.
+
+visibility.go
+Copy to clipboard
+
+package main
+
+import "fmt"
+
+// Exported — callable from another package as models.Product
+
+type Product struct {
+
+Name  string  // exported field: appears in JSON, visible everywhere
+
+Price float64 // exported
+
+sku   string  // unexported: invisible outside this package
+
+}
+
+// Exported constructor — the usual way to set unexported fields
+
+func NewProduct(name string, price float64, sku string) *Product {
+
+return &Product{Name: name, Price: price, sku: sku}
+
+}
+
+// Exported method
+
+func (p *Product) SKU() string {
+
+return p.normalisedSKU()
+
+}
+
+// unexported helper — an implementation detail, free to change
+
+func (p *Product) normalisedSKU() string {
+
+if p.sku == "" {
+
+return "UNSET"
+
+}
+
+return p.sku
+
+}
+
+// Package-level state and init(), which runs before main()
+
+var registry = map[string]*Product{}
+
+func init() {
+
+p := NewProduct("Laptop", 999.00, "LAP-1")
+
+registry[p.SKU()] = p
+
+fmt.Println("init: registry seeded")
+
+}
+
+func main() {
+
+fmt.Println("main: registry has", len(registry))
+
+p := NewProduct("Mouse", 25.00, "")
+
+fmt.Println(p.Name, p.SKU()) // Mouse UNSET
+
+// p.sku works here because main is in the same package.
+
+// From another package it would not compile — that is the whole mechanism.
+
+fmt.Println("internal sku value:", p.sku)
+
+}
+
+Try This
+
+Use capitalisation to draw the boundary of a package: an exported constructor and method, with the field and helper behind them kept private.
+
+Try ItSee Solution
+
+Try This
+
+Package-level variables and init() run before main. Use them to build a lookup table once, which is how registries and default configs get set up.
+
+Try ItSee Solution
+
+In Grit
+
+Grit follows Go's standard project layout exactly. All application code lives inside internal/: models, handlers, services, middleware, routes, and config. The cmd/ directory contains entry points for different commands (server, migrate, seed). When you import a package, you use the full module path:import "my-app/apps/api/internal/models".
+
+12. Environment Variables
+
+Go reads environment variables with os.Getenv("KEY"). For local development, you store variables in a .env file and load them with the godotenv package. A common pattern is to define a Configstruct that holds all your settings in one place, loaded once at startup.
+
+This pattern keeps configuration centralized, type-safe, and easy to override per environment (development, staging, production).
+
+config/config.go
+Copy to clipboard
+
+package config
+
+import (
+
+"os"
+
+"strconv"
+
+"github.com/joho/godotenv"
+
+)
+
+type Config struct {
+
+Port       int
+
+DBHost     string
+
+DBPort     int
+
+DBName     string
+
+DBUser     string
+
+DBPassword string
+
+JWTSecret  string
+
+Debug      bool
+
+}
+
+func Load() *Config {
+
+// Load .env file (ignored in production)
+
+godotenv.Load()
+
+port, _ := strconv.Atoi(getEnv("PORT", "8080"))
+
+dbPort, _ := strconv.Atoi(getEnv("DB_PORT", "5432"))
+
+return &Config{
+
+Port:       port,
+
+DBHost:     getEnv("DB_HOST", "localhost"),
+
+DBPort:     dbPort,
+
+DBName:     getEnv("DB_NAME", "grit_dev"),
+
+DBUser:     getEnv("DB_USER", "postgres"),
+
+DBPassword: getEnv("DB_PASSWORD", "postgres"),
+
+JWTSecret:  getEnv("JWT_SECRET", "change-me"),
+
+Debug:      getEnv("DEBUG", "false") == "true",
+
+}
+
+}
+
+func getEnv(key, fallback string) string {
+
+if value := os.Getenv(key); value != "" {
+
+return value
+
+}
+
+return fallback
+
+}
+
+os.Getenv has one weakness: an unset variable and one set to the empty string look identical, and both give you "". That is fine for optional values and dangerous for required ones. The fix is two small helpers — one that falls back to a default, one that fails loudly — plus typed parsing for anything that is not a string.
+
+env_helpers.go
+Copy to clipboard
+
+package main
+
+import (
+
+"fmt"
+
+"os"
+
+"strconv"
+
+"time"
+
+)
+
+// Optional: fall back when unset or empty
+
+func getEnv(key, fallback string) string {
+
+if v, ok := os.LookupEnv(key); ok && v != "" {
+
+return v
+
+}
+
+return fallback
+
+}
+
+// Required: fail at start-up rather than at 3am
+
+func mustEnv(key string) (string, error) {
+
+v, ok := os.LookupEnv(key)
+
+if !ok || v == "" {
+
+return "", fmt.Errorf("required env var %s is not set", key)
+
+}
+
+return v, nil
+
+}
+
+// Typed, with a fallback when the value is missing or unparseable
+
+func getEnvInt(key string, fallback int) int {
+
+v, err := strconv.Atoi(os.Getenv(key))
+
+if err != nil {
+
+return fallback
+
+}
+
+return v
+
+}
+
+func getEnvDuration(key string, fallback time.Duration) time.Duration {
+
+d, err := time.ParseDuration(os.Getenv(key))
+
+if err != nil {
+
+return fallback
+
+}
+
+return d
+
+}
+
+func main() {
+
+// Set a couple so the example is self-contained
+
+os.Setenv("PORT", "9090")
+
+os.Setenv("TIMEOUT", "45s")
+
+os.Setenv("EMPTY", "")
+
+fmt.Println("PORT:      ", getEnvInt("PORT", 8080))       // 9090
+
+fmt.Println("MAX_CONNS: ", getEnvInt("MAX_CONNS", 25))    // 25 (unset)
+
+fmt.Println("TIMEOUT:   ", getEnvDuration("TIMEOUT", 30*time.Second))
+
+fmt.Println("EMPTY:     ", getEnv("EMPTY", "fallback"))   // fallback
+
+// LookupEnv distinguishes "set to empty" from "not set at all"
+
+if v, ok := os.LookupEnv("EMPTY"); ok {
+
+fmt.Printf("EMPTY is set, value = %q\n", v)
+
+}
+
+if _, err := mustEnv("JWT_SECRET"); err != nil {
+
+fmt.Println("startup error:", err)
+
+}
+
+}
+
+Try This
+
+Write the two helpers every Go service ends up with: one that falls back to a default, one that refuses to start without a value.
+
+Try ItSee Solution
+
+Try This
+
+Load a whole config struct, collect every problem at once, and report them together — far kinder than failing on one missing variable at a time.
+
+Try ItSee Solution
+
+In Grit
+
+Grit's config lives in internal/config/config.go. It loads settings for the database, Redis, S3 storage, Resend email, AI keys, Sentinel security, and more -- all from the .env file. The Config struct is created once in main.goand passed to every service that needs it. A .env.example file is scaffolded with every project to document all available variables.
+
+13. Gin Framework
+
+Gin is Go's most popular HTTP framework. It provides a fast router, middleware support, JSON binding, validation, and route groups. Understanding Gin is essential because every handler you write receives a *gin.Context -- the single object that holds the request, response, URL parameters, query strings, and more.
+
+Creating a Server
+
+You create a Gin engine with gin.New() (bare) or gin.Default()(includes logger and recovery middleware). Then you define routes and start the server.
+
+server.go
+Copy to clipboard
+
+package main
+
+import (
+
+"net/http"
+
+"github.com/gin-gonic/gin"
+
+)
+
+func main() {
+
+// Create a Gin engine (bare, no default middleware)
+
+r := gin.New()
+
+// Add middleware globally
+
+r.Use(gin.Logger())    // Log every request
+
+r.Use(gin.Recovery())  // Recover from panics
+
+// Simple route
+
+r.GET("/api/health", func(c *gin.Context) {
+
+c.JSON(http.StatusOK, gin.H{
+
+"status": "ok",
+
+})
+
+})
+
+// Start server on port 8080
+
+r.Run(":8080")
+
+}
+
+Route Groups & Middleware
+
+Route groups let you organize related routes under a common prefix and apply middleware to all routes in the group at once. This is how Grit separates public routes (no auth), protected routes (login required), and admin routes (admin role required).
+
+route_groups.go
+Copy to clipboard
+
+// Public routes — no authentication
+
+auth := r.Group("/api/auth")
+
+{
+
+auth.POST("/register", authHandler.Register)
+
+auth.POST("/login", authHandler.Login)
+
+auth.POST("/refresh", authHandler.Refresh)
+
+}
+
+// Protected routes — requires valid JWT token
+
+protected := r.Group("/api")
+
+protected.Use(middleware.Auth(db, authService))  // Apply auth middleware
+
+{
+
+protected.GET("/auth/me", authHandler.Me)
+
+protected.GET("/users/:id", userHandler.GetByID)
+
+}
+
+// Admin routes — requires ADMIN role
+
+admin := r.Group("/api")
+
+admin.Use(middleware.Auth(db, authService))
+
+admin.Use(middleware.RequireRole("ADMIN"))        // Stack middleware
+
+{
+
+admin.GET("/users", userHandler.List)
+
+admin.POST("/users", userHandler.Create)
+
+admin.PUT("/users/:id", userHandler.Update)
+
+admin.DELETE("/users/:id", userHandler.Delete)
+
+}
+
+The gin.Context Object
+
+Every handler receives *gin.Context. Here are the methods you will use most:
+
+gin_context.go
+Copy to clipboard
+
+func exampleHandler(c *gin.Context) {
+
+// ── Reading the request ──────────────────────────────
+
+id := c.Param("id")                     // URL param: /users/:id
+
+page := c.Query("page")                 // Query string: ?page=2
+
+page = c.DefaultQuery("page", "1")      // With default value
+
+var input CreateUserInput
+
+err := c.ShouldBindJSON(&input)         // Parse + validate JSON body
+
+token := c.GetHeader("Authorization")   // Read a header
+
+// ── Sending responses ────────────────────────────────
+
+c.JSON(200, gin.H{"data": "hello"})     // Send JSON
+
+c.JSON(404, gin.H{                      // Send error
+
+"error": gin.H{
+
+"code":    "NOT_FOUND",
+
+"message": "User not found",
+
+},
+
+})
+
+// ── Middleware data ──────────────────────────────────
+
+c.Set("user_id", uint(42))              // Store data (middleware → handler)
+
+userID, _ := c.Get("user_id")           // Retrieve data
+
+// ── Control flow ────────────────────────────────────
+
+c.Abort()                               // Stop the middleware chain
+
+c.Next()                                // Continue to next middleware/handler
+
+}
+
+Input Validation with Binding Tags
+
+Gin uses struct tags to validate incoming JSON. When you call c.ShouldBindJSON(&input), Gin parses the request body, checks the binding tags, and returns an error if validation fails. No manual validation code needed.
+
+validation.go
+Copy to clipboard
+
+// Gin validates this struct automatically
+
+type CreateUserInput struct {
+
+Name     string `json:"name" binding:"required"`           // Must be present
+
+Email    string `json:"email" binding:"required,email"`    // Must be valid email
+
+Password string `json:"password" binding:"required,min=8"` // Min 8 characters
+
+Age      int    `json:"age" binding:"gte=18,lte=120"`      // Between 18-120
+
+Role     string `json:"role" binding:"oneof=USER EDITOR"`  // Must be one of these
+
+}
+
+func createUser(c *gin.Context) {
+
+var input CreateUserInput
+
+if err := c.ShouldBindJSON(&input); err != nil {
+
+// Gin returns detailed validation errors automatically
+
+c.JSON(422, gin.H{
+
+"error": gin.H{
+
+"code":    "VALIDATION_ERROR",
+
+"message": err.Error(),
+
+},
+
+})
+
+return
+
+}
+
+// input is now validated and safe to use
+
+fmt.Println(input.Name, input.Email)
+
+}
+
+In Grit
+
+All API routes are defined in internal/routes/routes.go. The Setup()function creates a Gin engine, applies global middleware (Logger, Recovery, CORS), then organizes routes into groups: public auth, protected, profile, and admin. Middleware like Auth() and RequireRole("ADMIN") are applied per-group. When you generate a new resource, the CLI injects routes into the correct group using marker comments.
+
+About these challenges
+
+The playground compiles against the standard library only, so Gin itself will not run there. These challenges use net/http and httptestinstead, which is what Gin is built on — the router, the handler signature and the context are conveniences over exactly this. Everything you practise here is the same shape you will write in internal/handlers/, minus the helper methods.
+
+Try This
+
+Register routes, pull an id out of the path, and return JSON with the right status code. This is what c.Param and c.JSON are doing underneath.
+
+Try ItSee Solution
+
+Try This
+
+Decode a request body into a struct, reject what is invalid with 422 and a field-by-field message, and accept what is valid with 201 — the job c.ShouldBindJSON does for you.
+
+Try ItSee Solution
+
+14. Middleware
+
+Middleware is a function that runs before (or after) your handler. It sits in the request chain and can inspect, modify, or reject requests. Think of it as a pipeline: each request passes through a series of middleware functions before reaching the handler.
+
+In Gin, middleware is a gin.HandlerFunc -- the same type as a handler. The difference is that middleware calls c.Next() to pass control to the next function in the chain, or c.Abort() to stop the chain entirely (e.g., when authentication fails).
+
+middleware pattern
+Copy to clipboard
+
+// A middleware is just a gin.HandlerFunc that calls c.Next()
+
+func Logger() gin.HandlerFunc {
+
+return func(c *gin.Context) {
+
+start := time.Now()
+
+c.Next() // ← Run the next handler/middleware
+
+// This runs AFTER the handler returns
+
+duration := time.Since(start)
+
+status := c.Writer.Status()
+
+log.Printf("%s %s → %d (%v)", c.Request.Method, c.Request.URL.Path, status, duration)
+
+}
+
+}
+
+// Middleware that blocks requests (c.Abort)
+
+func RequireAPIKey() gin.HandlerFunc {
+
+return func(c *gin.Context) {
+
+key := c.GetHeader("X-API-Key")
+
+if key != "valid-key" {
+
+c.JSON(401, gin.H{"error": gin.H{
+
+"code": "UNAUTHORIZED", "message": "Invalid API key",
+
+}})
+
+c.Abort() // ← Stop the chain, handler never runs
+
+return
+
+}
+
+c.Next()
+
+}
+
+}
+
+The Middleware Chain
+
+Middleware runs in the order you add it. When a request comes in, it flows through each middleware, then the handler, and back out through the middleware in reverse:
+
+middleware chain
+Copy to clipboard
+
+Request → Logger → CORS → Auth → RequireRole → Handler
+
+↓
+
+Response ← Logger ← CORS ← Auth ← RequireRole ← Handler
+
+// If Auth calls c.Abort():
+
+Request → Logger → CORS → Auth ✗ (returns 401, handler never runs)
+
+applying middleware
+Copy to clipboard
+
+r := gin.New()
+
+// Global middleware — runs on EVERY request
+
+r.Use(middleware.Logger())
+
+r.Use(gin.Recovery())
+
+r.Use(middleware.CORS(cfg.CORSOrigins))
+
+// Group middleware — runs only on routes in this group
+
+protected := r.Group("/api")
+
+protected.Use(middleware.Auth(db, authService))   // Only protected routes
+
+{
+
+protected.GET("/users/:id", userHandler.GetByID)
+
+}
+
+// Stacking middleware — multiple on one group
+
+admin := r.Group("/api")
+
+admin.Use(middleware.Auth(db, authService))        // Must be logged in
+
+admin.Use(middleware.RequireRole("ADMIN"))          // AND must be admin
+
+{
+
+admin.DELETE("/users/:id", userHandler.Delete)
+
+}
+
+In Grit
+
+Grit scaffolds four middleware functions: Logger (request timing),CORS (cross-origin access), Auth (JWT validation), and RequireRole (role-based access). They are applied in routes.go: Logger and CORS are global, Auth is per-group, and RequireRole stacks on top of Auth for admin routes.
+
+Try This
+
+A middleware is a function that takes a handler and returns a handler. Write one that runs before and after the request, which is what c.Next() splits in Gin.
+
+Try ItSee Solution
+
+Try This
+
+Compose several middleware into one chain, then write one that refuses to call the next handler — which is exactly what c.Abort() does when auth fails.
+
+Try ItSee Solution
+
+15. CORS
+
+CORS (Cross-Origin Resource Sharing) is a browser security feature that blocks web pages from making requests to a different domain than the one that served them. Your Next.js frontend runs on localhost:3000 but your Go API runs on localhost:8080 -- that's a different origin, so the browser blocks the request by default.
+
+To fix this, the API must send special headers (Access-Control-Allow-Origin) telling the browser which origins are allowed. This is handled by CORS middleware.
+
+middleware/cors.go
+Copy to clipboard
+
+package middleware
+
+import (
+
+"strings"
+
+"github.com/gin-gonic/gin"
+
+)
+
+// CORS returns middleware that allows cross-origin requests.
+
+func CORS(allowedOrigins string) gin.HandlerFunc {
+
+origins := strings.Split(allowedOrigins, ",")
+
+return func(c *gin.Context) {
+
+origin := c.GetHeader("Origin")
+
+// Check if the request origin is allowed
+
+for _, allowed := range origins {
+
+if strings.TrimSpace(allowed) == origin {
+
+c.Header("Access-Control-Allow-Origin", origin)
+
+c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+
+c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+c.Header("Access-Control-Allow-Credentials", "true")
+
+break
+
+}
+
+}
+
+// Handle preflight requests
+
+if c.Request.Method == "OPTIONS" {
+
+c.AbortWithStatus(204)
+
+return
+
+}
+
+c.Next()
+
+}
+
+}
+
+Preflight requests: Before making a POST or PUT request, the browser sends an OPTIONS request first (called a "preflight") to check if CORS is allowed. The middleware handles this by returning a 204 with the correct headers.
+
+.env
+Copy to clipboard
+
+# Comma-separated list of allowed frontend origins
+
+CORS_ORIGINS=http://localhost:3000,http://localhost:3001
+
+In Grit
+
+Grit's CORS middleware reads allowed origins from the CORS_ORIGINS environment variable. By default, it allows localhost:3000 (web app) and localhost:3001 (admin panel). In production, update this to your actual domain. CORS is applied globally in routes.go so every endpoint is accessible from the frontend.
+
+Try This
+
+Decide the Access-Control-Allow-Origin header from a list of permitted origins. Echo the caller's origin when it is allowed, and send nothing at all when it is not.
+
+Try ItSee Solution
+
+Try This
+
+Answer the browser's OPTIONS request before it will send the real one. Get this wrong and every non-trivial request fails before your handler is ever called.
+
+Try ItSee Solution
+
+16. Handlers
+
+A handler is the function that runs when an HTTP request matches a route. In Grit, handlers follow the thin handler pattern: they do four things and nothing more:
+
+Parse the request (URL params, query strings, JSON body)
+
+Validate the input (using binding tags)
+
+Delegate to a service or database call
+
+Respond with the appropriate JSON and status code
+
+Handlers do NOT contain business logic. They don't hash passwords, calculate totals, send emails, or query related data. All of that goes in services. This separation makes your code testable and keeps each layer focused on one job.
+
+handlers/auth.go
+Copy to clipboard
+
+package handlers
+
+import (
+
+"net/http"
+
+"github.com/gin-gonic/gin"
+
+"gorm.io/gorm"
+
+"myapp/apps/api/internal/models"
+
+"myapp/apps/api/internal/services"
+
+)
+
+// Handler struct holds dependencies
+
+type AuthHandler struct {
+
+DB          *gorm.DB
+
+AuthService *services.AuthService
+
+}
+
+// Request struct — what the client sends
+
+type loginRequest struct {
+
+Email    string `json:"email" binding:"required,email"`
+
+Password string `json:"password" binding:"required"`
+
+}
+
+// Login authenticates a user and returns JWT tokens.
+
+func (h *AuthHandler) Login(c *gin.Context) {
+
+// 1. Parse & validate
+
+var req loginRequest
+
+if err := c.ShouldBindJSON(&req); err != nil {
+
+c.JSON(http.StatusUnprocessableEntity, gin.H{
+
+"error": gin.H{
+
+"code":    "VALIDATION_ERROR",
+
+"message": err.Error(),
+
+},
+
+})
+
+return
+
+}
+
+// 2. Hand it to the service. The lookup and the password check live
+
+//    there, together, because they answer one question and because an
+
+//    unknown address and a wrong password must be indistinguishable:
+
+//    two branches here would answer at two different speeds and tell an
+
+//    attacker which addresses have accounts.
+
+//
+
+//    This is the rule the whole framework is built on. A handler reads
+
+//    the request, calls one method, and writes the answer. It runs no
+
+//    queries of its own.
+
+user, err := h.AuthService.Authenticate(c.Request.Context(), req.Email, req.Password)
+
+if err != nil {
+
+c.JSON(http.StatusUnauthorized, gin.H{
+
+"error": gin.H{
+
+"code":    "INVALID_CREDENTIALS",
+
+"message": "Invalid email or password",
+
+},
+
+})
+
+return
+
+}
+
+// 3. Generate tokens (the service again)
+
+tokens, err := h.AuthService.GenerateTokenPair(user.ID, user.Email, user.Role)
+
+if err != nil {
+
+c.JSON(http.StatusInternalServerError, gin.H{
+
+"error": gin.H{
+
+"code":    "TOKEN_ERROR",
+
+"message": "Failed to generate tokens",
+
+},
+
+})
+
+return
+
+}
+
+// 5. Respond
+
+c.JSON(http.StatusOK, gin.H{
+
+"data": gin.H{
+
+"user":   user,
+
+"tokens": tokens,
+
+},
+
+"message": "Logged in successfully",
+
+})
+
+}
+
+Strip Gin away and a handler is four steps in a fixed order: read the input, validate it, call the service, write the response. The version below is the same shape written against net/http so it runs anywhere, including the playground. The part worth copying is the last step — one place that turns a service error into a status code, so no handler ever invents its own mapping.
+
+handler_shape.go
+Copy to clipboard
+
+package main
+
+import (
+
+"encoding/json"
+
+"errors"
+
+"fmt"
+
+"net/http"
+
+"net/http/httptest"
+
+"strings"
+
+)
+
+// Sentinels the service returns; the handler maps them to status codes
+
+var (
+
+ErrNotFound  = errors.New("not found")
+
+ErrDuplicate = errors.New("already exists")
+
+)
+
+type Product struct {
+
+ID    int     `json:"id"`
+
+Name  string  `json:"name"`
+
+Price float64 `json:"price"`
+
+}
+
+// The service knows nothing about HTTP
+
+type ProductService struct{ items map[int]Product }
+
+func (s *ProductService) Get(id int) (Product, error) {
+
+p, ok := s.items[id]
+
+if !ok {
+
+return Product{}, fmt.Errorf("get %d: %w", id, ErrNotFound)
+
+}
+
+return p, nil
+
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+
+w.Header().Set("Content-Type", "application/json")
+
+w.WriteHeader(status)
+
+json.NewEncoder(w).Encode(body)
+
+}
+
+// One place that decides which error becomes which status
+
+func writeError(w http.ResponseWriter, err error) {
+
+switch {
+
+case errors.Is(err, ErrNotFound):
+
+writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+
+case errors.Is(err, ErrDuplicate):
+
+writeJSON(w, http.StatusConflict, map[string]string{"error": "already exists"})
+
+default:
+
+// Log the real error server-side; never leak it to the client
+
+fmt.Println("internal:", err)
+
+writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+
+}
+
+}
+
+func main() {
+
+svc := &ProductService{items: map[int]Product{
+
+1: {ID: 1, Name: "Laptop", Price: 999},
+
+}}
+
+handler := func(w http.ResponseWriter, r *http.Request) {
+
+// 1. read input
+
+id := strings.TrimPrefix(r.URL.Path, "/products/")
+
+// 2. validate
+
+if id == "" {
+
+writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id required"})
+
+return
+
+}
+
+// 3. call the service
+
+var n int
+
+fmt.Sscanf(id, "%d", &n)
+
+p, err := svc.Get(n)
+
+if err != nil {
+
+writeError(w, err)
+
+return
+
+}
+
+// 4. write the response
+
+writeJSON(w, http.StatusOK, p)
+
+}
+
+for _, path := range []string{"/products/1", "/products/42"} {
+
+rec := httptest.NewRecorder()
+
+handler(rec, httptest.NewRequest("GET", path, nil))
+
+fmt.Printf("%-14s %d %s", path, rec.Code, rec.Body.String())
+
+}
+
+}
+
+In Grit
+
+Grit scaffolds auth handlers (Login, Register, Refresh,ForgotPassword, Me) and a user handler (List, Create,GetByID, Update, Delete). When you generate a resource, the CLI creates a handler with all five CRUD methods plus pagination, search, and sorting -- all following the same thin pattern.
+
+Try This
+
+Read, validate, call the service, respond — in that order, every time. Build one end to end and prove it with httptest.
+
+Try ItSee Solution
+
+Try This
+
+Write the one function that turns a service error into an HTTP status, so no handler has to guess and no internal message leaks to the client.
+
+Try ItSee Solution
+
+17. Services & The Service Pattern
+
+A service is a struct with methods that contain your business logic. It sits between the handler (HTTP layer) and the database (data layer). But why not just put the logic directly in the handler?
+
+Why Services Exist
+
+Separation of concerns -- handlers deal with HTTP, services deal with logic. Each layer has one job.
+
+Testability -- you can test business logic without spinning up an HTTP server. Just create a service with a test database and call its methods.
+
+Reusability -- the same service method can be called from a handler, a background job, a CLI command, or a cron task. If the logic was in the handler, you'd have to duplicate it.
+
+Maintainability -- when business rules change, you update one service method instead of hunting through handlers.
+
+services/product.go
+Copy to clipboard
+
+package services
+
+import (
+
+"fmt"
+
+"math"
+
+"gorm.io/gorm"
+
+"myapp/apps/api/internal/models"
+
+)
+
+// Service struct — holds the database connection
+
+type ProductService struct {
+
+DB *gorm.DB
+
+}
+
+// All operations are methods on the service
+
+// List returns paginated products with search and sorting.
+
+func (s *ProductService) List(page, pageSize int, search, sortBy, sortOrder string) ([]models.Product, int64, int, error) {
+
+query := s.DB.Model(&models.Product{})
+
+if search != "" {
+
+query = query.Where("name ILIKE ?", "%"+search+"%")
+
+}
+
+var total int64
+
+query.Count(&total)
+
+var items []models.Product
+
+offset := (page - 1) * pageSize
+
+err := query.Order(sortBy + " " + sortOrder).
+
+Offset(offset).
+
+Limit(pageSize).
+
+Find(&items).Error
+
+if err != nil {
+
+return nil, 0, 0, fmt.Errorf("fetching products: %w", err)
+
+}
+
+pages := int(math.Ceil(float64(total) / float64(pageSize)))
+
+return items, total, pages, nil
+
+}
+
+// GetByID returns a single product.
+
+func (s *ProductService) GetByID(id uint) (*models.Product, error) {
+
+var item models.Product
+
+if err := s.DB.First(&item, id).Error; err != nil {
+
+return nil, fmt.Errorf("product not found: %w", err)
+
+}
+
+return &item, nil
+
+}
+
+// Create adds a new product.
+
+func (s *ProductService) Create(item *models.Product) error {
+
+if err := s.DB.Create(item).Error; err != nil {
+
+return fmt.Errorf("creating product: %w", err)
+
+}
+
+return nil
+
+}
+
+// Delete soft-deletes a product.
+
+func (s *ProductService) Delete(id uint) error {
+
+var item models.Product
+
+if err := s.DB.First(&item, id).Error; err != nil {
+
+return fmt.Errorf("product not found: %w", err)
+
+}
+
+return s.DB.Delete(&item).Error
+
+}
+
+How Handlers Call Services
+
+The handler creates or receives a service instance, then calls its methods. The handler's only job is to translate between HTTP and the service layer:
+
+handlers/product.go (simplified)
+Copy to clipboard
+
+type ProductHandler struct {
+
+Service *services.ProductService
+
+}
+
+func (h *ProductHandler) GetByID(c *gin.Context) {
+
+id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+// Delegate to service
+
+product, err := h.Service.GetByID(uint(id))
+
+if err != nil {
+
+c.JSON(404, gin.H{"error": gin.H{"code": "NOT_FOUND", "message": "Product not found"}})
+
+return
+
+}
+
+// Respond
+
+c.JSON(200, gin.H{"data": product})
+
+}
+
+In Grit
+
+Every generated resource gets a service in internal/services/ withList, GetByID, Create, Update, and Delete methods. The auth service (AuthService) handles JWT token generation and validation. Background job workers also call services -- the same ProductService.Create() method can be called from an HTTP handler or an async job worker.
+
+Try This
+
+Put the business rules in a service that knows nothing about HTTP, then prove it by calling the same service from ordinary code.
+
+Try ItSee Solution
+
+Try This
+
+Have the service depend on a repository interface rather than a concrete database. That is what makes it testable without a running Postgres.
+
+Try ItSee Solution
+
+18. GORM In Depth
+
+GORM is Go's most popular ORM. It maps Go structs to database tables and provides a chainable API for queries. Let's cover the key operations you'll use daily.
+
+Database Connection
+
+GORM connects to PostgreSQL using the gorm.io/driver/postgres driver. You open a connection once at startup and pass it everywhere via dependency injection.
+
+database/database.go
+Copy to clipboard
+
+package database
+
+import (
+
+"fmt"
+
+"log"
+
+"gorm.io/driver/postgres"
+
+"gorm.io/gorm"
+
+"gorm.io/gorm/logger"
+
+)
+
+func Connect(dsn string) (*gorm.DB, error) {
+
+db, err := gorm.Open(postgres.New(postgres.Config{
+
+DSN:                  dsn,
+
+PreferSimpleProtocol: true,
+
+}), &gorm.Config{
+
+Logger: logger.Default.LogMode(logger.Info),
+
+})
+
+if err != nil {
+
+return nil, fmt.Errorf("failed to connect: %w", err)
+
+}
+
+// Configure connection pool
+
+sqlDB, _ := db.DB()
+
+sqlDB.SetMaxIdleConns(10)
+
+sqlDB.SetMaxOpenConns(100)
+
+log.Println("Database connected successfully")
+
+return db, nil
+
+}
+
+CRUD Operations
+
+GORM provides a chainable API for all database operations. Each method returns the same *gorm.DB, so you can chain them together.
+
+gorm_crud.go
+Copy to clipboard
+
+// ── CREATE ─────────────────────────────────────────────
+
+product := models.Product{Name: "Widget", Price: 29.99}
+
+db.Create(&product)          // INSERT INTO products ...
+
+fmt.Println(product.ID)      // ID is auto-set after create
+
+// ── READ — single record ──────────────────────────────
+
+var found models.Product
+
+db.First(&found, 42)                          // WHERE id = 42
+
+db.Where("email = ?", "alice@test.com").First(&found)  // WHERE email = ...
+
+// ── READ — multiple records ───────────────────────────
+
+var products []models.Product
+
+db.Find(&products)                            // SELECT * FROM products
+
+db.Where("price > ?", 20.0).Find(&products)  // With condition
+
+// ── READ — pagination and sorting ─────────────────────
+
+db.Order("created_at desc").
+
+Offset(0).    // Skip 0 records (page 1)
+
+Limit(20).    // Take 20 records
+
+Find(&products)
+
+// ── READ — count ──────────────────────────────────────
+
+var total int64
+
+db.Model(&models.Product{}).Count(&total)
+
+// ── READ — search with ILIKE (case-insensitive) ──────
+
+search := "widget"
+
+db.Where("name ILIKE ?", "%"+search+"%").Find(&products)
+
+// ── UPDATE ────────────────────────────────────────────
+
+db.Model(&found).Update("price", 34.99)      // Single field
+
+db.Model(&found).Updates(map[string]any{      // Multiple fields
+
+"name":  "Super Widget",
+
+"price": 39.99,
+
+})
+
+// ── DELETE (soft delete) ──────────────────────────────
+
+db.Delete(&found)            // Sets deleted_at, doesn't remove row
+
+// To permanently delete: db.Unscoped().Delete(&found)
+
+Relationships & Preloading
+
+When a model has relationships (belongs-to, has-many), GORM does NOT load related data automatically. You must use Preload() to eagerly load them.
+
+preloading.go
+Copy to clipboard
+
+// Models with relationships
+
+type Category struct {
+
+ID       uint      `gorm:"primarykey" json:"id"`
+
+Name     string    `json:"name"`
+
+Products []Product `json:"products"`  // has many
+
+}
+
+type Product struct {
+
+ID         uint     `gorm:"primarykey" json:"id"`
+
+Name       string   `json:"name"`
+
+CategoryID uint     `json:"category_id"`           // foreign key
+
+Category   Category `json:"category"`               // belongs to
+
+}
+
+// Without Preload — category field will be empty {}
+
+db.First(&product, 1)
+
+fmt.Println(product.Category.Name) // "" (empty!)
+
+// With Preload — category is loaded
+
+db.Preload("Category").First(&product, 1)
+
+fmt.Println(product.Category.Name) // "Electronics"
+
+Hooks (Lifecycle Callbacks)
+
+GORM hooks are methods on your model that run automatically at specific points in the lifecycle. The most common hook is BeforeCreate, used to hash passwords before they are stored in the database.
+
+models/user.go (hooks)
+Copy to clipboard
+
+import "golang.org/x/crypto/bcrypt"
+
+// BeforeCreate runs automatically before INSERT
+
+func (u *User) BeforeCreate(tx *gorm.DB) error {
+
+if u.Password != "" {
+
+hashed, err := bcrypt.GenerateFromPassword(
+
+[]byte(u.Password), bcrypt.DefaultCost,
+
+)
+
+if err != nil {
+
+return err
+
+}
+
+u.Password = string(hashed)
+
+}
+
+return nil
+
+}
+
+// CheckPassword compares plaintext against stored hash
+
+func (u *User) CheckPassword(password string) bool {
+
+err := bcrypt.CompareHashAndPassword(
+
+[]byte(u.Password), []byte(password),
+
+)
+
+return err == nil
+
+}
+
+// Usage — password is hashed automatically
+
+user := models.User{
+
+Email:    "alice@example.com",
+
+Password: "mypassword123",  // Plaintext here
+
+}
+
+db.Create(&user) // BeforeCreate hashes it before INSERT
+
+In Grit
+
+Every resource generated by grit generate resource gets a service file with these exact GORM operations: Create, List (with pagination, search, and sorting), GetByID (with Preload),Update, and Delete. The database connection is established once in internal/database/database.go and passed to all services via dependency injection.
+
+Try This
+
+Reproduce the N+1 query problem with an in-memory store, count the lookups, then fix it the way Preload does — one query for the children instead of one per parent.
+
+Try ItSee Solution
+
+Try This
+
+Model two GORM behaviours that surprise people: a BeforeCreate hook that rewrites the record on the way in, and a soft delete that hides rows without removing them.
+
+Try ItSee Solution
+
+19. Migrations & Seeding
+
+Migrations create database tables from your Go structs.Seeding populates tables with initial data for development. Both are essential for getting a working database up and running.
+
+AutoMigrate
+
+GORM's AutoMigrate reads your struct fields and creates or updates the corresponding database table. It will add new columns but will NOT delete removed columns or change existing column types (to prevent data loss).
+
+models/models.go
+Copy to clipboard
+
+package models
+
+import (
+
+"log"
+
+"gorm.io/gorm"
+
+)
+
+// Models returns ALL models in migration order.
+
+// Models with no foreign key dependencies come first.
+
+func Models() []interface{} {
+
+return []interface{}{
+
+&User{},
+
+&Upload{},
+
+&Blog{},
+
+// grit:models  ← new models are injected here
+
+}
+
+}
+
+// Migrate creates tables that don't exist yet.
+
+func Migrate(db *gorm.DB) error {
+
+models := Models()
+
+for _, model := range models {
+
+// Skip if table already exists
+
+if db.Migrator().HasTable(model) {
+
+log.Printf("  ✓ %T — already exists, skipping", model)
+
+continue
+
+}
+
+if err := db.AutoMigrate(model); err != nil {
+
+return fmt.Errorf("migrating %T: %w", model, err)
+
+}
+
+log.Printf("  ✓ %T — created", model)
+
+}
+
+return nil
+
+}
+
+Running Migrations
+
+Grit provides a dedicated CLI command for migrations with a --freshflag that drops all tables before recreating them (useful during development).
+
+Terminal
+Copy to clipboard
+
+# Run migrations (create missing tables)
+
+$grit migrate
+
+# Fresh migration (drop all tables + recreate)
+
+$grit migrate --fresh
+
+Seeding
+
+Seeders create test data for development. A good seeder is idempotent -- it checks if data already exists before creating it, so you can run it multiple times safely.
+
+database/seed.go
+Copy to clipboard
+
+package database
+
+import (
+
+"log"
+
+"myapp/apps/api/internal/models"
+
+"gorm.io/gorm"
+
+)
+
+// Seed populates the database with initial data.
+
+func Seed(db *gorm.DB) error {
+
+if err := seedAdminUser(db); err != nil {
+
+return fmt.Errorf("seeding admin: %w", err)
+
+}
+
+if err := seedDemoUsers(db); err != nil {
+
+return fmt.Errorf("seeding users: %w", err)
+
+}
+
+// grit:seeders  ← new seeders injected here
+
+return nil
+
+}
+
+// Idempotent seeder — checks before creating
+
+func seedAdminUser(db *gorm.DB) error {
+
+var count int64
+
+db.Model(&models.User{}).Where("email = ?", "admin@example.com").Count(&count)
+
+if count > 0 {
+
+log.Println("Admin already exists, skipping...")
+
+return nil
+
+}
+
+admin := models.User{
+
+FirstName: "Admin",
+
+LastName:  "User",
+
+Email:     "admin@example.com",
+
+Password:  "password",     // Hashed by BeforeCreate hook
+
+Role:      "ADMIN",
+
+Active:    true,
+
+}
+
+if err := db.Create(&admin).Error; err != nil {
+
+return fmt.Errorf("creating admin: %w", err)
+
+}
+
+log.Println("Created admin: admin@example.com / password")
+
+return nil
+
+}
+
+Terminal
+Copy to clipboard
+
+# Run the seeder
+
+$grit seed
+
+In Grit
+
+Grit scaffolds both cmd/migrate/main.go and cmd/seed/main.goout of the box. The seed file includes an admin user, demo users with different roles, and sample blog posts. When you generate a new resource, the model is automatically registered in Models() for migration. You can also use grit migrateand grit seed CLI commands.
+
+Try This
+
+A seeder has to be safe to run twice. Write find-or-create so a second run changes nothing, which is the difference between a seeder and a duplicate-row generator.
+
+Try ItSee Solution
+
+Try This
+
+AutoMigrate has to create a table before anything references it. Sort a set of migrations by their dependencies and detect the cycle that would make the order impossible.
+
+Try ItSee Solution
+
+20. JWT & Authentication
+
+JWT (JSON Web Token) is how Grit authenticates users. Understanding this flow is critical because it connects the frontend, the API, the middleware, and the database. Let's break it down step by step.
+
+What is a JWT?
+
+A JWT is a signed string that contains data (called claims). The server creates a token by encoding claims (user ID, email, role) and signing it with a secret key. The client stores this token and sends it with every request. The server validates the signature to verify the token hasn't been tampered with.
+
+how JWT works
+Copy to clipboard
+
+// 1. JWT contains "claims" — data about the user
+
+type Claims struct {
+
+UserID uint   `json:"user_id"`
+
+Email  string `json:"email"`
+
+Role   string `json:"role"`
+
+jwt.RegisteredClaims          // Expiry, issued-at, etc.
+
+}
+
+// 2. Server creates a token by signing claims with a secret
+
+claims := &Claims{
+
+UserID: 42,
+
+Email:  "alice@example.com",
+
+Role:   "ADMIN",
+
+RegisteredClaims: jwt.RegisteredClaims{
+
+ExpiresAt: jwt.NewNumericDate(time.Now().Add(15 * time.Minute)),
+
+IssuedAt:  jwt.NewNumericDate(time.Now()),
+
+},
+
+}
+
+token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+tokenString, _ := token.SignedString([]byte("my-secret-key"))
+
+// tokenString = "eyJhbGciOiJIUzI1NiIs..."
+
+// 3. Later, server validates the token
+
+parsed, _ := jwt.ParseWithClaims(tokenString, &Claims{}, func(t *jwt.Token) (interface{}, error) {
+
+return []byte("my-secret-key"), nil
+
+})
+
+claims = parsed.Claims.(*Claims)
+
+fmt.Println(claims.UserID) // 42
+
+The Authentication Flow
+
+Here is the complete flow from registration to authenticated requests. Understanding this will make the entire auth system click.
+
+authentication flow
+Copy to clipboard
+
+┌─────────────────────────────────────────────────────────────────┐
+
+│ 1. REGISTER                                                     │
+
+│                                                                 │
+
+│  Client sends:    POST /api/auth/register                       │
+
+│                   { "email": "alice@test.com",                  │
+
+│                     "password": "mypassword" }                  │
+
+│                                                                 │
+
+│  Server does:     ① Validate input (binding tags)               │
+
+│                   ② Check email doesn't already exist           │
+
+│                   ③ Create user (BeforeCreate hashes password)  │
+
+│                   ④ Generate access token (15min) + refresh     │
+
+│                     token (7 days)                              │
+
+│                   ⑤ Return { user, tokens }                     │
+
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+
+│ 2. LOGIN                                                        │
+
+│                                                                 │
+
+│  Client sends:    POST /api/auth/login                          │
+
+│                   { "email": "alice@test.com",                  │
+
+│                     "password": "mypassword" }                  │
+
+│                                                                 │
+
+│  Server does:     ① Find user by email (db.Where)              │
+
+│                   ② Check password (bcrypt.CompareHashAndPassword)│
+
+│                   ③ Check account is active                     │
+
+│                   ④ Generate new token pair                     │
+
+│                   ⑤ Return { user, tokens }                     │
+
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+
+│ 3. AUTHENTICATED REQUEST                                        │
+
+│                                                                 │
+
+│  Client sends:    GET /api/users                                │
+
+│                   Authorization: Bearer eyJhbGciOi...           │
+
+│                                                                 │
+
+│  Middleware does:  ① Extract token from "Bearer <token>"        │
+
+│                    ② Validate signature + check expiry          │
+
+│                    ③ Load user from DB by claims.UserID         │
+
+│                    ④ Set user data in context                   │
+
+│                    ⑤ Call c.Next() → handler runs               │
+
+│                                                                 │
+
+│  Handler does:    Read c.Get("user") → return response          │
+
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+
+│ 4. TOKEN REFRESH                                                │
+
+│                                                                 │
+
+│  When access token expires (15min), client sends:               │
+
+│  POST /api/auth/refresh { "refresh_token": "eyJ..." }          │
+
+│                                                                 │
+
+│  Server validates the refresh token and returns new tokens.     │
+
+│  Client never needs to log in again until the refresh           │
+
+│  token expires (7 days).                                        │
+
+└─────────────────────────────────────────────────────────────────┘
+
+The Auth Service
+
+The auth service handles all token operations. It's a struct with the JWT secret and expiry durations, with methods for generating and validating tokens.
+
+services/auth.go
+Copy to clipboard
+
+type AuthService struct {
+
+Secret        string
+
+AccessExpiry  time.Duration  // e.g., 15 minutes
+
+RefreshExpiry time.Duration  // e.g., 7 days
+
+}
+
+type TokenPair struct {
+
+AccessToken  string `json:"access_token"`
+
+RefreshToken string `json:"refresh_token"`
+
+ExpiresAt    int64  `json:"expires_at"`
+
+}
+
+// GenerateTokenPair creates both access and refresh tokens.
+
+func (s *AuthService) GenerateTokenPair(userID uint, email, role string) (*TokenPair, error) {
+
+// Access token — short-lived, used for API requests
+
+accessToken, expiresAt, err := s.generateToken(userID, email, role, s.AccessExpiry)
+
+if err != nil {
+
+return nil, fmt.Errorf("generating access token: %w", err)
+
+}
+
+// Refresh token — long-lived, used only to get new access tokens
+
+refreshToken, _, err := s.generateToken(userID, email, role, s.RefreshExpiry)
+
+if err != nil {
+
+return nil, fmt.Errorf("generating refresh token: %w", err)
+
+}
+
+return &TokenPair{
+
+AccessToken:  accessToken,
+
+RefreshToken: refreshToken,
+
+ExpiresAt:    expiresAt,
+
+}, nil
+
+}
+
+// ValidateToken parses and verifies a token string.
+
+func (s *AuthService) ValidateToken(tokenString string) (*Claims, error) {
+
+token, err := jwt.ParseWithClaims(tokenString, &Claims{},
+
+func(token *jwt.Token) (interface{}, error) {
+
+// Verify the signing method is HMAC (prevent algorithm attacks)
+
+if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+
+return nil, fmt.Errorf("unexpected signing method")
+
+}
+
+return []byte(s.Secret), nil
+
+},
+
+)
+
+if err != nil {
+
+return nil, fmt.Errorf("parsing token: %w", err)
+
+}
+
+claims, ok := token.Claims.(*Claims)
+
+if !ok || !token.Valid {
+
+return nil, fmt.Errorf("invalid token")
+
+}
+
+return claims, nil
+
+}
+
+In Grit
+
+The auth service is created in routes.go with the JWT secret and expiry durations from the config. It's passed to the auth handler and the auth middleware. On the frontend, React Query stores the tokens and automatically refreshes them when the access token expires. The api-client.ts intercepts 401 responses and tries a silent refresh before showing the login page.
+
+Try This
+
+A JWT is three base64 segments joined by dots, the third being an HMAC of the first two. Build and verify one with nothing but the standard library and it stops being magic.
+
+Try ItSee Solution
+
+Try This
+
+Parse a token, reject it when the claims say it has expired, and put the user on the request context so handlers downstream can read it.
+
+Try ItSee Solution
+
+21. RBAC & Middleware
+
+RBAC (Role-Based Access Control) controls who can do what. Grit uses three default roles: ADMIN, EDITOR, and USER. This is enforced through two middleware functions that work together.
+
+Auth Middleware
+
+The Auth middleware runs on every protected route. It extracts the JWT from the Authorization header, validates it, loads the user from the database, and stores the user data in the Gin context so handlers can access it.
+
+middleware/auth.go
+Copy to clipboard
+
+func Auth(db *gorm.DB, authService *services.AuthService) gin.HandlerFunc {
+
+return func(c *gin.Context) {
+
+// 1. Get the Authorization header
+
+authHeader := c.GetHeader("Authorization")
+
+if authHeader == "" {
+
+c.JSON(401, gin.H{"error": gin.H{"code": "UNAUTHORIZED", "message": "Authorization header required"}})
+
+c.Abort() // Stop the chain — handler never runs
+
+return
+
+}
+
+// 2. Extract "Bearer <token>"
+
+parts := strings.SplitN(authHeader, " ", 2)
+
+if len(parts) != 2 || parts[0] != "Bearer" {
+
+c.JSON(401, gin.H{"error": gin.H{"code": "UNAUTHORIZED", "message": "Invalid header format"}})
+
+c.Abort()
+
+return
+
+}
+
+// 3. Validate the token
+
+claims, err := authService.ValidateToken(parts[1])
+
+if err != nil {
+
+c.JSON(401, gin.H{"error": gin.H{"code": "UNAUTHORIZED", "message": "Invalid or expired token"}})
+
+c.Abort()
+
+return
+
+}
+
+// 4. Load user from database
+
+var user models.User
+
+if err := db.First(&user, claims.UserID).Error; err != nil {
+
+c.JSON(401, gin.H{"error": gin.H{"code": "UNAUTHORIZED", "message": "User not found"}})
+
+c.Abort()
+
+return
+
+}
+
+// 5. Store user data in context for handlers
+
+c.Set("user", user)
+
+c.Set("user_id", user.ID)
+
+c.Set("user_role", user.Role)
+
+c.Next() // Continue to the handler
+
+}
+
+}
+
+RequireRole Middleware
+
+The RequireRole middleware stacks on top of Auth. It reads the role that Auth stored in the context and checks if it matches one of the allowed roles. If not, it returns a 403 Forbidden.
+
+middleware/auth.go (RequireRole)
+Copy to clipboard
+
+// RequireRole checks if the authenticated user has one of the required roles.
+
+// Uses variadic args — you can pass one or more roles.
+
+func RequireRole(roles ...string) gin.HandlerFunc {
+
+return func(c *gin.Context) {
+
+// Read the role that Auth middleware stored in context
+
+userRole, exists := c.Get("user_role")
+
+if !exists {
+
+c.JSON(401, gin.H{"error": gin.H{"code": "UNAUTHORIZED", "message": "Not authenticated"}})
+
+c.Abort()
+
+return
+
+}
+
+role := userRole.(string)
+
+// Check if user's role matches any allowed role
+
+for _, r := range roles {
+
+if role == r {
+
+c.Next() // Role matches — continue
+
+return
+
+}
+
+}
+
+// No match — forbidden
+
+c.JSON(403, gin.H{"error": gin.H{"code": "FORBIDDEN", "message": "You do not have permission"}})
+
+c.Abort()
+
+}
+
+}
+
+// Usage in routes:
+
+// admin.Use(middleware.RequireRole("ADMIN"))           // Only admins
+
+// editor.Use(middleware.RequireRole("ADMIN", "EDITOR")) // Admins + editors
+
+How c.Set / c.Get Passes Data
+
+The *gin.Context acts as a shared data bag between middleware and handlers in the same request. Middleware uses c.Set() to store data, and handlers use c.Get() to retrieve it. This is how the user object flows from the auth middleware to any handler:
+
+context data flow
+Copy to clipboard
+
+// In Auth middleware:
+
+c.Set("user", user)         // Store the full user struct
+
+c.Set("user_id", user.ID)   // Store just the ID (convenience)
+
+c.Set("user_role", user.Role)
+
+// In any handler on a protected route:
+
+func (h *UserHandler) GetProfile(c *gin.Context) {
+
+// Get the user object stored by middleware
+
+userData, _ := c.Get("user")
+
+user := userData.(models.User) // Type assert from any → User
+
+// Or get just the ID
+
+userID, _ := c.Get("user_id")
+
+id := userID.(uint)
+
+c.JSON(200, gin.H{"data": user})
+
+}
+
+In Grit
+
+Grit scaffolds three route groups: public (no auth), protected (Auth middleware), and admin (Auth + RequireRole). You can add custom role-restricted groups withgrit generate resource --roles ADMIN,EDITOR. The grit add role MODERATORcommand adds a new role across the entire codebase (Go constants, Zod schemas, TypeScript types, sidebar visibility, form options) in one step.
+
+Try This
+
+Write RequireRole once and apply it per route. The check belongs in one place, not repeated at the top of every handler where one omission becomes a hole.
+
+Try ItSee Solution
+
+Try This
+
+Some rules cannot be expressed as a role: a user may edit their own post but not someone else's. Combine a role check with an ownership check and get the order right.
+
+Try ItSee Solution
+
+22. Important Packages
+
+These are the Go packages used in every Grit backend. You don't need to memorize them -- they are all pre-configured when you scaffold a project. But knowing what they do helps you understand the generated code.
+
+PackageWhat It Does
+
+github.com/gin-gonic/ginHTTP framework — router, middleware, JSON binding, validation
+
+gorm.io/gormORM — maps Go structs to database tables, chainable queries
+
+gorm.io/driver/postgresPostgreSQL driver for GORM
+
+github.com/golang-jwt/jwt/v5JWT creation and validation for authentication
+
+golang.org/x/crypto/bcryptPassword hashing (used in User model's BeforeCreate hook)
+
+github.com/joho/godotenvLoad .env files into environment variables
+
+github.com/redis/go-redis/v9Redis client for caching and session storage
+
+github.com/hibiken/asynqBackground job queue and cron scheduler (Redis-backed)
+
+github.com/aws/aws-sdk-go-v2S3-compatible file storage (AWS S3, Cloudflare R2, MinIO)
+
+github.com/resend/resend-go/v2Transactional email service
+
+github.com/disintegration/imagingImage resizing and thumbnail generation
+
+github.com/MUKE-coder/gorm-studioVisual database browser embedded at /studio
+
+github.com/MUKE-coder/sentinelSecurity suite — WAF, rate limiting, threat dashboard
+
+The standard library packages you will encounter most often:
+
+PackageWhat It Does
+
+fmtFormatted printing and string formatting
+
+net/httpHTTP status codes (http.StatusOK, http.StatusNotFound, etc.)
+
+osEnvironment variables, file operations, process exit
+
+timeTimestamps, durations, token expiry
+
+stringsString manipulation (Split, Contains, ToLower, etc.)
+
+strconvString-to-number conversion (Atoi for page params)
+
+logLogging (log.Println, log.Fatalf)
+
+errorsError creation and wrapping
+
+mathmath.Ceil for pagination page count
+
+Reading the list is one thing; the two programs below actually use them. The first covers the text and number packages you reach for on nearly every request, the second the time and encoding ones that show up the moment you touch a database or return JSON.
+
+stdlib_text.go
+Copy to clipboard
+
+package main
+
+import (
+
+"fmt"
+
+"sort"
+
+"strconv"
+
+"strings"
+
+)
+
+func main() {
+
+// strings — the workhorse for anything user-supplied
+
+raw := "  Laptop, Mouse , Keyboard,  "
+
+parts := strings.Split(strings.TrimSpace(raw), ",")
+
+var items []string
+
+for _, p := range parts {
+
+if p = strings.TrimSpace(p); p != "" {
+
+items = append(items, p)
+
+}
+
+}
+
+fmt.Println(items, len(items))
+
+fmt.Println(strings.ToLower("ADA@Example.com"))
+
+fmt.Println(strings.Contains("ada@example.com", "@"))
+
+fmt.Println(strings.HasPrefix("Bearer abc123", "Bearer "))
+
+fmt.Println(strings.TrimPrefix("Bearer abc123", "Bearer "))
+
+fmt.Println(strings.Join(items, " | "))
+
+fmt.Println(strings.ReplaceAll("a/b/c", "/", "-"))
+
+// strings.Builder — the efficient way to assemble a string in a loop
+
+var b strings.Builder
+
+for i, item := range items {
+
+if i > 0 {
+
+b.WriteString(", ")
+
+}
+
+b.WriteString(item)
+
+}
+
+fmt.Println(b.String())
+
+// strconv — string <-> number, always with an error to check
+
+n, err := strconv.Atoi("42")
+
+fmt.Println(n, err)
+
+fmt.Println(strconv.Itoa(99) + "!")
+
+fmt.Println(strconv.FormatFloat(3.14159, 'f', 2, 64))
+
+fmt.Println(strconv.Quote(`he said "hi"`))
+
+// sort — for deterministic output
+
+prices := []float64{29.99, 5.00, 12.50}
+
+sort.Float64s(prices)
+
+fmt.Println(prices)
+
+sort.Slice(items, func(i, j int) bool { return items[i] < items[j] })
+
+fmt.Println(items)
+
+}
+
+stdlib_time_json.go
+Copy to clipboard
+
+package main
+
+import (
+
+"encoding/json"
+
+"errors"
+
+"fmt"
+
+"time"
+
+)
+
+type Event struct {
+
+Name      string        `json:"name"`
+
+StartsAt  time.Time     `json:"starts_at"`
+
+Duration  time.Duration `json:"duration_ns"`
+
+Cancelled bool          `json:"cancelled"`
+
+}
+
+func main() {
+
+// time — parsing uses a reference layout, not format codes
+
+start, err := time.Parse(time.RFC3339, "2026-03-01T09:30:00Z")
+
+if err != nil {
+
+fmt.Println("parse error:", err)
+
+return
+
+}
+
+fmt.Println("start:", start.Format("Mon 2 Jan 2006 15:04"))
+
+end := start.Add(90 * time.Minute)
+
+fmt.Println("end:  ", end.Format(time.RFC3339))
+
+fmt.Println("lasts:", end.Sub(start))
+
+fmt.Println("after?", end.After(start))
+
+// Durations are typed, so this reads as what it is
+
+deadline := 30 * time.Second
+
+fmt.Println("deadline:", deadline, "in ms:", deadline.Milliseconds())
+
+// encoding/json — marshal, then unmarshal back
+
+ev := Event{Name: "Launch", StartsAt: start, Duration: 90 * time.Minute}
+
+out, _ := json.MarshalIndent(ev, "", "  ")
+
+fmt.Println(string(out))
+
+var back Event
+
+if err := json.Unmarshal(out, &back); err != nil {
+
+fmt.Println("unmarshal error:", err)
+
+return
+
+}
+
+fmt.Println("round trip:", back.Name, back.StartsAt.Year())
+
+// Bad JSON gives you a typed error, not a panic
+
+var broken Event
+
+err = json.Unmarshal([]byte(`{"starts_at": 12345}`), &broken)
+
+var typeErr *json.UnmarshalTypeError
+
+if errors.As(err, &typeErr) {
+
+fmt.Printf("field %q wanted %s\n", typeErr.Field, typeErr.Type)
+
+}
+
+}
+
+Try This
+
+Normalise a messy list of tags with strings and sort — trimming, lowercasing, dropping blanks and removing duplicates, which is most of what validation does in practice.
+
+Try ItSee Solution
+
+Try This
+
+Parse a timestamp, do arithmetic on it, and format it for a response. Getting the reference layout right is the one piece of Go time that trips everybody up.
+
+Try ItSee Solution
+
+23. Putting It Together
+
+Now you understand all the Go concepts that power a Grit backend. Here is how they connect in the request lifecycle. When an HTTP request hits your API, it flows through a predictable chain:
+
+main.go -- loads config, connects to the database, initializes services, starts the server
+
+routes.go -- matches the URL to a handler, runs middleware (auth, CORS, logging)
+
+Auth middleware -- extracts JWT, validates token, loads user from DB, sets c.Set("user", ...)
+
+RequireRole middleware -- checks c.Get("user_role") against allowed roles
+
+handler -- parses the request, validates input with struct tags, calls the service
+
+service -- contains business logic, uses GORM to query the database, returns (result, error)
+
+handler -- checks the error, sends the JSON response with the correct status code
+
+request lifecycle
+Copy to clipboard
+
+GET /api/products/42
+
+│
+
+▼
+
+┌─── main.go ───────────────────────────────┐
+
+│ cfg := config.Load()                      │
+
+│ db  := database.Connect(cfg)              │
+
+│ svc := &services.ProductService{DB: db}   │
+
+│ routes.Setup(db, cfg, svc)                │
+
+└───────────────────────────────────────────┘
+
+│
+
+▼
+
+┌─── routes.go ─────────────────────────────┐
+
+│ protected := r.Group("/api")              │
+
+│ protected.Use(middleware.Auth(db, auth))   │
+
+│ protected.GET("/products/:id", h.GetByID) │
+
+└───────────────────────────────────────────┘
+
+│
+
+▼
+
+┌─── middleware/auth.go ────────────────────┐
+
+│ token := c.GetHeader("Authorization")     │
+
+│ claims := authService.ValidateToken(token)│
+
+│ user := db.First(&user, claims.UserID)    │
+
+│ c.Set("user", user)                       │
+
+│ c.Set("user_role", user.Role)             │
+
+│ c.Next()                                  │
+
+└───────────────────────────────────────────┘
+
+│
+
+▼
+
+┌─── handlers/product.go ──────────────────┐
+
+│ id := c.Param("id")                      │
+
+│ product, err := svc.GetByID(id)          │
+
+│ if err != nil { c.JSON(404, ...) }       │
+
+│ c.JSON(200, gin.H{"data": product})      │
+
+└───────────────────────────────────────────┘
+
+│
+
+▼
+
+┌─── services/product.go ──────────────────┐
+
+│ func (s *ProductService) GetByID(id) {   │
+
+│     var product models.Product            │
+
+│     err := s.DB.Preload("Category").      │
+
+│         First(&product, id).Error         │
+
+│     return product, err                   │
+
+│ }                                         │
+
+└───────────────────────────────────────────┘
+
+In Grit
+
+This entire flow is generated for you. When you run grit generate resource Product, it creates the model, service, handler, routes, and injects everything into the right files. You get a fully working CRUD API with pagination, filtering, authentication, and role-based access in seconds. Understanding this flow helps you customize the generated code and build features beyond basic CRUD.
+
+The diagram above is the Gin version. Here is the same pipeline as a program you can actually run: middleware, a handler, a service and a store, wired together and exercised with four requests. Strip the framework away and the whole architecture is about a hundred lines — which is the point. Gin and GORM save you typing; they do not change the shape.
+
+pipeline.go
+Copy to clipboard
+
+package main
+
+import (
+
+"context"
+
+"encoding/json"
+
+"errors"
+
+"fmt"
+
+"net/http"
+
+"net/http/httptest"
+
+"strconv"
+
+"strings"
+
+)
+
+// ── models ──────────────────────────────────────────────────────────────
+
+type Product struct {
+
+ID       int     `json:"id"`
+
+Name     string  `json:"name"`
+
+Price    float64 `json:"price"`
+
+Category string  `json:"category"`
+
+}
+
+var ErrNotFound = errors.New("not found")
+
+// ── store (stands in for GORM) ──────────────────────────────────────────
+
+type Store struct{ rows map[int]Product }
+
+func (s *Store) First(id int) (Product, error) {
+
+p, ok := s.rows[id]
+
+if !ok {
+
+return Product{}, fmt.Errorf("product %d: %w", id, ErrNotFound)
+
+}
+
+return p, nil
+
+}
+
+// ── service: business rules, no HTTP ────────────────────────────────────
+
+type ProductService struct{ store *Store }
+
+func (svc *ProductService) GetByID(id int) (Product, error) {
+
+if id <= 0 {
+
+return Product{}, fmt.Errorf("id must be positive: %w", ErrNotFound)
+
+}
+
+return svc.store.First(id)
+
+}
+
+// ── transport helpers ───────────────────────────────────────────────────
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+
+w.Header().Set("Content-Type", "application/json")
+
+w.WriteHeader(status)
+
+json.NewEncoder(w).Encode(body)
+
+}
+
+// ── middleware ──────────────────────────────────────────────────────────
+
+type ctxKey string
+
+const ctxRole ctxKey = "role"
+
+func Auth(next http.Handler) http.Handler {
+
+return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+token := r.Header.Get("Authorization")
+
+if !strings.HasPrefix(token, "Bearer ") {
+
+writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthenticated"})
+
+return
+
+}
+
+// A real system decodes claims here; this keeps the shape
+
+role := strings.TrimPrefix(token, "Bearer ")
+
+ctx := context.WithValue(r.Context(), ctxRole, role)
+
+next.ServeHTTP(w, r.WithContext(ctx))
+
+})
+
+}
+
+func RequireRole(allowed string) func(http.Handler) http.Handler {
+
+return func(next http.Handler) http.Handler {
+
+return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+if roleFrom(r) != allowed {
+
+writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+
+return
+
+}
+
+next.ServeHTTP(w, r)
+
+})
+
+}
+
+}
+
+// ── handler: read, validate, call the service, respond ──────────────────
+
+type ProductHandler struct{ svc *ProductService }
+
+func (h *ProductHandler) GetByID(w http.ResponseWriter, r *http.Request) {
+
+id, err := strconv.Atoi(r.PathValue("id"))
+
+if err != nil {
+
+writeJSON(w, http.StatusBadRequest, map[string]string{"error": "id must be a number"})
+
+return
+
+}
+
+product, err := h.svc.GetByID(id)
+
+if err != nil {
+
+if errors.Is(err, ErrNotFound) {
+
+writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+
+return
+
+}
+
+writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal error"})
+
+return
+
+}
+
+writeJSON(w, http.StatusOK, map[string]any{"data": product})
+
+}
+
+func main() {
+
+store := &Store{rows: map[int]Product{
+
+42: {ID: 42, Name: "Laptop", Price: 999, Category: "electronics"},
+
+}}
+
+h := &ProductHandler{svc: &ProductService{store: store}}
+
+mux := http.NewServeMux()
+
+mux.Handle("GET /api/products/{id}", Auth(RequireRole("ADMIN")(http.HandlerFunc(h.GetByID))))
+
+requests := []struct{ path, token string }{
+
+{"/api/products/42", ""},          // no token   -> 401
+
+{"/api/products/42", "USER"},      // wrong role -> 403
+
+{"/api/products/42", "ADMIN"},     // found      -> 200
+
+{"/api/products/999", "ADMIN"},    // missing    -> 404
+
+}
+
+for _, req := range requests {
+
+rec := httptest.NewRecorder()
+
+r := httptest.NewRequest("GET", req.path, nil)
+
+if req.token != "" {
+
+r.Header.Set("Authorization", "Bearer "+req.token)
+
+}
+
+mux.ServeHTTP(rec, r)
+
+fmt.Printf("%-20s token=%-6q %d %s", req.path, req.token, rec.Code, rec.Body.String())
+
+}
+
+}
+
+// Kept at the bottom so the pipeline above reads top to bottom
+
+func roleFrom(r *http.Request) string {
+
+v, _ := r.Context().Value(ctxRole).(string)
+
+return v
+
+}
+
+Try This
+
+Build the full request path yourself — middleware, handler, service, store — and prove each layer with a request that exercises it.
+
+Try ItSee Solution
+
+Try This
+
+Instrument every layer so one request prints the path it took. Seeing the order once is worth more than reading the diagram five times.
+
+Try ItSee Solution
+
+Next.js & React for Grit Developers

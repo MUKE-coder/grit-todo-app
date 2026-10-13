@@ -1,0 +1,279 @@
+Backend
+Pulse (Observability)
+
+Every Grit project ships with Pulse, a self-hosted observability and performance monitoring SDK. It provides request tracing, database monitoring, runtime metrics, error tracking, health checks, alerting, and a real-time dashboard — all with a single Mount() call.
+
+What You Get
+
+After starting your API, the Pulse dashboard is available at /pulse/ui/ (default credentials: admin / pulse).
+
+Capture middlewareLive dashboard
+Drops into the router — every request is captured and shown live at /pulse/ui
+
+FeatureDescription
+
+Request TracingAutomatic trace IDs, slow request detection, latency tracking
+
+Database MonitoringGORM query capture, N+1 detection, connection pool stats
+
+Runtime MetricsHeap memory, goroutines, GC pauses, leak detection
+
+Error TrackingPanic recovery, stack traces, request body capture, error fingerprinting
+
+Health ChecksKubernetes-compatible /live and /ready endpoints
+
+AlertingThreshold-based rules with Slack, Discord, email, and webhook notifications
+
+Prometheus18+ metrics at /pulse/metrics
+
+DashboardReact 19 UI with 8 pages: Overview, Routes, Database, Errors, Runtime, Health, Alerts, Settings
+
+Configuration
+
+Pulse is mounted in routes.go and configured via environment variables:
+
+.env
+Copy to clipboard
+
+# Observability — Pulse
+
+PULSE_ENABLED=true
+
+PULSE_USERNAME=admin
+
+PULSE_PASSWORD=pulse
+
+PULSE_STORAGE=memory                 # "memory" (default) | "sqlite"
+
+PULSE_STORAGE_DSN=pulse.db           # path used when PULSE_STORAGE=sqlite
+
+Pulse v1.0 is mounted with functional options and a context.Context (the context drives clean shutdown of the dashboard WebSocket and background samplers). The scaffolded mount call:
+
+internal/routes/routes.go
+Copy to clipboard
+
+// Mount Pulse observability
+
+if cfg.PulseEnabled {
+
+pulseOpts := []pulse.Option{
+
+pulse.WithAppName(cfg.AppName),
+
+pulse.WithCredentials(cfg.PulseUsername, cfg.PulsePassword),
+
+pulse.WithExcludePaths("/studio/*", "/sentinel/*", "/docs/*", "/pulse/*"),
+
+pulse.WithPrometheus(),
+
+// Pulse's error middleware snapshots a request-body snippet for context,
+
+// but restores ONLY the first 4096 bytes — silently truncating larger
+
+// uploads/JSON. Disable capture so the full body reaches the handler.
+
+pulse.WithRequestBodyCaptureDisabled(),
+
+}
+
+if cfg.IsDevelopment() {
+
+pulseOpts = append(pulseOpts, pulse.WithDevMode())
+
+}
+
+if cfg.PulseStorage == "sqlite" && cfg.PulseStorageDSN != "" {
+
+pulseOpts = append(pulseOpts, pulse.WithSQLite(cfg.PulseStorageDSN))
+
+}
+
+p := pulse.Mount(context.Background(), r, db, pulseOpts...)
+
+// Register health checks for connected services
+
+if svc.Cache != nil {
+
+p.AddHealthCheck(pulse.HealthCheck{
+
+Name:     "redis",
+
+Type:     "redis",
+
+Critical: false,
+
+CheckFunc: func(ctx context.Context) error {
+
+return svc.Cache.Client().Ping(ctx).Err()
+
+},
+
+})
+
+}
+
+}
+
+OptionEffect
+
+WithAppName(name)Labels the dashboard
+
+WithCredentials(user, pass)Dashboard basic-auth login
+
+WithExcludePaths(globs…)Skip tracing for these routes
+
+WithPrometheus()Expose /pulse/metrics
+
+WithDevMode()Verbose, dev-only behaviour
+
+WithSQLite(dsn)Persist data across restarts
+
+WithRequestBodyCaptureDisabled()Stop the 4096-byte body truncation
+
+Endpoints
+
+EndpointDescription
+
+GET /pulse/ui/Dashboard UI
+
+GET /pulse/healthFull health status (public)
+
+GET /pulse/health/liveKubernetes liveness probe
+
+GET /pulse/health/readyKubernetes readiness probe
+
+GET /pulse/metricsPrometheus metrics
+
+POST /pulse/api/auth/loginDashboard authentication
+
+GET /pulse/api/overviewDashboard summary (auth required)
+
+WS /pulse/ws/liveWebSocket live updates
+
+Custom Health Checks
+
+The Mount() function returns a Pulse instance. Use it to register health checks for any dependency:
+
+p := pulse.Mount(context.Background(), r, db, pulseOpts...)
+
+// Redis health check
+
+p.AddHealthCheck(pulse.HealthCheck{
+
+Name:     "redis",
+
+Type:     "redis",
+
+Critical: false,  // non-critical = won't fail /ready
+
+CheckFunc: func(ctx context.Context) error {
+
+return redisClient.Ping(ctx).Err()
+
+},
+
+})
+
+// External API health check
+
+p.AddHealthCheck(pulse.HealthCheck{
+
+Name:     "payment-api",
+
+Type:     "http",
+
+Critical: true,  // critical = will fail /ready if down
+
+CheckFunc: func(ctx context.Context) error {
+
+resp, err := http.Get("https://api.stripe.com/v1/health")
+
+if err != nil {
+
+return err
+
+}
+
+defer resp.Body.Close()
+
+if resp.StatusCode != 200 {
+
+return fmt.Errorf("status %d", resp.StatusCode)
+
+}
+
+return nil
+
+},
+
+})
+
+Copy to clipboard
+
+The database health check is registered automatically when you pass a *gorm.DB to Mount().
+
+Alerting
+
+Pulse ships with 5 default alert rules (high latency, high error rate, high memory, goroutine leak, health check failure) that run out of the box — no configuration needed. They fire against the metrics Pulse already collects and surface in the dashboard.
+
+Custom rules & channels. The scaffold enables the built-in rules and doesn't wire any notification channel by default. To add your own rules or a Slack/Discord/webhook channel, pass the matching Pulse option when you build pulseOpts in routes.go — see the Pulse package docs for the current option set, since these evolve with the library.
+
+Built-in Default Rules
+
+RuleMetricConditionSeverity
+
+high_latencyP95 latency> 2000ms for 5mincritical
+
+high_error_rateError rate> 10% for 3mincritical
+
+high_memoryHeap alloc> 500MB for 5minwarning
+
+goroutine_leakGoroutine growth> 100/hr for 10minwarning
+
+health_check_failureHealth statusunhealthy for 2mincritical
+
+Data Storage
+
+By default, Pulse uses in-memory ring buffers — fastest, but data resets on restart. For persistence across restarts, set PULSE_STORAGE=sqlite in your .env; the mount call then adds the pulse.WithSQLite() option automatically:
+
+.env
+Copy to clipboard
+
+PULSE_STORAGE=sqlite       # switch from in-memory to persistent
+
+PULSE_STORAGE_DSN=pulse.db # SQLite file (or ":memory:")
+
+internal/routes/routes.go
+Copy to clipboard
+
+if cfg.PulseStorage == "sqlite" && cfg.PulseStorageDSN != "" {
+
+pulseOpts = append(pulseOpts, pulse.WithSQLite(cfg.PulseStorageDSN))
+
+}
+
+Prometheus Integration
+
+Pulse exposes 18+ metrics in Prometheus exposition format at /pulse/metrics. Connect it to Grafana or any Prometheus-compatible tool.
+
+Key metrics include:
+
+pulse_http_requests_total — Total HTTP requests by method, path, status
+
+pulse_http_request_duration_seconds — Request duration histogram
+
+pulse_http_error_rate — Current error rate percentage
+
+pulse_runtime_goroutines — Active goroutine count
+
+pulse_runtime_heap_bytes — Heap allocation in bytes
+
+pulse_db_query_duration_seconds — Database query duration
+
+pulse_health_check_status — Health check status (1=healthy, 0=unhealthy)
+
+Disabling Pulse
+
+Set PULSE_ENABLED=false in your .env to disable Pulse entirely. This skips the mount and adds zero overhead to your application.
+
+API DocumentationAdmin Overview

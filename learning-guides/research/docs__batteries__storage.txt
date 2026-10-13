@@ -1,0 +1,312 @@
+Batteries
+File Storage
+
+One Disk interface over a directory on your machine or any S3-compatible bucket: AWS S3, Cloudflare R2, Backblaze B2 and MinIO. The same code stores, serves and deletes files on all of them, so a new project uploads before Docker is running and moves to a bucket in production by changing one environment variable.
+
+One interfaceAny driver
+Handlers and jobs talk to a Disk; STORAGE_DRIVER decides what is behind it
+
+Drivers
+
+STORAGE_DRIVER picks the driver, and only that driver's settings are read. Every driver passes the same test suite in internal/storage/disk_test.go: put, get, exists, stat, copy, move, list, delete many, public URL, temporary URL (and its expiry), and refused path traversal.
+
+DriverUse it forSettings
+
+localDevelopment without Docker, or one server with the directory on a volumeSTORAGE_LOCAL_ROOT, STORAGE_URL_SECRET
+
+minioDevelopment with Docker (the compose file runs it)MINIO_*
+
+s3AWS. No endpoint needed; with no key, an IAM role supplies credentialsS3_BUCKET, S3_REGION, S3_ACCESS_KEY, S3_SECRET_KEY, S3_PUBLIC_URL
+
+r2Cloudflare R2, no egress feesR2_* (R2_PUBLIC_URL is required for images to display)
+
+b2Backblaze B2B2_*
+
+.env
+Copy to clipboard
+
+STORAGE_DRIVER=minio        # local, minio, s3, r2 or b2
+
+# AWS S3: leave S3_ENDPOINT empty for the regional default. With no
+
+# S3_ACCESS_KEY the SDK's credential chain (AWS_* variables, a profile,
+
+# or the IAM role of the EC2, ECS or Lambda it runs on) is used.
+
+S3_BUCKET=myapp-uploads
+
+S3_REGION=eu-west-1
+
+# Cloudflare R2: the S3 endpoint only answers signed requests, so
+
+# images need the bucket's public origin (r2.dev or a custom domain).
+
+R2_ENDPOINT=https://<account>.r2.cloudflarestorage.com
+
+R2_BUCKET=myapp-uploads
+
+R2_PUBLIC_URL=https://pub-abc123.r2.dev
+
+Local development
+
+Outside production, STORAGE_DRIVER=minio with no MINIO_ACCESS_KEY becomes local, so a fresh project stores uploads, shows thumbnails and deletes files with nothing running but the API. Files live in storage/app (ignored by git) and the API serves them from /files/*.
+
+Keys under the public prefixes are served to anyone. Every other key, backups and private originals included, is served only through a signed temporary URL: an HMAC over the key and its expiry, signed with STORAGE_URL_SECRET or, when that is unset, JWT_SECRET. Writes go to a temporary file and are renamed into place, and a key that climbs out of the directory is refused. Each file is sent with a sandboxing Content-Security-Policy, so an uploaded page cannot run script as your API.
+
+Production refuses local unless ALLOW_LOCAL_STORAGE_IN_PRODUCTION=true. Files on one machine are invisible to a second replica and lost when a container is replaced, so set it only for a single server whose STORAGE_LOCAL_ROOT is on a volume you back up.
+
+The Disk interface
+
+Every driver implements storage.Disk. A missing file is ErrNotFound, a key that could name something outside the store is ErrInvalidKey, and deleting a key that is already gone is not an error, on every driver.
+
+internal/storage/disk.go
+Copy to clipboard
+
+type Disk interface {
+
+Put(ctx context.Context, key string, r io.Reader, opts PutOptions) error
+
+Get(ctx context.Context, key string) (io.ReadCloser, error)
+
+Exists(ctx context.Context, key string) (bool, error)
+
+Stat(ctx context.Context, key string) (Object, error) // Size, ContentType, LastModified
+
+Delete(ctx context.Context, keys ...string) error
+
+Copy(ctx context.Context, from, to string) error
+
+Move(ctx context.Context, from, to string) error
+
+List(ctx context.Context, prefix string) ([]Object, error)
+
+URL(key string) string
+
+TemporaryURL(ctx context.Context, key string, ttl time.Duration) (string, error)
+
+}
+
+type PutOptions struct {
+
+ContentType string
+
+Visibility  Visibility // "", VisibilityPublic or VisibilityPrivate
+
+}
+
+Handlers receive a *storage.Storage, which wraps one Disk and keeps the method names generated code has always called (Upload, Download, Delete, DeleteMany, GetURL, GetSignedURL, Stat). New code can take the Disk itself with Disk(), and storage.Wrap(disk) puts a driver of your own, or a fake in a test, behind the same type.
+
+Helpers
+
+storage.Store takes a file from a form and returns its key. The key is generated, <dir>/<yyyy>/<mm>/<uuid><ext>, so the name the file arrived with never reaches storage. The content type is sniffed from the bytes: HTML and SVG are refused whatever they claim, a declared image must be one, and the size limit is checked before anything is read.
+
+handlers/avatar.go
+Copy to clipboard
+
+func (h *AvatarHandler) Upload(c *gin.Context) {
+
+header, err := c.FormFile("file")
+
+if err != nil {
+
+c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"code": "INVALID_FILE", "message": "No file provided"}})
+
+return
+
+}
+
+key, err := storage.Store(c.Request.Context(), h.Storage.Disk(), "avatars", header, storage.StoreOptions{
+
+MaxSize: 2 << 20,
+
+Allow:   func(contentType string) bool { return strings.HasPrefix(contentType, "image/") },
+
+})
+
+switch {
+
+case errors.Is(err, storage.ErrFileTooLarge):
+
+c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"code": "FILE_TOO_LARGE", "message": "Avatars are 2 MB at most"}})
+
+return
+
+case errors.Is(err, storage.ErrFileTypeNotAllowed), errors.Is(err, storage.ErrContentMismatch):
+
+c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{"code": "INVALID_FILE_TYPE", "message": "Upload an image"}})
+
+return
+
+case err != nil:
+
+c.JSON(http.StatusInternalServerError, gin.H{"error": gin.H{"code": "UPLOAD_FAILED", "message": "Failed to store the file"}})
+
+return
+
+}
+
+// key is avatars/2026/09/5b1c...e2.png; keep it, and the original name, on your row.
+
+}
+
+// StoreAs picks the name: avatars/user-42.png
+
+key, err := storage.StoreAs(ctx, disk, "avatars", header, "user-42.png", storage.StoreOptions{})
+
+storage.ServeFile(c, disk, key, disposition) streams a file through the API with Content-Type, Content-Length, Last-Modified and Content-Disposition. It answers If-Modified-Since with 304 and a byte range with 206, so a video seeks and a large download resumes. On S3 a range is one ranged GET. It is how a private file reaches a user you have already authorised, on any driver.
+
+handlers/invoice.go
+Copy to clipboard
+
+func (h *InvoiceHandler) PDF(c *gin.Context) {
+
+invoice, err := h.Service.GetForUser(c.Request.Context(), c.Param("id"), c.GetString("user_id"))
+
+if err != nil {
+
+c.JSON(http.StatusNotFound, gin.H{"error": gin.H{"code": "NOT_FOUND", "message": "Invoice not found"}})
+
+return
+
+}
+
+// storage.Inline shows it in the browser; storage.Attachment saves it.
+
+storage.ServeFileAs(c, h.Storage.Disk(), invoice.PDFKey, storage.Inline, invoice.Number+".pdf")
+
+}
+
+Named disks
+
+STORAGE_DISKS names more disks next to the default one. Each takes STORAGE_DISK_<NAME>_* settings (DRIVER, BUCKET, ENDPOINT, ACCESS_KEY, SECRET_KEY, REGION, PUBLIC_URL, ROOT), and whatever it leaves unset comes from its driver's own settings. The API opens them at startup and code reaches them through storage.Disks.
+
+.env
+Copy to clipboard
+
+STORAGE_DRIVER=s3
+
+S3_BUCKET=myapp-uploads
+
+# A private bucket for backups, on the same account
+
+STORAGE_DISKS=backups
+
+STORAGE_DISK_BACKUPS_BUCKET=myapp-backups
+
+# Or on another provider altogether
+
+# STORAGE_DISK_BACKUPS_DRIVER=b2
+
+# STORAGE_DISK_BACKUPS_BUCKET=myapp-backups
+
+example.go
+Copy to clipboard
+
+backups := storage.Disks.Get("backups") // nil when STORAGE_DISKS has no backups
+
+def := storage.Disks.Default()
+
+Get never falls back to the default disk: code asking for a private bucket should not quietly write to the public one. Backups are the built-in user. The Data & Backup page, the scheduled backup and grit backup all write archives to the backups disk when it exists and to the default disk when it does not, and an archive taken before the disk was configured still downloads and is still pruned. A named local disk keeps its files in storage/<name> and is served under /files/_disks/<name>/ by the default local disk.
+
+Visibility
+
+Visibility is decided by key prefix. Keys under STORAGE_PUBLIC_PREFIXES (default uploads/,thumbnails/) are readable by anyone with the URL; every other key is private and read through TemporaryURL or ServeFile. On S3 and MinIO the API writes a bucket policy allowing anonymous reads on those prefixes and nothing else, each time it connects. On the local driver the file route enforces it.
+
+PutOptions.Visibility states what you expect, and Put refuses a key whose prefix disagrees with ErrVisibilityMismatch, so a file you meant to keep private never lands where anyone can read it, even after someone edits the prefixes.
+
+example.go
+Copy to clipboard
+
+// Refused: uploads/ is public
+
+err := disk.Put(ctx, "uploads/2026/09/contract.pdf", r, storage.PutOptions{Visibility: storage.VisibilityPrivate})
+
+// errors.Is(err, storage.ErrVisibilityMismatch) == true
+
+// Fine: contracts/ is not a public prefix
+
+err = disk.Put(ctx, "contracts/2026/09/contract.pdf", r, storage.PutOptions{
+
+ContentType: "application/pdf",
+
+Visibility:  storage.VisibilityPrivate,
+
+})
+
+link, err := disk.TemporaryURL(ctx, "contracts/2026/09/contract.pdf", 15*time.Minute)
+
+Cloudflare R2 and Backblaze B2 do not enforce visibility. Neither has bucket policies: a bucket with a public domain (r2.dev, a custom domain, a public B2 bucket) serves every key in it, whatever the prefix. Keep private files in a private bucket of their own, a named disk such as backups, and serve them with TemporaryURL or ServeFile. The API logs a warning when it cannot set a bucket policy.
+
+Uploads and the presign fallback
+
+The admin and web apps upload in two steps. They optimise an image in the browser, ask for a presigned PUT URL, send the bytes straight to the bucket, then record the file. The size is signed into the URL, and complete asks the bucket what actually arrived and records only a key that was presigned for the caller, once.
+
+A driver that cannot presign (local) answers the presign request with {"method": "multipart"}, and the upload client sends the file to POST /uploads instead. Nothing in the UI changes. A multipart upload runs the media pipeline on the server before storing: the primary image, its renditions, and the untouched original under the private originals/ prefix.
+
+EndpointDescription
+
+POST /api/v1/uploadsMultipart upload. Query: accepts, max_size, profile. Returns a FileRef
+
+POST /api/v1/uploads/presignA presigned PUT URL under uploads/<user_id>/, or {"method": "multipart"}
+
+POST /api/v1/uploads/completeRecord a presigned upload after checking what the bucket holds
+
+GET /api/v1/uploadsYour uploads, paginated; everyone’s with uploads.view
+
+GET /api/v1/uploads/statsCount and bytes, by kind (image, video, audio, pdf, spreadsheet, document)
+
+GET /api/v1/uploads/:idOne upload record
+
+GET /api/v1/uploads/:id/downloadThe file through the API, with Range support; ?inline=true shows it
+
+DELETE /api/v1/uploads/:idRemove the record and the stored file
+
+GET /api/v1/media/profilesThe image optimisation profiles, so the browser uses the server’s numbers
+
+Terminal
+Copy to clipboard
+
+$curl -X POST "http://localhost:8080/api/v1/uploads?accepts=image" \
+
+$  -H "Authorization: Bearer $TOKEN" \
+
+$  -F "file=@photo.jpg"
+
+$curl -OJ "http://localhost:8080/api/v1/uploads/$ID/download" -H "Authorization: Bearer $TOKEN"
+
+internal/models/upload.go
+Copy to clipboard
+
+type Upload struct {
+
+ID           string    `gorm:"primarykey;size:36" json:"id"`      // a UUID
+
+Filename     string    `json:"filename"`                            // <uuid>.<ext>, as stored
+
+OriginalName string    `json:"original_name"`                       // the name it arrived with
+
+MimeType     string    `json:"mime_type"`                           // of the stored file
+
+Size         int64     `json:"size"`                                // of the stored file
+
+Path         string    `json:"path"`                                // the key
+
+URL          string    `json:"url"`
+
+ThumbnailURL string    `json:"thumbnail_url"`
+
+UserID       string    `gorm:"index;size:36" json:"user_id"`      // a UUID, not a number
+
+CreatedAt    time.Time `json:"created_at"`
+
+}
+
+Images
+
+Images go through one pipeline, media.Transform: EXIF orientation applied, metadata (GPS included) stripped, resized to the profile and re-encoded, with a 400 by 400 thumb rendition. A multipart upload runs it inline. A presigned upload, or a type the pipeline skipped, is handed to the image:process job, whose storage.GenerateThumbnail runs the same pipeline, so a portrait phone photo gets an upright thumbnail whichever way it arrived. A decompression bomb is refused from its header before any pixels are decoded, and the job does not retry it. See Background Jobs.
+
+File lifecycle
+
+An upload is unclaimed until a record points at it. Resource fields store a files.FileRef, and saving the record claims the file. Uploads nobody claimed within 24 hours are removed by the orphan cleanup, a page at a time with one batched delete per page, so a form abandoned halfway does not leave files in the bucket forever. Deleting an upload removes its stored file too.
+
+Shared PackageEmail System

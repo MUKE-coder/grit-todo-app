@@ -1,0 +1,1496 @@
+Tutorial
+Build an E-Commerce Store
+
+Build a fully functional e-commerce platform with products, categories, orders, order items, image uploads, stock validation, order confirmation emails, a revenue dashboard, and Redis caching for popular products. This is the most comprehensive Grit tutorial and covers nearly every feature of the framework.
+
+Go APIRedis cache
+A full storefront — products, cart, orders, payments — with Redis caching the hot products
+
+Prefer a narrative walkthrough? The blog builds a smaller Category → Product store step by step: Build your first Grit app →
+
+Want the code rather than the commands? examples/commerce is a checked-in storefront, built and tested by CI on every push: twelve products, a Colour × Size variant matrix with ninety-six combinations, and a server-side basket. It is modelled on vercel/commerce, which is a storefront with no backend, and adds the part that one leaves to Shopify. Its TUTORIAL.md reproduces it from an empty directory, with every hand-written file in full.
+
+Prerequisites
+
+✓Go 1.26.6+ installed (an older Go downloads it)
+
+✓Node.js 18+ and pnpm installed
+
+✓Docker and Docker Compose installed
+
+✓Grit CLI installed — see /docs/getting-started/installation (one-line install script)
+
+1
+
+Create the project
+
+Scaffold a new Grit project called shopgrit.
+
+Terminal
+Copy to clipboard
+
+$grit new shopgrit
+
+$cd shopgrit
+
+2
+
+Start Docker services
+
+Start PostgreSQL, Redis, MinIO, and Mailhog. MinIO is especially important for this project because we will use it for product image uploads.
+
+Terminal
+Copy to clipboard
+
+$docker compose up -d
+
+3
+
+Generate the Product resource
+
+Products are the core of the store. Generate a resource with name, description, price, SKU (unique stock-keeping unit), stock count, and a published flag.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Product --fields "name:string,description:text,price:float,sku:string:unique,stock:int,published:bool"
+
+apps/api/internal/models/product.go
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"gorm.io/gorm"
+
+)
+
+type Product struct {
+
+ID          uint           `gorm:"primarykey" json:"id"`
+
+Name        string         `gorm:"size:255;not null" json:"name" binding:"required"`
+
+Description string         `gorm:"type:text" json:"description"`
+
+Price       float64        `gorm:"not null" json:"price" binding:"required"`
+
+SKU         string         `gorm:"size:100;uniqueIndex;not null" json:"sku" binding:"required"`
+
+Stock       int            `gorm:"default:0" json:"stock"`
+
+Published   bool           `gorm:"default:false" json:"published"`
+
+CreatedAt   time.Time      `json:"created_at"`
+
+UpdatedAt   time.Time      `json:"updated_at"`
+
+DeletedAt   gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+
+}
+
+4
+
+Generate the Category resource
+
+Products are organized into categories. Generate a Category resource and add the relationship to Product.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Category --fields "name:string:unique,slug:string:unique,description:text"
+
+Now add the category relationship to the Product model. Also add an ImageURL field for product images (we will handle uploads in Step 8):
+
+apps/api/internal/models/product.go — updated
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"gorm.io/gorm"
+
+)
+
+type Product struct {
+
+ID          uint           `gorm:"primarykey" json:"id"`
+
+Name        string         `gorm:"size:255;not null" json:"name" binding:"required"`
+
+Description string         `gorm:"type:text" json:"description"`
+
+Price       float64        `gorm:"not null" json:"price" binding:"required"`
+
+SKU         string         `gorm:"size:100;uniqueIndex;not null" json:"sku" binding:"required"`
+
+Stock       int            `gorm:"default:0" json:"stock"`
+
+Published   bool           `gorm:"default:false" json:"published"`
+
+ImageURL    string         `gorm:"size:500" json:"image_url"`
+
+// Belongs to Category
+
+CategoryID  uint           `gorm:"index;not null" json:"category_id" binding:"required"`
+
+Category    Category       `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
+
+CreatedAt   time.Time      `json:"created_at"`
+
+UpdatedAt   time.Time      `json:"updated_at"`
+
+DeletedAt   gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+
+}
+
+5
+
+Generate the Order resource
+
+Orders track customer purchases. Generate an Order resource with status, total, and notes fields. An order belongs to the authenticated user.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Order --fields "status:string,total:float,notes:text"
+
+apps/api/internal/models/order.go — with User relationship
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"gorm.io/gorm"
+
+)
+
+// Order status constants
+
+const (
+
+OrderStatusPending    = "pending"
+
+OrderStatusProcessing = "processing"
+
+OrderStatusShipped    = "shipped"
+
+OrderStatusDelivered  = "delivered"
+
+OrderStatusCancelled  = "cancelled"
+
+)
+
+type Order struct {
+
+ID        uint           `gorm:"primarykey" json:"id"`
+
+Status    string         `gorm:"size:50;default:pending" json:"status"`
+
+Total     float64        `gorm:"not null" json:"total"`
+
+Notes     string         `gorm:"type:text" json:"notes"`
+
+// Belongs to User (the customer)
+
+UserID    uint           `gorm:"index;not null" json:"user_id"`
+
+User      User           `gorm:"foreignKey:UserID" json:"user,omitempty"`
+
+// Has many order items
+
+Items     []OrderItem    `gorm:"foreignKey:OrderID" json:"items,omitempty"`
+
+CreatedAt time.Time      `json:"created_at"`
+
+UpdatedAt time.Time      `json:"updated_at"`
+
+DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+
+}
+
+6
+
+Generate the OrderItem resource
+
+Each order contains one or more items. An OrderItem records the quantity and the price at the time of purchase (so price changes do not affect past orders).
+
+Terminal
+Copy to clipboard
+
+$grit generate resource OrderItem --fields "quantity:int,price:float"
+
+apps/api/internal/models/order_item.go — with relationships
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"gorm.io/gorm"
+
+)
+
+type OrderItem struct {
+
+ID        uint           `gorm:"primarykey" json:"id"`
+
+Quantity  int            `gorm:"not null" json:"quantity" binding:"required,min=1"`
+
+Price     float64        `gorm:"not null" json:"price"`
+
+// Belongs to Order
+
+OrderID   uint           `gorm:"index;not null" json:"order_id"`
+
+Order     Order          `gorm:"foreignKey:OrderID" json:"order,omitempty"`
+
+// References a Product
+
+ProductID uint           `gorm:"index;not null" json:"product_id" binding:"required"`
+
+Product   Product        `gorm:"foreignKey:ProductID" json:"product,omitempty"`
+
+CreatedAt time.Time      `json:"created_at"`
+
+UpdatedAt time.Time      `json:"updated_at"`
+
+DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+
+}
+
+Run grit sync to regenerate all TypeScript types with the new relationships across all four resources.
+
+7
+
+Set up all relationships
+
+Let's review the complete relationship diagram. Add the inverse relationships to the Category model:
+
+relationship diagram
+Copy to clipboard
+
+Category
+
+└── has many Products
+
+Product
+
+└── belongs to Category
+
+Order
+
+├── belongs to User (customer)
+
+└── has many OrderItems
+
+OrderItem
+
+├── belongs to Order
+
+└── belongs to Product
+
+User (built-in)
+
+└── has many Orders
+
+apps/api/internal/models/category.go
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"gorm.io/gorm"
+
+)
+
+type Category struct {
+
+ID          uint           `gorm:"primarykey" json:"id"`
+
+Name        string         `gorm:"size:255;uniqueIndex;not null" json:"name" binding:"required"`
+
+Slug        string         `gorm:"size:255;uniqueIndex;not null" json:"slug" binding:"required"`
+
+Description string         `gorm:"type:text" json:"description"`
+
+Products    []Product      `gorm:"foreignKey:CategoryID" json:"products,omitempty"`
+
+CreatedAt   time.Time      `json:"created_at"`
+
+UpdatedAt   time.Time      `json:"updated_at"`
+
+DeletedAt   gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+
+}
+
+8
+
+File uploads for product images
+
+Use Grit's built-in storage service to upload product images to MinIO (S3-compatible). The storage service is already configured — you just need to add an upload handler that saves the file URL to the product.
+
+apps/api/internal/handlers/product.go — add upload method
+Copy to clipboard
+
+// UploadImage handles product image upload.
+
+func (h *ProductHandler) UploadImage(c *gin.Context) {
+
+id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+
+if err != nil {
+
+c.JSON(http.StatusBadRequest, gin.H{
+
+"error": gin.H{"code": "INVALID_ID", "message": "Invalid product ID"},
+
+})
+
+return
+
+}
+
+// Get the file from the multipart form
+
+file, header, err := c.Request.FormFile("image")
+
+if err != nil {
+
+c.JSON(http.StatusBadRequest, gin.H{
+
+"error": gin.H{"code": "NO_FILE", "message": "No image file provided"},
+
+})
+
+return
+
+}
+
+defer file.Close()
+
+// Validate file type
+
+contentType := header.Header.Get("Content-Type")
+
+if contentType != "image/jpeg" && contentType != "image/png" && contentType != "image/webp" {
+
+c.JSON(http.StatusBadRequest, gin.H{
+
+"error": gin.H{
+
+"code":    "INVALID_TYPE",
+
+"message": "Only JPEG, PNG, and WebP images are allowed",
+
+},
+
+})
+
+return
+
+}
+
+// Upload to storage (MinIO / S3)
+
+path := fmt.Sprintf("products/%d/%s", id, header.Filename)
+
+url, err := h.storage.Upload(c, path, file, contentType)
+
+if err != nil {
+
+c.JSON(http.StatusInternalServerError, gin.H{
+
+"error": gin.H{"code": "UPLOAD_FAILED", "message": "Failed to upload image"},
+
+})
+
+return
+
+}
+
+// Update the product record with the image URL
+
+result := h.db.Model(&models.Product{}).Where("id = ?", id).Update("image_url", url)
+
+if result.Error != nil {
+
+c.JSON(http.StatusInternalServerError, gin.H{
+
+"error": gin.H{"code": "UPDATE_FAILED", "message": "Failed to update product"},
+
+})
+
+return
+
+}
+
+c.JSON(http.StatusOK, gin.H{
+
+"data":    gin.H{"image_url": url},
+
+"message": "Image uploaded successfully",
+
+})
+
+}
+
+Register the upload route:
+
+apps/api/internal/routes/routes.go
+Copy to clipboard
+
+// Inside the authenticated products group
+
+products.POST("/:id/upload-image", productHandler.UploadImage)
+
+Update the admin resource definition to include the file upload field and display the product image in the table:
+
+apps/admin/resources/products.ts
+Copy to clipboard
+
+import { defineResource } from '@grit/admin'
+
+export default defineResource({
+
+name: 'Product',
+
+endpoint: '/api/products',
+
+icon: 'Package',
+
+table: {
+
+columns: [
+
+{ key: 'id', label: 'ID', sortable: true },
+
+{ key: 'image_url', label: 'Image', format: 'image' },
+
+{ key: 'name', label: 'Name', sortable: true, searchable: true },
+
+{ key: 'sku', label: 'SKU', sortable: true },
+
+{ key: 'category.name', label: 'Category', relation: 'category' },
+
+{ key: 'price', label: 'Price', sortable: true, format: 'currency' },
+
+{ key: 'stock', label: 'Stock', sortable: true },
+
+{ key: 'published', label: 'Status', badge: {
+
+true: { color: 'green', label: 'Published' },
+
+false: { color: 'yellow', label: 'Draft' },
+
+}},
+
+],
+
+filters: [
+
+{ key: 'published', type: 'select', options: [
+
+{ label: 'Published', value: 'true' },
+
+{ label: 'Draft', value: 'false' },
+
+]},
+
+{ key: 'category_id', type: 'select', resource: 'categories',
+
+displayKey: 'name', label: 'Category' },
+
+{ key: 'price', type: 'number-range' },
+
+],
+
+actions: ['create', 'edit', 'delete', 'export'],
+
+bulkActions: ['delete', 'export'],
+
+},
+
+form: {
+
+fields: [
+
+{ key: 'name', label: 'Name', type: 'text', required: true },
+
+{ key: 'sku', label: 'SKU', type: 'text', required: true },
+
+{ key: 'description', label: 'Description', type: 'textarea' },
+
+{ key: 'category_id', label: 'Category', type: 'relation',
+
+resource: 'categories', displayKey: 'name', required: true },
+
+{ key: 'price', label: 'Price', type: 'number', prefix: '$', required: true },
+
+{ key: 'stock', label: 'Stock', type: 'number', default: 0 },
+
+{ key: 'image', label: 'Product Image', type: 'file',
+
+accept: 'image/*', uploadEndpoint: '/api/products/{id}/upload-image' },
+
+{ key: 'published', label: 'Published', type: 'toggle', default: false },
+
+],
+
+},
+
+})
+
+9
+
+Custom order creation with stock validation
+
+The default CRUD handler is not sufficient for order creation. We need to validate stock availability, calculate totals, decrement stock, and create order items — all within a database transaction.
+
+apps/api/internal/handlers/order.go — CreateOrder
+Copy to clipboard
+
+type CreateOrderInput struct {
+
+Notes string `json:"notes"`
+
+Items []struct {
+
+ProductID uint `json:"product_id" binding:"required"`
+
+Quantity  int  `json:"quantity" binding:"required,min=1"`
+
+} `json:"items" binding:"required,min=1"`
+
+}
+
+func (h *OrderHandler) CreateOrder(c *gin.Context) {
+
+user, _ := c.Get("user")
+
+currentUser := user.(*models.User)
+
+var input CreateOrderInput
+
+if err := c.ShouldBindJSON(&input); err != nil {
+
+c.JSON(http.StatusBadRequest, gin.H{
+
+"error": gin.H{"code": "VALIDATION_ERROR", "message": err.Error()},
+
+})
+
+return
+
+}
+
+// Use a transaction to ensure atomicity
+
+tx := h.db.Begin()
+
+defer func() {
+
+if r := recover(); r != nil {
+
+tx.Rollback()
+
+}
+
+}()
+
+var total float64
+
+var orderItems []models.OrderItem
+
+for _, item := range input.Items {
+
+// Lock the product row for update
+
+var product models.Product
+
+if err := tx.Set("gorm:query_option", "FOR UPDATE").
+
+First(&product, item.ProductID).Error; err != nil {
+
+tx.Rollback()
+
+c.JSON(http.StatusBadRequest, gin.H{
+
+"error": gin.H{
+
+"code":    "PRODUCT_NOT_FOUND",
+
+"message": fmt.Sprintf("Product %d not found", item.ProductID),
+
+},
+
+})
+
+return
+
+}
+
+// Validate stock
+
+if product.Stock < item.Quantity {
+
+tx.Rollback()
+
+c.JSON(http.StatusBadRequest, gin.H{
+
+"error": gin.H{
+
+"code": "INSUFFICIENT_STOCK",
+
+"message": fmt.Sprintf(
+
+"Insufficient stock for %s: requested %d, available %d",
+
+product.Name, item.Quantity, product.Stock,
+
+),
+
+},
+
+})
+
+return
+
+}
+
+// Decrement stock
+
+tx.Model(&product).Update("stock", product.Stock-item.Quantity)
+
+// Calculate line total
+
+lineTotal := product.Price * float64(item.Quantity)
+
+total += lineTotal
+
+orderItems = append(orderItems, models.OrderItem{
+
+ProductID: product.ID,
+
+Quantity:  item.Quantity,
+
+Price:     product.Price, // snapshot the price at time of purchase
+
+})
+
+}
+
+// Create the order
+
+order := models.Order{
+
+UserID: currentUser.ID,
+
+Status: models.OrderStatusPending,
+
+Total:  total,
+
+Notes:  input.Notes,
+
+}
+
+if err := tx.Create(&order).Error; err != nil {
+
+tx.Rollback()
+
+c.JSON(http.StatusInternalServerError, gin.H{
+
+"error": gin.H{"code": "CREATE_FAILED", "message": "Failed to create order"},
+
+})
+
+return
+
+}
+
+// Create order items
+
+for i := range orderItems {
+
+orderItems[i].OrderID = order.ID
+
+}
+
+if err := tx.Create(&orderItems).Error; err != nil {
+
+tx.Rollback()
+
+c.JSON(http.StatusInternalServerError, gin.H{
+
+"error": gin.H{"code": "CREATE_FAILED", "message": "Failed to create order items"},
+
+})
+
+return
+
+}
+
+tx.Commit()
+
+// Enqueue confirmation email (non-blocking)
+
+_ = h.jobClient.EnqueueOrderConfirmation(jobs.OrderConfirmationPayload{
+
+OrderID:    order.ID,
+
+UserEmail:  currentUser.Email,
+
+UserName:   currentUser.Name,
+
+Total:      total,
+
+ItemCount:  len(orderItems),
+
+})
+
+// Reload with relationships
+
+h.db.Preload("Items.Product").Preload("User").First(&order, order.ID)
+
+c.JSON(http.StatusCreated, gin.H{
+
+"data":    order,
+
+"message": "Order created successfully",
+
+})
+
+}
+
+Register the custom order creation route:
+
+apps/api/internal/routes/routes.go
+Copy to clipboard
+
+// Replace the default POST /api/orders with the custom handler
+
+orders := auth.Group("/orders")
+
+{
+
+orders.POST("", orderHandler.CreateOrder)    // custom creation
+
+orders.GET("", orderHandler.GetAll)           // generated
+
+orders.GET("/:id", orderHandler.GetByID)      // generated
+
+// No PUT or DELETE — orders are immutable once created
+
+}
+
+10
+
+Background job for order confirmation emails
+
+When an order is placed, queue a background job that sends a confirmation email. This keeps the API response fast.
+
+apps/api/internal/jobs/order_confirmation.go
+Copy to clipboard
+
+package jobs
+
+import (
+
+"context"
+
+"encoding/json"
+
+"fmt"
+
+"github.com/hibiken/asynq"
+
+"shopgrit/apps/api/internal/mail"
+
+)
+
+const TypeOrderConfirmation = "order:confirmation"
+
+type OrderConfirmationPayload struct {
+
+OrderID   uint    `json:"order_id"`
+
+UserEmail string  `json:"user_email"`
+
+UserName  string  `json:"user_name"`
+
+Total     float64 `json:"total"`
+
+ItemCount int     `json:"item_count"`
+
+}
+
+// EnqueueOrderConfirmation creates a new order confirmation email job.
+
+func (c *Client) EnqueueOrderConfirmation(payload OrderConfirmationPayload) error {
+
+data, err := json.Marshal(payload)
+
+if err != nil {
+
+return fmt.Errorf("failed to marshal payload: %w", err)
+
+}
+
+task := asynq.NewTask(TypeOrderConfirmation, data)
+
+_, err = c.client.Enqueue(task, asynq.MaxRetry(5), asynq.Queue("critical"))
+
+return err
+
+}
+
+// HandleOrderConfirmation processes the order confirmation email.
+
+func HandleOrderConfirmation(mailer *mail.Mailer) asynq.HandlerFunc {
+
+return func(ctx context.Context, t *asynq.Task) error {
+
+var payload OrderConfirmationPayload
+
+if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+
+return fmt.Errorf("failed to unmarshal payload: %w", err)
+
+}
+
+return mailer.Send(ctx, mail.SendOptions{
+
+To:       payload.UserEmail,
+
+Subject:  fmt.Sprintf("Order #%d Confirmed", payload.OrderID),
+
+Template: "order-confirmation",
+
+Data: map[string]interface{}{
+
+"Name":      payload.UserName,
+
+"OrderID":   payload.OrderID,
+
+"Total":     fmt.Sprintf("$%.2f", payload.Total),
+
+"ItemCount": payload.ItemCount,
+
+},
+
+})
+
+}
+
+}
+
+apps/api/internal/mail/templates/order-confirmation.html
+Copy to clipboard
+
+<!DOCTYPE html>
+
+<html>
+
+<head><meta charset="utf-8"></head>
+
+<body style="font-family: 'Onest', sans-serif; background: #0a0a0f; color: #e8e8f0; padding: 40px;">
+
+<div style="max-width: 500px; margin: 0 auto; background: #111118; border-radius: 12px; padding: 32px; border: 1px solid #2a2a3a;">
+
+<h2 style="color: #00b894; margin-top: 0;">Order Confirmed</h2>
+
+<p>Hi {{.Name}},</p>
+
+<p>Your order has been confirmed and is being processed.</p>
+
+<div style="background: #1a1a24; border-radius: 8px; padding: 16px; margin: 16px 0; border: 1px solid #2a2a3a;">
+
+<p style="margin: 0;">
+
+<strong>Order #{{.OrderID}}</strong>
+
+</p>
+
+<p style="margin: 4px 0 0; color: #9090a8; font-size: 14px;">
+
+{{.ItemCount}} item(s) &bull; Total: {{.Total}}
+
+</p>
+
+</div>
+
+<p style="color: #9090a8; font-size: 14px;">
+
+We'll send you another email when your order ships.
+
+</p>
+
+</div>
+
+</body>
+
+</html>
+
+11
+
+Admin dashboard with revenue stats
+
+Create a stats endpoint that returns revenue totals, order counts, and product inventory stats. Then build a dashboard widget for the admin panel.
+
+apps/api/internal/handlers/order.go — revenue stats endpoint
+Copy to clipboard
+
+// GetRevenueStats returns store-wide revenue and order statistics.
+
+func (h *OrderHandler) GetRevenueStats(c *gin.Context) {
+
+var totalRevenue float64
+
+var totalOrders int64
+
+var pendingOrders int64
+
+var totalProducts int64
+
+var lowStockProducts int64
+
+// Revenue from non-cancelled orders
+
+h.db.Model(&models.Order{}).
+
+Where("status != ?", models.OrderStatusCancelled).
+
+Select("COALESCE(SUM(total), 0)").
+
+Scan(&totalRevenue)
+
+h.db.Model(&models.Order{}).Count(&totalOrders)
+
+h.db.Model(&models.Order{}).
+
+Where("status = ?", models.OrderStatusPending).
+
+Count(&pendingOrders)
+
+h.db.Model(&models.Product{}).
+
+Where("published = ?", true).
+
+Count(&totalProducts)
+
+// Products with stock below 10
+
+h.db.Model(&models.Product{}).
+
+Where("stock < ? AND published = ?", 10, true).
+
+Count(&lowStockProducts)
+
+// Revenue by day for the last 7 days
+
+type DailyRevenue struct {
+
+Date    string  `json:"date"`
+
+Revenue float64 `json:"revenue"`
+
+}
+
+var dailyRevenue []DailyRevenue
+
+h.db.Model(&models.Order{}).
+
+Select("DATE(created_at) as date, SUM(total) as revenue").
+
+Where("created_at >= NOW() - INTERVAL '7 days' AND status != ?",
+
+models.OrderStatusCancelled).
+
+Group("DATE(created_at)").
+
+Order("date ASC").
+
+Scan(&dailyRevenue)
+
+c.JSON(http.StatusOK, gin.H{
+
+"data": gin.H{
+
+"total_revenue":     totalRevenue,
+
+"total_orders":      totalOrders,
+
+"pending_orders":    pendingOrders,
+
+"total_products":    totalProducts,
+
+"low_stock_products": lowStockProducts,
+
+"daily_revenue":     dailyRevenue,
+
+},
+
+})
+
+}
+
+apps/admin/components/widgets/revenue-stats.tsx
+Copy to clipboard
+
+'use client'
+
+import { useQuery } from '@tanstack/react-query'
+
+import { apiClient } from '@/lib/api-client'
+
+import { DollarSign, ShoppingCart, Package, AlertTriangle } from 'lucide-react'
+
+interface RevenueStats {
+
+total_revenue: number
+
+total_orders: number
+
+pending_orders: number
+
+total_products: number
+
+low_stock_products: number
+
+daily_revenue: { date: string; revenue: number }[]
+
+}
+
+export function RevenueStatsWidget() {
+
+const { data } = useQuery<{ data: RevenueStats }>({
+
+queryKey: ['revenue-stats'],
+
+queryFn: async () => {
+
+const { data } = await apiClient.get('/api/orders/stats')
+
+return data
+
+},
+
+refetchInterval: 60000,
+
+})
+
+const stats = data?.data
+
+const cards = [
+
+{
+
+label: 'Total Revenue',
+
+value: stats ? `$${stats.total_revenue.toLocaleString('en-US', {
+
+minimumFractionDigits: 2 })}` : '$0.00',
+
+icon: DollarSign,
+
+color: 'text-emerald-400',
+
+},
+
+{
+
+label: 'Total Orders',
+
+value: stats?.total_orders ?? 0,
+
+icon: ShoppingCart,
+
+color: 'text-primary',
+
+},
+
+{
+
+label: 'Products Listed',
+
+value: stats?.total_products ?? 0,
+
+icon: Package,
+
+color: 'text-blue-400',
+
+},
+
+{
+
+label: 'Low Stock',
+
+value: stats?.low_stock_products ?? 0,
+
+icon: AlertTriangle,
+
+color: 'text-red-400',
+
+},
+
+]
+
+return (
+
+<div className="space-y-6">
+
+<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+
+{cards.map((card) => (
+
+<div
+
+key={card.label}
+
+className="rounded-xl border border-border/40 bg-card/50 p-5"
+
+>
+
+<div className="flex items-center justify-between mb-3">
+
+<span className="text-xs font-medium text-muted-foreground/60
+
+uppercase tracking-wider">
+
+{card.label}
+
+</span>
+
+<card.icon className={`h-4 w-4 ${card.color}`} />
+
+</div>
+
+<p className="text-2xl font-bold tracking-tight">{card.value}</p>
+
+</div>
+
+))}
+
+</div>
+
+{/* Pending orders callout */}
+
+{stats && stats.pending_orders > 0 && (
+
+<div className="rounded-xl border border-yellow-500/20 bg-yellow-500/5 p-4
+
+flex items-center gap-3">
+
+<ShoppingCart className="h-5 w-5 text-yellow-500" />
+
+<p className="text-sm text-yellow-200/80">
+
+You have <strong>{stats.pending_orders}</strong> pending order(s) waiting
+
+to be processed.
+
+</p>
+
+</div>
+
+)}
+
+</div>
+
+)
+
+}
+
+12
+
+Cache popular products with Redis
+
+High-traffic product pages should not hit the database on every request. Use Grit's built-in Redis cache service to cache popular products and invalidate the cache when a product is updated.
+
+apps/api/internal/services/product.go — cached GetByID
+Copy to clipboard
+
+package services
+
+import (
+
+"encoding/json"
+
+"fmt"
+
+"time"
+
+"gorm.io/gorm"
+
+"shopgrit/apps/api/internal/cache"
+
+"shopgrit/apps/api/internal/models"
+
+)
+
+type ProductService struct {
+
+db    *gorm.DB
+
+cache *cache.Cache
+
+}
+
+func NewProductService(db *gorm.DB, c *cache.Cache) *ProductService {
+
+return &ProductService{db: db, cache: c}
+
+}
+
+// GetByID retrieves a product by ID, using the Redis cache.
+
+func (s *ProductService) GetByID(id uint) (*models.Product, error) {
+
+cacheKey := fmt.Sprintf("product:%d", id)
+
+// Try cache first
+
+cached, err := s.cache.Get(cacheKey)
+
+if err == nil && cached != "" {
+
+var product models.Product
+
+if err := json.Unmarshal([]byte(cached), &product); err == nil {
+
+return &product, nil
+
+}
+
+}
+
+// Cache miss — query the database
+
+var product models.Product
+
+result := s.db.Preload("Category").First(&product, id)
+
+if result.Error != nil {
+
+return nil, fmt.Errorf("product not found: %w", result.Error)
+
+}
+
+// Store in cache for 5 minutes
+
+data, _ := json.Marshal(product)
+
+_ = s.cache.Set(cacheKey, string(data), 5*time.Minute)
+
+return &product, nil
+
+}
+
+// Update updates a product and invalidates the cache.
+
+func (s *ProductService) Update(id uint, input map[string]interface{}) (*models.Product, error) {
+
+result := s.db.Model(&models.Product{}).Where("id = ?", id).Updates(input)
+
+if result.Error != nil {
+
+return nil, fmt.Errorf("failed to update product: %w", result.Error)
+
+}
+
+// Invalidate the cache for this product
+
+cacheKey := fmt.Sprintf("product:%d", id)
+
+_ = s.cache.Delete(cacheKey)
+
+// Also invalidate the published products list cache
+
+_ = s.cache.DeletePattern("products:published:*")
+
+return s.GetByID(id)
+
+}
+
+// GetPublished returns published products with caching.
+
+func (s *ProductService) GetPublished(page, pageSize int) ([]models.Product, int64, error) {
+
+cacheKey := fmt.Sprintf("products:published:%d:%d", page, pageSize)
+
+// Try cache first
+
+type cachedResult struct {
+
+Products []models.Product `json:"products"`
+
+Total    int64            `json:"total"`
+
+}
+
+cached, err := s.cache.Get(cacheKey)
+
+if err == nil && cached != "" {
+
+var result cachedResult
+
+if err := json.Unmarshal([]byte(cached), &result); err == nil {
+
+return result.Products, result.Total, nil
+
+}
+
+}
+
+// Cache miss — query the database
+
+var products []models.Product
+
+var total int64
+
+query := s.db.Model(&models.Product{}).Where("published = ?", true)
+
+query.Count(&total)
+
+offset := (page - 1) * pageSize
+
+query.Preload("Category").
+
+Order("created_at DESC").
+
+Offset(offset).
+
+Limit(pageSize).
+
+Find(&products)
+
+// Cache for 2 minutes
+
+data, _ := json.Marshal(cachedResult{Products: products, Total: total})
+
+_ = s.cache.Set(cacheKey, string(data), 2*time.Minute)
+
+return products, total, nil
+
+}
+
+The cache is automatically invalidated when a product is updated through the admin panel or API. Published product listings are cached for 2 minutes, and individual product pages are cached for 5 minutes. This dramatically reduces database load under high traffic.
+
+13
+
+Run and test everything
+
+Start all services and test the complete e-commerce workflow.
+
+Terminal
+Copy to clipboard
+
+$grit start
+
+Walk through this testing checklist:
+
+Open the admin panel at http://localhost:3001 and register an admin account.
+
+Create a category: "Electronics" with slug "electronics".
+
+Create a product: "Wireless Keyboard", SKU "WK-001", price $49.99, stock 50, category "Electronics", published.
+
+Upload an image for the product using the image upload field.
+
+Verify the image appears in the product table and in MinIO at http://localhost:9001.
+
+Place an order via the API:
+
+curl -X POST http://localhost:8080/api/orders \
+
+-H "Authorization: Bearer <your-token>" \
+
+-H "Content-Type: application/json" \
+
+-d '{
+
+"items": [
+
+{ "product_id": 1, "quantity": 2 }
+
+],
+
+"notes": "Please gift wrap"
+
+}'
+
+Copy to clipboard
+
+Check that the product stock decreased from 50 to 48 in the admin panel.
+
+Check Mailhog at http://localhost:8025 for the order confirmation email.
+
+Try ordering more than the available stock — the API should return an INSUFFICIENT_STOCK error.
+
+View the revenue dashboard in the admin panel — it should show $99.98 in revenue.
+
+Request the same product twice via API and verify the second request is served from the Redis cache (check response times).
+
+Browse all tables in GORM Studio at http://localhost:8080/studio.
+
+What you've built
+
+✓A complete e-commerce store with Go API and Next.js frontend
+
+✓Product catalog with categories, pricing, SKU tracking, and stock management
+
+✓Product image uploads to S3-compatible storage (MinIO in development)
+
+✓Transactional order creation with stock validation and atomic database operations
+
+✓Order items that snapshot product prices at time of purchase
+
+✓Background job queue for order confirmation emails
+
+✓HTML email templates styled to match the Grit dark theme
+
+✓Revenue dashboard with daily revenue chart, order counts, and low-stock alerts
+
+✓Redis caching for product pages and published product listings
+
+✓Cache invalidation on product updates to keep data fresh
+
+✓Admin panel with product image previews, currency formatting, and status badges
+
+✓Five resources total: Product, Category, Order, OrderItem, and the built-in User
+
+Next steps
+
+You have a solid e-commerce foundation. Here are ideas to take it further:
+
+Stripe integration — add a payment processing step to the order creation flow using the Stripe Go SDK.
+
+Product variants — generate a Variant resource (size, color) linked to products with separate stock tracking.
+
+Wishlist — generate a Wishlist resource linked to User and Product for saved items.
+
+Search — add full-text search on product names and descriptions using PostgreSQL's tsvector.
+
+Reviews — generate a Review resource with a rating field and link it to Product and User.
+
+Discount codes — add a Coupon resource and apply discounts during order creation.
+
+Shipping tracking — update order status through the workflow and send shipping notification emails.
+
+Analytics — use the Grit admin chart widgets to show sales by category, top-selling products, and customer retention.
+
+Build a SaaSBuild a Product Catalog

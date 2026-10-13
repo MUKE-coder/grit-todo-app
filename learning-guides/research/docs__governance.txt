@@ -1,0 +1,93 @@
+Project
+Governance & risk
+
+Who maintains this, what happens if they stop, and what you are actually exposed to if you build on it. Written for the person who has to sign off on adopting it.
+
+The bus factor is one
+
+Grit, Pulse, Sentinel, gin-docs and GORM Studio are substantially the work of one person. External review of this project has flagged that every time, and it is correct. If you are evaluating Grit for something that has to outlive its maintainer's interest, that is the real risk — not the architecture.
+
+Pretending otherwise would be worse than useless. What follows is what actually reduces the exposure, and what does not.
+
+What genuinely limits the damage
+
+Your application does not depend on Grit at runtime
+
+This is the whole answer, and it is structural rather than a promise. Grit generates Go and TypeScript into your repository and then gets out of the way. Your production binary does not import it. If this project stopped today, every app built with it keeps compiling, keeps deploying and keeps running — you would lose future generators, not your software.
+
+The generated stack is boring on purpose
+
+Gin, GORM, Postgres, Redis, asynq, React, Tailwind. Not one of them is ours. A developer who has never heard of Grit can read a generated handler and know exactly what it does, because it is ordinary code in well-known libraries. There is no bespoke runtime to learn or to inherit.
+
+MIT, and the whole thing is on GitHub
+
+Including the generators, the templates and this website. A fork is a viable escape hatch rather than a theoretical one.
+
+What does not help
+
+Being honest about the limits of the above:
+
+— Pulse and Sentinel are runtime dependencies. Unlike the generated code, these are Go packages your app imports. If you need to remove that exposure, both are replaceable with standard middleware, but it is real work rather than a no-op.
+
+— A fork is only as good as your team's Go. “It is open source” means little if nobody on the team can maintain a code generator.
+
+— There is no support SLA. See versioning. Issues get answered because someone cares, not because someone is contractually obliged to.
+
+How to reduce your exposure today
+
+If you are adopting Grit for something that matters, do these three things and the maintainer question largely stops being your problem:
+
+# 1. Pin the CLI in CI. A release then cannot change your build under you.
+
+go install github.com/MUKE-coder/grit/v3/cmd/grit@v3.115.0
+
+# 2. Vendor your Go dependencies, so an upstream disappearing does not stop a build.
+
+go mod vendor
+
+# 3. Confirm the exit is real: your app builds and runs with no Grit installed.
+
+which grit || echo "no grit on PATH"
+
+cd apps/api && go build ./... && echo "builds without the CLI"
+
+Copy to clipboard
+
+That third one is worth running before you commit to anything. It is the claim this whole page rests on, and it takes thirty seconds to verify rather than believe.
+
+Where the roadmap lives
+
+There is no separate roadmap document, because a roadmap nobody updates is worse than none. What is true instead:
+
+Changelog
+
+Every release, what changed and why. The most honest signal of where effort is going.
+
+Issues
+
+What is being worked on and what is being asked for. Filing one is the way to influence priority.
+
+Commit history
+
+Release cadence and activity, unfiltered by anything on this website.
+
+Versioning policy
+
+What can break, what cannot, and what a version number means.
+
+Contributing
+
+The fastest way to make the bus factor larger than one is for it to be larger than one. Generators live in internal/generate, scaffold templates in internal/scaffold, and both have test suites you can run before touching anything.
+
+git clone https://github.com/MUKE-coder/grit
+
+cd grit
+
+go test ./internal/...        # should be green before you start
+
+go build -o grit ./cmd/grit   # your build of the CLI
+
+Copy to clipboard
+
+One thing worth knowing before you start: go build compiles the scaffold templates as strings. It never checks the Go or TypeScript inside them. Generate a real project and build that — it is the only thing that catches a broken template.
+github.com/MUKE-coder/grit

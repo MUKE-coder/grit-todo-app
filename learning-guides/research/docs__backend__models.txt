@@ -1,0 +1,648 @@
+Backend (Go API)
+Models & Database
+
+Grit uses GORM as its ORM layer. Models are Go structs that map directly to database tables, with struct tags controlling schema behavior, JSON serialization, and request validation.
+
+GORM Model Pattern
+
+Every model in Grit is a plain Go struct decorated with three categories of struct tags:
+
+gorm:"..." -- controls the database schema (column type, indexes, constraints).
+
+json:"..." -- controls how the field is serialized in API responses.
+
+binding:"..." -- controls request validation when Gin binds JSON input.
+
+Database schemaAPI serializationRequest validation
+One struct field, three tag categories — schema, serialization, and validation from one place
+Here is a minimal model that demonstrates all three:
+
+apps/api/internal/models/post.go
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"github.com/google/uuid"
+
+"gorm.io/gorm"
+
+)
+
+type Post struct {
+
+ID        string         `gorm:"primaryKey;size:36" json:"id"`
+
+Title     string         `gorm:"size:255;not null" json:"title" binding:"required,min=3"`
+
+Slug      string         `gorm:"size:255;uniqueIndex;not null" json:"slug"`
+
+Body      string         `gorm:"type:text" json:"body"`
+
+Published bool           `gorm:"default:false" json:"published"`
+
+AuthorID  string         `gorm:"size:36;not null;index" json:"author_id"`
+
+Author    User           `gorm:"foreignKey:AuthorID" json:"author,omitempty"`
+
+CreatedAt time.Time      `json:"created_at"`
+
+UpdatedAt time.Time      `json:"updated_at"`
+
+DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+
+}
+
+// Every Grit model uses a UUID string primary key, generated in a
+
+// BeforeCreate hook. The generator writes this for you on each resource.
+
+func (p *Post) BeforeCreate(tx *gorm.DB) error {
+
+if p.ID == "" {
+
+p.ID = uuid.New().String()
+
+}
+
+return nil
+
+}
+
+Built-in User Model
+
+Every Grit project ships with a User model out of the box. It includes authentication fields, role-based access, soft deletes, and a password-hashing hook.
+
+apps/api/internal/models/user.go
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"github.com/google/uuid"
+
+"golang.org/x/crypto/bcrypt"
+
+"gorm.io/gorm"
+
+)
+
+// Role constants (UPPERCASE — role checks compare against these exactly)
+
+const (
+
+RoleAdmin  = "ADMIN"
+
+RoleEditor = "EDITOR"
+
+RoleUser   = "USER"
+
+// grit:roles
+
+)
+
+type User struct {
+
+ID              string         `gorm:"primaryKey;size:36" json:"id"`
+
+FirstName       string         `gorm:"size:255;not null" json:"first_name" binding:"required"`
+
+LastName        string         `gorm:"size:255;not null" json:"last_name" binding:"required"`
+
+Email           string         `gorm:"size:255;uniqueIndex;not null" json:"email" binding:"required,email"`
+
+Password        string         `gorm:"size:255" json:"-"`
+
+Role            string         `gorm:"size:20;default:USER" json:"role"`
+
+Avatar          string         `gorm:"size:500" json:"avatar"`
+
+JobTitle        string         `gorm:"size:255" json:"job_title"`
+
+Bio             string         `gorm:"type:text" json:"bio"`
+
+Active          bool           `gorm:"default:true" json:"active"`
+
+Provider        string         `gorm:"size:50;default:'local'" json:"provider"` // local | google | github
+
+GoogleID        string         `gorm:"size:255" json:"-"`
+
+GithubID        string         `gorm:"size:255" json:"-"`
+
+EmailVerifiedAt *time.Time     `json:"email_verified_at"`
+
+Version         int            `gorm:"not null;default:1" json:"version"` // bumped on update for offline sync
+
+CreatedAt       time.Time      `json:"created_at"`
+
+UpdatedAt       time.Time      `json:"updated_at"`
+
+DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
+
+}
+
+Key things to note about the User model:
+
+Password uses json:"-" so it is never included in API responses.
+
+DeletedAt also uses json:"-" and enables GORM soft deletes.
+
+Email has a uniqueIndex constraint to prevent duplicate accounts.
+
+The primary key is a UUID string (size:36), generated in BeforeCreate — not an auto-increment integer.
+
+Three built-in roles are defined as uppercase constants: ADMIN, EDITOR, USER (default USER). Role checks compare against these exact strings.
+
+Version increments on every update so offline clients can detect a record has moved on (pairs with the sync engine).
+
+Password Hashing Hook
+
+The User model uses a GORM BeforeCreate hook to automatically hash the password with bcrypt before it is saved to the database. A CheckPassword method is provided for login verification.
+
+apps/api/internal/models/user.go
+Copy to clipboard
+
+// BeforeCreate generates a UUID and hashes the password before saving.
+
+func (u *User) BeforeCreate(tx *gorm.DB) error {
+
+if u.ID == "" {
+
+u.ID = uuid.New().String()
+
+}
+
+if u.Version == 0 {
+
+u.Version = 1
+
+}
+
+if u.Password != "" {
+
+hashed, err := bcrypt.GenerateFromPassword(
+
+[]byte(u.Password), bcrypt.DefaultCost,
+
+)
+
+if err != nil {
+
+return err
+
+}
+
+u.Password = string(hashed)
+
+}
+
+return nil
+
+}
+
+// BeforeUpdate bumps Version so offline clients can detect a stale edit.
+
+func (u *User) BeforeUpdate(tx *gorm.DB) error {
+
+u.Version++
+
+return nil
+
+}
+
+// CheckPassword compares the given password with the stored hash.
+
+func (u *User) CheckPassword(password string) bool {
+
+err := bcrypt.CompareHashAndPassword(
+
+[]byte(u.Password), []byte(password),
+
+)
+
+return err == nil
+
+}
+
+Upload Model
+
+Grit includes an Upload model for tracking files stored in S3-compatible storage. Each upload is associated with a user and records the file metadata.
+
+apps/api/internal/models/upload.go
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"gorm.io/gorm"
+
+)
+
+type Upload struct {
+
+ID           string         `gorm:"primaryKey;size:36" json:"id"`
+
+Filename     string         `gorm:"size:255;not null" json:"filename"`
+
+OriginalName string         `gorm:"size:255;not null" json:"original_name"`
+
+MimeType     string         `gorm:"size:100;not null" json:"mime_type"`
+
+Size         int64          `gorm:"not null" json:"size"`
+
+Path         string         `gorm:"size:500;not null" json:"path"`
+
+URL          string         `gorm:"size:500" json:"url"`
+
+ThumbnailURL string         `gorm:"size:500" json:"thumbnail_url"`
+
+UserID       string         `gorm:"size:36;index;not null" json:"user_id"`
+
+User         User           `gorm:"foreignKey:UserID" json:"-"`
+
+CreatedAt    time.Time      `json:"created_at"`
+
+UpdatedAt    time.Time      `json:"updated_at"`
+
+DeletedAt    gorm.DeletedAt `gorm:"index" json:"-"`
+
+}
+
+Creating Custom Models
+
+To create a new model, add a new file in apps/api/internal/models/. Follow the naming convention: one model per file, file name in snake_case, struct name in PascalCase.
+
+apps/api/internal/models/invoice.go
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"gorm.io/gorm"
+
+)
+
+type Invoice struct {
+
+ID         string         `gorm:"primaryKey;size:36" json:"id"`
+
+Number     string         `gorm:"size:50;uniqueIndex;not null" json:"number" binding:"required"`
+
+CustomerID string         `gorm:"size:36;not null;index" json:"customer_id" binding:"required"`
+
+Customer   User           `gorm:"foreignKey:CustomerID" json:"customer,omitempty"`
+
+Amount     money.Money        `gorm:"not null" json:"amount" binding:"required,gt=0"`
+
+Status     string         `gorm:"size:20;default:pending" json:"status"`
+
+DueDate    time.Time      `json:"due_date"`
+
+Notes      string         `gorm:"type:text" json:"notes"`
+
+CreatedAt  time.Time      `json:"created_at"`
+
+UpdatedAt  time.Time      `json:"updated_at"`
+
+DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
+
+}
+
+When using grit generate resource Invoice, this file is created automatically along with the handler, hooks, Zod schema, and admin page.
+
+Field Types & GORM Tags
+
+GORM maps Go types to database column types automatically. Use struct tags to fine-tune the schema.
+
+Go TypePostgreSQLExample Tag
+
+stringvarchar(256)gorm:"size:255"
+
+stringtextgorm:"type:text"
+
+int / int64bigintgorm:"not null"
+
+uintbigint unsignedgorm:"primarykey"
+
+float64double precisiongorm:"not null"
+
+boolbooleangorm:"default:false"
+
+time.Timetimestampjson:"created_at"
+
+*time.Timetimestamp (nullable)json:"verified_at"
+
+gorm.DeletedAttimestamp (nullable)gorm:"index" json:"-"
+
+Common GORM Tags
+
+TagDescription
+
+primarykeyMarks the field as the primary key
+
+size:255Sets varchar length
+
+not nullAdds NOT NULL constraint
+
+uniqueIndexCreates a unique index on the column
+
+indexCreates a regular index on the column
+
+default:valueSets the default value for the column
+
+type:textOverrides the column type (e.g., text, jsonb)
+
+foreignKey:FieldNameSpecifies the foreign key for a relationship
+
+Relationships
+
+GORM supports all standard relationship types. In Grit, the two most common arebelongsTo and hasMany.
+
+Belongs To
+
+A belongsTo relationship means the current model holds the foreign key. For example, a Post belongs to a User (the author):
+
+belongs_to.go
+Copy to clipboard
+
+type Post struct {
+
+ID       string `gorm:"primaryKey;size:36" json:"id"`
+
+Title    string `gorm:"size:255;not null" json:"title"`
+
+// Foreign key field (UUID string, matching the parent's PK)
+
+AuthorID string `gorm:"size:36;not null;index" json:"author_id"`
+
+// Relationship -- GORM loads the User when you Preload("Author")
+
+Author   User `gorm:"foreignKey:AuthorID" json:"author,omitempty"`
+
+}
+
+// Usage in a handler or service:
+
+var post Post
+
+db.Preload("Author").First(&post, "id = ?", id)
+
+The json:"author,omitempty" tag means the author object is only included in the JSON response when it has been preloaded. This avoids empty nested objects.
+
+Has Many
+
+A hasMany relationship means another model holds a foreign key pointing back to this model. For example, a User has many Posts:
+
+has_many.go
+Copy to clipboard
+
+type User struct {
+
+ID        string `gorm:"primaryKey;size:36" json:"id"`
+
+FirstName string `gorm:"size:255;not null" json:"first_name"`
+
+Email     string `gorm:"size:255;uniqueIndex;not null" json:"email"`
+
+// Has many posts
+
+Posts     []Post `gorm:"foreignKey:AuthorID" json:"posts,omitempty"`
+
+}
+
+// Usage: load a user with all their posts
+
+var user User
+
+db.Preload("Posts").First(&user, "id = ?", id)
+
+Many to Many
+
+For many-to-many relationships, GORM creates a join table automatically:
+
+many_to_many.go
+Copy to clipboard
+
+type Post struct {
+
+ID    string `gorm:"primaryKey;size:36" json:"id"`
+
+Title string `gorm:"size:255" json:"title"`
+
+Tags  []Tag  `gorm:"many2many:post_tags;" json:"tags,omitempty"`
+
+}
+
+type Tag struct {
+
+ID   string `gorm:"primaryKey;size:36" json:"id"`
+
+Name string `gorm:"size:100;uniqueIndex" json:"name"`
+
+}
+
+// GORM auto-creates a "post_tags" join table with post_id and tag_id columns.
+
+Soft Deletes
+
+All Grit models include a DeletedAt field of type gorm.DeletedAt. When you call db.Delete(&record), GORM does not actually remove the row. Instead, it sets deleted_at to the current timestamp.
+
+soft_delete.go
+Copy to clipboard
+
+// Add this field to any model for soft deletes:
+
+DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+
+// Soft-delete a record (sets deleted_at, does NOT remove the row)
+
+db.Delete(&user)
+
+// Normal queries automatically exclude soft-deleted records
+
+db.Find(&users) // only returns records where deleted_at IS NULL
+
+// To include soft-deleted records:
+
+db.Unscoped().Find(&users)
+
+// To permanently delete a record:
+
+db.Unscoped().Delete(&user)
+
+The json:"-" tag on DeletedAt ensures the field is never exposed in API responses.
+
+Migrations & the Model Registry
+
+Models are registered in a Models() function and migrated by a Migrate() runner — both in models/user.go. Migrations run as a separate grit migrate command, not on server startup, so you control exactly when the schema changes. The generator appends each new model at the // grit:models marker.
+
+apps/api/internal/models/user.go
+Copy to clipboard
+
+// Models returns the ordered list of all models for migration.
+
+// Parents (no foreign keys) come first so FK constraints resolve.
+
+func Models() []interface{} {
+
+return []interface{}{
+
+&User{},
+
+&Upload{},
+
+// grit:models
+
+}
+
+}
+
+// Migrate runs AutoMigrate for every model, creating missing tables and
+
+// ALTERing existing ones to add new columns — with a created/altered/
+
+// unchanged diff logged so nothing migrates silently.
+
+func Migrate(db *gorm.DB) error {
+
+for _, model := range Models() {
+
+if err := db.AutoMigrate(model); err != nil {
+
+return fmt.Errorf("migrating %T: %w", model, err)
+
+}
+
+}
+
+return nil
+
+}
+
+It's wired to the migrate entrypoint, run on demand:
+
+Terminal
+Copy to clipboard
+
+$grit migrate
+
+See Migrations for the full runner (column diffing, --fresh) and Seeders for filling the tables afterwards.
+
+How AutoMigrate Works
+
+AutoMigrate is safe to run repeatedly. It will:
+
+Create tables that do not exist yet.
+
+Add new columns if you add fields to a struct.
+
+Create indexes defined in struct tags.
+
+AutoMigrate will not:
+
+Delete columns that no longer exist in the struct.
+
+Change a column's type if you change the Go type.
+
+Drop tables.
+
+For destructive changes, use grit migrate --fresh in development (this drops all tables and re-migrates). In production, write manual SQL migrations.
+
+Terminal
+Copy to clipboard
+
+$grit migrate          # run AutoMigrate
+
+$grit migrate --fresh  # drop all + re-migrate (dev only!)
+
+$grit migrate status   # what each run changed
+
+$grit migrate down     # undo the last run
+
+Adding a New Model (Step by Step)
+
+The fastest way to add a model is with the code generator. But if you want to do it manually, follow these steps:
+
+Create a new file in apps/api/internal/models/ (e.g., product.go).
+
+Define your struct with gorm, json, and binding tags.
+
+Add &Product{} to the AutoMigrate call in user.go.
+
+Restart the server -- GORM will create the table automatically.
+
+apps/api/internal/models/product.go
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"github.com/google/uuid"
+
+"gorm.io/gorm"
+
+)
+
+type Product struct {
+
+ID          string         `gorm:"primaryKey;size:36" json:"id"`
+
+Name        string         `gorm:"size:255;not null" json:"name" binding:"required"`
+
+Description string         `gorm:"type:text" json:"description"`
+
+Price   money.Money        `gorm:"not null" json:"price" binding:"required,gt=0"`
+
+SKU         string         `gorm:"size:100;uniqueIndex" json:"sku" binding:"required"`
+
+Stock       int            `gorm:"default:0" json:"stock"`
+
+Active      bool           `gorm:"default:true" json:"active"`
+
+CategoryID  string         `gorm:"size:36;index" json:"category_id"`
+
+Category    Category       `gorm:"foreignKey:CategoryID" json:"category,omitempty"`
+
+CreatedAt   time.Time      `json:"created_at"`
+
+UpdatedAt   time.Time      `json:"updated_at"`
+
+DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+
+}
+
+func (p *Product) BeforeCreate(tx *gorm.DB) error {
+
+if p.ID == "" {
+
+p.ID = uuid.New().String()
+
+}
+
+return nil
+
+}
+
+Or use the generator and let Grit do the work for you:
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Product
+
+Style VariantsHandlers

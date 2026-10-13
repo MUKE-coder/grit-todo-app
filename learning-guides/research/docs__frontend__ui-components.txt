@@ -1,0 +1,74 @@
+Frontend
+UI Components
+
+Grit UI is a registry of 100 ready-made React components. Install one with a command and it lands in your repo as an ordinary .tsx file you own.
+
+Browse and preview every component at ui.gritframework.dev.
+
+Installing a component
+
+Inside a Grit project, the CLI writes the component into the right app for your architecture:
+
+grit ui list                      # everything in the registry
+
+grit ui list --category saas      # narrow it down
+
+grit ui add billing-card-01       # install one
+
+grit ui add login-card-01 otp-input-01   # or several
+
+Copy to clipboard
+
+Files land in components/grit-ui/ inside apps/web, falling back to apps/admin or a flat frontend/ depending on how the project was scaffolded. An existing file is never overwritten without --force — once you have edited a component, it is your code.
+
+Outside a Grit project
+
+Every component is a shadcn registry item, so the registry works with any React project that has Tailwind — no Grit required:
+
+npx shadcn@latest add https://ui.gritframework.dev/r/hero-split-01.json
+
+Copy to clipboard
+
+That single command writes the component, merges Grit's design tokens into your globals.css, and adds the colour scale to your tailwind.config.ts. Both are needed: the tokens supply the palette, and the scale is what makes classes like text-text-muted resolve.
+
+What is in the registry
+
+CategoryCountExamples
+
+marketing20heroes, pricing, testimonials, FAQ, CTA banners
+
+saas30billing, usage meters, API keys, audit logs, team rows
+
+ecommerce20product cards, cart, checkout steps, variants
+
+layout20navbars, modals, tabs, empty states, toasts
+
+auth10login, signup, OTP, 2FA setup, OAuth buttons
+
+The registry endpoints
+
+The registry is plain JSON over HTTP, so anything that speaks the shadcn format can consume it — your own tooling included.
+
+https://ui.gritframework.dev/r/registry.json   # index of all 100
+
+https://ui.gritframework.dev/r/<name>.json     # one item, source inlined
+
+Copy to clipboard
+
+Each item carries its source in files[0].content rather than a path to fetch separately, which is what lets a single request produce a working component.
+
+Components are yours
+
+Nothing here is a dependency. There is no grit-ui package in your package.json, no version to keep up with, and no upgrade that can change a component out from under you. The trade is the usual one for generated code: improvements to a component do not reach copies you already installed. Re-run grit ui add --force if you want the newer version and have not edited yours.
+
+They use Grit's design tokens, so in a scaffolded project they match the admin panel and auth pages out of the box.
+
+Community
+
+Build alongside other Grit developers
+
+Join the WhatsApp community for questions, tutorials, and guidance from people shipping Grit apps, and from the person who builds it. No question is too small.
+
+Join the community
+
+FrontendAdmin Panel

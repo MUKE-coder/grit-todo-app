@@ -1,0 +1,187 @@
+Start here
+Let's build a full-stack app in under two minutes
+
+One block of commands, and you have a Go API, a web app and an admin panel running a contacts book: contacts in groups, each with a photo. Pick whether you want Docker or not, paste, and read the rest of this page afterwards.
+
+First, install Grit
+
+One command. It puts a single binary on your PATH and needs nothing else installed to do it.
+
+Terminal
+Copy to clipboard
+
+# macOS / Linux
+
+curl -fsSL https://gritframework.dev/install.sh | sh
+
+# Windows (PowerShell)
+
+iwr -useb https://gritframework.dev/install.ps1 | iex
+
+Already have the Go toolchain? go install github.com/MUKE-coder/grit/v3/cmd/grit@latest does the same thing.
+
+Check it worked, then carry on below:
+
+Terminal
+Copy to clipboard
+
+grit version
+
+Later, grit update moves you to the newest release. Full installation notes, including what the script does and how to install a specific version.
+
+Then build the app
+
+Quick start
+
+With DockerWithout Docker
+Copy all
+
+Docker Desktop running. Postgres, Redis and MinIO come up with the project.
+
+grit new contacts --triple --next
+cd contacts
+docker compose up -d
+grit generate resource Group   --fields "name:string,description:text"
+grit generate resource Contact   --fields "name:string,email:email,phone:tel,            photo:file:image,group:belongs_to:Group"
+grit migrate
+grit seed
+grit start
+
+localhost:3000
+
+The web app
+
+localhost:3001
+
+The admin panel, with a screen for contacts and one for groups
+
+localhost:8080/docs
+
+The API reference, generated from the routes
+
+Sign in to the admin panel with admin@example.com and admin123, add a group, then add a contact with a photo. The photo works on either path. Without Docker there is no MinIO to write to, so the API notices and keeps the file on local disk instead: you get the original, a converted JPEG and a thumbnail under storage/app, and the admin table shows it. Nothing above was hand-written: the two generate commands produced the models, migrations, API, Zod schemas, TypeScript types, React Query hooks and both admin screens.
+
+The path from nothing to deployed
+
+Seven steps, about ninety minutes end to end. Everything else in these docs is reference you can reach for later — this is the part to read in order.
+
+Build with AI
+
+Let your AI build it
+
+One prompt that installs the Grit skill, teaches your agent the framework, and links every concept it needs. Works in Claude Code, Cursor, Codex, Windsurf, Copilot or any chat.
+
+Copy prompt to build with AI
+
+Prerequisites
+
+Optional, and only the ones you need. Grit is Go on the back and Next.js on the front, running against Postgres and Redis in Docker — if any of those are new, these primers cover exactly the parts the rest of this path assumes.
+
+Go
+
+Variables, structs, pointers, slices, maps, interfaces and goroutines, written for people who already know another language.
+
+Next.js and React
+
+App Router, server versus client components, data fetching and routing — the parts the web app and admin panel are built on.
+
+Docker
+
+Enough to start and stop the Postgres, Redis and MinIO services behind a Grit project. You do not need to be an expert.
+
+Go playground
+
+Run Go in the browser without installing anything. Useful for trying a snippet from the primer before it matters.
+
+If you do not have a preference, use this
+
+grit new my-app --triple --next
+
+Copy to clipboard
+
+Go API, Next.js web app, admin panel, Postgres, Redis. It is the combination that gets the most use and the most testing, and every guide here assumes it unless it says otherwise.
+
+The other four architectures are real and supported — single binary, double, API-only and mobile — but choose one because you have a reason, not because you were made to choose on day one.
+
+1
+
+Create a project
+5 min
+
+One command scaffolds the API, the frontend and the admin panel, already wired together. Pick the architecture when it asks — if you are unsure, take the recommendation below.
+
+A running app at localhost, with auth already working.
+
+2
+
+Understand the layout
+10 min
+
+Where models, services, handlers and resource definitions live, and — more usefully — which files the generators own and which are yours permanently.
+
+You can find anything, and you know what is safe to edit.
+
+3
+
+Generate your first resource
+10 min
+
+The command that justifies the framework. One line produces the model, migration, service, handler, routes, Zod schema, TypeScript types, React Query hooks and a working admin page.
+
+Full CRUD, backend to admin UI, from one command.
+
+4
+
+Model the relationships
+15 min
+
+Every field type, and the two that matter most: belongs_to and many_to_many. This is where a toy CRUD app becomes something with a real schema behind it.
+
+Related records, with the admin forms and filters to match.
+
+5
+
+Lock it down
+15 min
+
+Auth ships working, so this is about the parts you configure: roles, permissions, who can reach which route, and what the frontend is allowed to show.
+
+Routes enforced server-side, with the UI mirroring the rules.
+
+6
+
+Add the batteries you need
+as needed
+
+File uploads, background jobs, email, realtime, AI, webhooks, multi-tenancy, feature flags. All present, all off until you switch them on. Read this page once so you know what is there before you build it yourself.
+
+You stop writing things the framework already ships.
+
+7
+
+Deploy it
+30 min
+
+Pick a host, set the environment, run the migrations, work the checklist. Railway or Render if you have no opinion; a $5 VPS if cost matters.
+
+A URL other people can use.
+
+Then build something real
+
+Once the path above makes sense, the tutorials build complete applications rather than explaining features — a blog, a product catalogue, an ecommerce store, a SaaS with billing and tenants.
+
+All tutorials
+
+Complete applications, start to finish.
+
+Already have an app?
+
+What works standalone in a codebase Grit did not scaffold.
+
+Coming from Laravel, Django or Next?
+
+The translation table for concepts you already know.
+
+Building with an AI agent?
+
+The generated prompt and the MCP server.

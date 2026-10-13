@@ -1,0 +1,500 @@
+Batteries
+Security (Sentinel)
+
+Every Grit project ships with Sentinel -- a production-grade security intelligence suite that provides a Web Application Firewall, rate limiting, brute-force protection, anomaly detection, security headers, and a real-time threat dashboard. Security is not an afterthought.
+
+AllowedBlockedStreamed to dashboard
+Every request passes Sentinel's WAF; threats are blocked and streamed to the dashboard
+
+What's Included
+
+Sentinel mounts on your Gin router with a single call and provides the following out of the box:
+
+Web Application Firewall
+
+Detects SQL injection, XSS, path traversal, command injection, SSRF, XXE, and more
+
+Rate Limiting
+
+Per-IP, per-user, per-route, and global limits with sliding window strategy
+
+Auth Shield
+
+Brute-force protection with per-IP lockouts and credential stuffing detection
+
+Security Headers
+
+CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy
+
+Anomaly Detection
+
+Off-hours access, velocity anomalies, impossible travel, data exfiltration
+
+IP Geolocation
+
+Automatic geo-lookup for every request with country and city data
+
+Threat Dashboard
+
+Embedded React dashboard with real-time WebSocket updates at /sentinel/ui
+
+Performance Monitoring
+
+Per-route latency tracking with p50/p95/p99 metrics
+
+Configuration
+
+Sentinel is enabled by default in every Grit project. Configure it through your .env file:
+
+.env
+Copy to clipboard
+
+# Security — Sentinel WAF, rate limiting, threat detection
+
+SENTINEL_ENABLED=true
+
+SENTINEL_USERNAME=admin
+
+SENTINEL_PASSWORD=sentinel
+
+SENTINEL_SECRET_KEY=change-me-in-production
+
+SENTINEL_AUDIT_KEY=change-me-in-production
+
+VariableDefaultDescription
+
+SENTINEL_ENABLEDtrueSet to "false" to disable Sentinel entirely
+
+SENTINEL_USERNAMEadminDashboard login username
+
+SENTINEL_PASSWORDsentinelDashboard login password
+
+SENTINEL_SECRET_KEYsentinel-secret...Secret for dashboard JWT sessions
+
+SENTINEL_AUDIT_KEY(generated)Keys the audit log hash chain, so an entry edited with database access alone fails verification
+
+Replicas, the audit key and the caller
+
+A project scaffolded from v3.226.0 counts rate limits and AuthShield lockouts in Redis when Redis is configured, so every replica counts against the same numbers: counted per process, N replicas gave a client N times every limit. It keys the audit log with SENTINEL_AUDIT_KEY, and it tells Sentinel who made each request, which anomaly detection needs to see anything at all.
+
+An older project gets the new Sentinel from grit upgrade, but its routes.go is its own, so these are yours to add to the sentinel.MountE call (and SentinelAuditKey to the config, read from SENTINEL_AUDIT_KEY):
+
+apps/api/internal/routes/routes.go
+Copy to clipboard
+
+import "github.com/MUKE-coder/sentinel/v2/redisstore"
+
+sentinelStorage.AuditKey = cfg.SentinelAuditKey
+
+// Shared by every replica. Without Redis, each process counts alone.
+
+var sentinelCounters sentinel.CounterStore
+
+if svc.Cache != nil {
+
+sentinelCounters = redisstore.New(svc.Cache.Client())
+
+}
+
+err := sentinel.MountE(r, db, sentinel.Config{
+
+Storage:  sentinelStorage,
+
+Counters: sentinelCounters,
+
+// Read after the handler chain, when the auth middleware has set the caller.
+
+UserExtractor: func(c *gin.Context) *sentinel.UserContext {
+
+id := c.GetString("user_id")
+
+if id == "" {
+
+return nil
+
+}
+
+return &sentinel.UserContext{ID: id, Email: c.GetString("user_email"), Role: c.GetString("user_role")}
+
+},
+
+// ...the rest of the config as it was
+
+})
+
+How It Works
+
+Sentinel is mounted in your routes.go Setup function, right after the global middleware (Logger, Recovery, CORS) and before any route registrations. This means every request passes through Sentinel's security middleware:
+
+internal/routes/routes.go
+Copy to clipboard
+
+// Mount Sentinel security suite. MountE returns an error so a bad
+
+// config fails fast at boot instead of silently running unprotected.
+
+if cfg.SentinelEnabled {
+
+if err := sentinel.MountE(r, db, sentinel.Config{
+
+Dashboard: sentinel.DashboardConfig{
+
+Username:  cfg.SentinelUsername,
+
+Password:  cfg.SentinelPassword,
+
+SecretKey: cfg.SentinelSecretKey,
+
+// Only dev may run on default creds; prod (gin.ReleaseMode) refuses them.
+
+AllowInsecureDefaults: isDev,
+
+},
+
+WAF: sentinel.WAFConfig{
+
+Enabled: true,
+
+// Log-only in dev, block in production — set automatically.
+
+Mode: func() sentinel.WAFMode {
+
+if isDev { return sentinel.ModeLog }
+
+return sentinel.ModeBlock
+
+}(),
+
+MaxBodyBytes:        1 * 1024 * 1024, // 1 MB (richtext payloads)
+
+RejectOversizedBody: true,
+
+TrustedProxies:      cfg.SentinelTrustedProxies,
+
+},
+
+RateLimit: sentinel.RateLimitConfig{
+
+Enabled: true,
+
+ByIP:    &sentinel.Limit{Requests: 100, Window: 1 * time.Minute},
+
+ByRoute: map[string]sentinel.Limit{
+
+"/api/auth/login":    {Requests: 5, Window: 15 * time.Minute},
+
+"/api/auth/register": {Requests: 3, Window: 15 * time.Minute},
+
+},
+
+},
+
+AuthShield: sentinel.AuthShieldConfig{
+
+Enabled:    true,
+
+LoginRoute: "/api/auth/login",
+
+},
+
+Anomaly: sentinel.AnomalyConfig{
+
+Enabled: true,
+
+},
+
+Geo: sentinel.GeoConfig{
+
+Enabled: true,
+
+},
+
+}); err != nil {
+
+log.Fatalf("mounting Sentinel: %v", err)
+
+}
+
+}
+
+The middleware execution order is: Auth Shield (intercepts login attempts) → WAF (inspects all input vectors) → Rate Limiter (enforces request limits) → Security Headers (injects response headers) → Performance Monitor (tracks latency).
+
+What the WAF does not inspect
+
+A few routes have to be exempt from body inspection, and wafExcludedRoutes() in internal/routes/routes.go is the list. A photograph is larger than the inspection cap by design. And a richtext body is <p>, <strong> and <img> by definition, so the XSS heuristics flag ordinary markup, and a post whose body quotes a shell command trips the traversal and command-injection rules on the ../ and the $( inside a code block.
+
+internal/routes/routes.go
+Copy to clipboard
+
+paths := []string{
+
+"/blogs", "/blogs/*",
+
+"/admin/blogs", "/admin/blogs/*",
+
+"/uploads", "/uploads/*",
+
+"/*/import",          // a spreadsheet is over the body cap
+
+"/public/forms/*",
+
+// grit generate resource adds a resource here when it emits a richtext field.
+
+// grit:waf:richtext
+
+}
+
+Every richtext resource is listed twice, at its public path and again under /admin. A body is inspected on the way in, so it is the writes that carry the markup, and the admin panel writes through the /admin prefix. With only the public path listed, a post could be published once and then never edited: every PUT from the admin was answered 403 and logged as a critical threat. That was issue 90, fixed in v3.335.0; grit upgrade adds the missing entries to a project generated before it.
+
+Exclusion is from body inspection only. These routes still pass through authentication, RBAC, binding validation, sanitize:"html" and the rate limits. The HTML is cleaned on every write whether the WAF looked at it or not, which is what actually protects the reader: a WAF pattern match is a guess about intent, and an allowlist sanitizer is not.
+
+Only richtext fields earn an entry, never text. Nearly every resource has a description or a note, and exempting all of them would leave the WAF inspecting nothing worth inspecting. If a plain text column does carry code, add that resource to the list by hand above the grit:waf:richtext marker.
+
+In development the WAF runs in log mode, so a body it dislikes is recorded and served anyway. It blocks outside development. That is worth knowing when a payload works on your laptop and returns 403 in staging: set APP_ENV to anything but development to reproduce it locally, and read the evidence in /sentinel/ui, which names the pattern and the substring that matched.
+
+Security Dashboard
+
+Sentinel ships with an embedded React dashboard at /sentinel/ui. Log in with the username and password from your .env file (default: admin / sentinel).
+
+The dashboard provides:
+
+Threat feed -- real-time threat events via WebSocket with severity, type, and source IP
+
+Threat actors -- automatic profiling with risk scores, attack types, and geolocation
+
+Security score -- weighted score across 5 dimensions with actionable recommendations
+
+Analytics -- attack trends, geographic distribution, top targeted routes
+
+WAF rules -- view and configure rules, test payloads, add custom patterns
+
+Rate limits -- view active limits and live counter states
+
+IP management -- block/unblock IPs, view blocked list
+
+Audit logs -- GORM-level CREATE/UPDATE/DELETE audit trail with before/after diffs
+
+Performance -- per-route latency metrics (p50/p95/p99) and error rates
+
+Compliance reports -- generate GDPR, PCI-DSS, and SOC2 reports
+
+The dashboard is also embedded in the admin panel under System → Security for convenience.
+
+WAF Modes
+
+The Web Application Firewall has two modes:
+
+ModeLogdev default
+Detects and logs threats but does not block requests. Use during development and initial deployment to identify false positives before switching to block mode.
+
+ModeBlockproduction
+Detects threats and blocks malicious requests with a 403 response. Switch to this mode in production after verifying no false positives in log mode.
+
+Grit picks the mode for you: ModeLog in development and ModeBlock in production (gin.ReleaseMode), so you log-and-review locally and block for real once deployed. Override the Mode in routes.go if you want a fixed mode, or toggle it at runtime from the dashboard.
+
+The WAF detects the following attack types with configurable sensitivity per rule (off, low, medium, strict):
+
+✓SQL Injection (basic, blind, stacked)
+
+✓Cross-Site Scripting (XSS)
+
+✓Path Traversal
+
+✓Command Injection
+
+✓Server-Side Request Forgery (SSRF)
+
+✓XML External Entity (XXE)
+
+✓Local File Inclusion (LFI)
+
+✓Open Redirect
+
+Rate Limiting
+
+Grit configures sensible rate limits out of the box. You can customize them in routes.go:
+
+internal/routes/routes.go
+Copy to clipboard
+
+RateLimit: sentinel.RateLimitConfig{
+
+Enabled: true,
+
+ByIP:    &sentinel.Limit{Requests: 100, Window: 1 * time.Minute},
+
+ByRoute: map[string]sentinel.Limit{
+
+"/api/auth/login":    {Requests: 5, Window: 15 * time.Minute},
+
+"/api/auth/register": {Requests: 3, Window: 15 * time.Minute},
+
+"/api/uploads":       {Requests: 10, Window: 1 * time.Minute},
+
+},
+
+// Optional: per-user and global limits
+
+// ByUser: &sentinel.Limit{Requests: 200, Window: 1 * time.Minute},
+
+// Global: &sentinel.Limit{Requests: 1000, Window: 1 * time.Minute},
+
+Strategy: sentinel.SlidingWindow, // or FixedWindow, TokenBucket
+
+},
+
+Auth Shield
+
+The auth shield protects your login endpoint from brute-force attacks. When enabled, it automatically tracks failed login attempts per IP address and locks out attackers after too many failures.
+
+internal/routes/routes.go
+Copy to clipboard
+
+AuthShield: sentinel.AuthShieldConfig{
+
+Enabled:                     true,
+
+LoginRoute:                  "/api/auth/login",
+
+MaxFailedAttempts:           5,               // Lock after 5 failures (default)
+
+LockoutDuration:             15 * time.Minute, // 15-minute lockout (default)
+
+CredentialStuffingDetection: true,             // Detect credential lists
+
+BruteForceDetection:         true,             // Detect brute-force patterns
+
+},
+
+Locked-out users can be unblocked from the dashboard or via the API.
+
+Custom WAF Rules
+
+You can add custom WAF rules to detect application-specific attack patterns:
+
+internal/routes/routes.go
+Copy to clipboard
+
+WAF: sentinel.WAFConfig{
+
+Enabled: true,
+
+Mode:    sentinel.ModeBlock,
+
+CustomRules: []sentinel.WAFRule{
+
+{
+
+ID:        "block-admin-enum",
+
+Name:      "Block admin enumeration",
+
+Pattern:   `(?i)/(wp-admin|phpmyadmin|administrator)`,
+
+AppliesTo: []string{"path"},
+
+Severity:  sentinel.SeverityMedium,
+
+Action:    "block",
+
+Enabled:   true,
+
+},
+
+},
+
+ExcludeRoutes: []string{"/api/health"}, // Skip WAF for health checks
+
+},
+
+Custom rules can also be managed at runtime from the dashboard without redeploying.
+
+AI-Powered Analysis
+
+If you have an AI API key configured (Claude, OpenAI, or Gemini), Sentinel can use it for intelligent threat analysis:
+
+internal/routes/routes.go
+Copy to clipboard
+
+AI: &sentinel.AIConfig{
+
+Provider: sentinel.Claude,       // or sentinel.OpenAI, sentinel.Gemini
+
+APIKey:   cfg.AIAPIKey,          // Reuse your existing AI API key
+
+DailySummary: true,              // Generate daily threat summaries
+
+},
+
+Threat analysis -- AI evaluates individual threats and provides context
+
+Actor assessment -- AI profiles threat actors and predicts intent
+
+Daily summaries -- automated security briefings
+
+Natural language queries -- ask questions about your security data
+
+WAF recommendations -- AI suggests new rules based on attack patterns
+
+Alerts
+
+Sentinel can send real-time alerts when threats are detected. Configure one or more channels:
+
+internal/routes/routes.go
+Copy to clipboard
+
+Alerts: sentinel.AlertConfig{
+
+MinSeverity: sentinel.SeverityHigh,
+
+Slack: &sentinel.SlackConfig{
+
+WebhookURL: "https://hooks.slack.com/services/...",
+
+},
+
+Email: &sentinel.EmailConfig{
+
+SMTPHost:   "smtp.example.com",
+
+SMTPPort:   587,
+
+Username:   "alerts@example.com",
+
+Password:   "smtp-password",
+
+Recipients: []string{"security@example.com"},
+
+},
+
+Webhook: &sentinel.WebhookConfig{
+
+URL:     "https://your-siem.example.com/webhook",
+
+Headers: map[string]string{"X-Token": "your-token"},
+
+},
+
+},
+
+Production Checklist
+
+Before deploying to production, make sure to:
+
+1Change SENTINEL_PASSWORD and SENTINEL_SECRET_KEY to strong, unique values
+
+2Switch WAF mode from ModeLog to ModeBlock after reviewing logs for false positives
+
+3Configure at least one alert channel (Slack, email, or webhook)
+
+4Review rate limits and adjust for your expected traffic
+
+5Set up IP reputation checking with an AbuseIPDB API key for auto-blocking known bad actors
+
+6Consider enabling AI-powered analysis for automated threat intelligence
+
+Disabling Sentinel
+
+If you don't need Sentinel, set SENTINEL_ENABLED=false in your .env file. The app will run normally without any security middleware or dashboard -- no code changes needed.
+
+AI IntegrationDocker Setup

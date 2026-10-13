@@ -1,0 +1,99 @@
+Getting Started
+Create a project
+
+Everything you need to scaffold and run your first Grit app. Install the CLI once, pick what you're building, and copy the block — you'll be running a full-stack app in a few minutes.
+
+Install the Grit CLI
+
+One line, every platform. The script installs the latest release (or updates an existing install):
+
+Terminal
+Copy to clipboard
+
+# macOS / Linux
+
+$curl -fsSL https://gritframework.dev/install.sh | sh
+
+# Windows (PowerShell)
+
+$iwr -useb https://gritframework.dev/install.ps1 | iex
+
+Verify with grit --help. You'll also need a few tools installed — Go 1.26.6+, Node 22+, pnpm 9+, and Docker (skippable for desktop). New to any of them? The Prerequisites page has a short primer for each.
+
+Scaffold your app
+
+Pick what you're building. Each tab is a complete, copy-pasteable sequence — scaffold, set up the database, and run, all with grit.
+
+EverythingWeb + Admin + API+ Mobile+ DesktopAPI onlyMobileDesktop
+
+Every target at once — Go API, Next.js web app, admin panel, Wails desktop app, Expo mobile app, and a docs site. More than most projects need, but the fastest way to see what Grit does.
+
+Terminal
+Copy to clipboard
+
+$grit new myapp --full      # api + web + admin + desktop + expo + docs
+
+$cd myapp
+
+$docker compose up -d       # Postgres, Redis, MinIO, Mailhog
+
+$pnpm install               # frontend deps (one-time)
+
+$grit migrate               # create database tables
+
+$grit seed                  # sample data + a demo admin login
+
+$grit start                 # runs every app, Ctrl+C stops them all
+
+Web app
+http://localhost:3000
+
+Admin panel
+http://localhost:3001
+
+Go API + docs
+http://localhost:8080/docs
+
+GORM Studio
+http://localhost:8080/studio
+
+Desktop + Expo
+grit start desktop / grit start expo
+
+Six apps is a lot to run at once. If you only want the web stack, use the Web + Admin + API tab — you can add desktop or mobile later.
+
+Prefer to be asked?Run grit new myapp with no flags and the CLI walks you through architecture and frontend choices interactively. Add --vite to use TanStack Router (Vite) instead of Next.js.
+
+You're running — now build
+
+Register a user, log into the admin panel, and browse your database in GORM Studio. Then generate your first full-stack resource — model, API, admin page, types and hooks — in one command:
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Post --fields "title:string,body:text,published:bool"
+
+$grit migrate    # create the new table
+
+Refresh the admin panel and your Posts resource is there with a working table and form.
+
+Escape hatchEverything generated is your code — edit the model, tune the admin resource, restyle the screens. Grit generates opinions, not a cage. See the Generated File Map for exactly what each command writes.
+
+Frequently asked questions
+
+Do I need Docker?
+For the web/API/mobile kits, Docker runs Postgres, Redis, MinIO and Mailhog locally — or use cloud services (Neon, Upstash, R2) instead. The Desktop kit needs no Docker at all: it uses local SQLite.
+Which architecture should I pick?
+Start with Web + Admin + API unless you know you don't need a frontend. Pick API only for a headless backend, Mobile for Expo, Desktop for a native app. You can always add more later. See Architecture Modes.
+Next.js or Vite?
+Next.js is the default. Add --vite to scaffold a TanStack Router (Vite) frontend instead, e.g. grit new myapp --triple --vite.
+How do I add a database table?
+grit generate resource <Name> --fields "…" then grit migrate. It creates the model, API, admin page, types and hooks in one go — see the Generated File Map.
+
+Something wrong, unclear, or missing on this page?
+
+Open an issue: your feedback shapes Grit, and we fix docs fast.
+
+Raise an issue on GitHub
+
+HomeComing from Laravel / Django

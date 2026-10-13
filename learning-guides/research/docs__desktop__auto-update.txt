@@ -1,0 +1,226 @@
+Desktop · Auto-update + installers
+Auto-update, full + slim installers
+
+Every grit new-desktop project ships with an in-app auto-updater (binary-swap, Wails-bound, modal UI), two Windows installers (full with bundled WebView2 + slim with online bootstrapper), and a one-shot release script that builds and publishes both to a GitHub release. Inspired by the production pattern from jb.desishub.com's walkthrough.
+
+Version checkApplied on restart
+On launch the app checks the feed; a newer build downloads and applies on the next restart
+
+What ships in every scaffolded desktop app
+
+updater.go
+Wails-bound binary-swap auto-updater (~430 lines)
+
+version.go
+Single AppName / AppVersion source of truth
+
+frontend/src/lib/version.ts
+Vite-injected APP_VERSION + semver helper
+
+frontend/src/hooks/use-update-checker.ts
+React Query polling hook (6h cadence)
+
+frontend/src/components/update-modal.tsx
+Download + install modal with progress bar
+
+frontend/src/components/update-banner.tsx
+Dismissible header banner
+
+build/windows/installer/project.nsi
+Full installer (~150 MB, bundled WebView2)
+
+build/windows/installer/project-slim.nsi
+Slim installer (~22 MB, online WebView2)
+
+scripts/release-desktop.sh
+One-shot release pipeline
+
+How auto-update works
+
+The frontend polls a Go method that hits the GitHub releases API. If a newer version is available the banner appears; the user clicks Update now, the modal opens, the new binary downloads to %TEMP%, and the running .exe gets atomically swapped with it. The whole cycle is ~20 lines of glue from the React side because all the hard parts live in updater.go.
+
+Wails methodFrontend callWhat it does
+
+CheckForUpdatesuseUpdateChecker (auto)Hits GitHub /releases/latest, picks the right asset for OS/arch.
+
+StartDownloadUpdateModal onMountGoroutine-backed fetch to %TEMP%, atomic counter for progress.
+
+GetProgressUpdateModal 500ms pollReturns {status, bytes_downloaded, bytes_total, error}.
+
+CancelDownloadUpdateModal "Cancel"Aborts the in-flight context, deletes the .partial.
+
+InstallAndRestartUpdateModal "Install & restart"Swap binary, spawn new process, runtime.Quit after 250ms.
+
+The binary-swap trick (per OS)
+
+Different OSes have different rules about overwriting a running executable. The updater branches accordingly:
+
+Linux / macOS
+
+POSIX inode semantics keep the running process's file alive even when the path is overwritten. copyFile straight onto the path — done. New invocations get the new binary; the current process keeps using the old inode until it exits.
+
+Windows
+
+.exe is locked while running, but Windows allows the directory entry to move even with the kernel object open. We rename app.exe → app.exe.old, copy the new binary into place, spawn it, exit. Next startup deletes the .old in a background goroutine (retries 25× at 200ms intervals to ride out antivirus locks).
+
+If anything goes wrong on Windows mid-swap (e.g. copyFile fails because %TEMP% is on a different volume than the install dir — different filesystem, os.Rename returns EXDEV), the updater renames app.exe.old back to app.exe so the user is never stranded without a working binary. Industry standard pattern (it's what inconshreveable/go-update, gh, bun upgrade, and rustup all do).
+
+Configure your release source
+
+By default the updater points at the GitHub repo derived from your project name. Override with env vars if your repo lives somewhere else or you want to gate releases through a proxy:
+
+.env
+Copy to clipboard
+
+# Required if your repo name differs from the project name
+
+UPDATER_GITHUB_OWNER=acme-co
+
+UPDATER_GITHUB_REPO=my-desktop-app
+
+# Optional: PAT for private repos / higher rate limits
+
+UPDATER_GITHUB_TOKEN=
+
+# Optional: point at your own proxy instead of api.github.com
+
+# (Lets you gate by min_supported_version, hide a PAT,
+
+#  flip an emergency override env var without a redeploy.)
+
+UPDATER_PROXY_URL=https://my-api.com/api/desktop
+
+For most projects the GitHub defaults are enough. The proxy option matches the production pattern from the blog — useful when you have a paid customer base and want server-side gating.
+
+Two Windows installers: full vs slim
+
+Wails ships one installer template. We add a second so you can pick the right trade-off for each distribution channel.
+
+VariantSizeWebView2 strategyWhen to use
+
+project.nsi (full)~150 MBBundles the Microsoft Evergreen Standalone (~125 MB) and installs it silently if missing.Field sites, offline machines, restrictive corporate firewalls, one-shot USB-stick installs.
+
+project-slim.nsi (slim)~22 MBUses Wails's built-in online bootstrapper (~1.8 MB) — downloads the actual runtime from Microsoft at install time.Web downloads, email links, anywhere bandwidth matters.
+
+Both installers default to %LOCALAPPDATA%\Programs\<ProjectName> — the Slack / Discord / VSCode convention. No admin required, so the in-app auto-updater can swap the binary without UAC.
+
+Cutting a release
+
+scripts/release-desktop.sh is the only command you need to know:
+
+Terminal
+Copy to clipboard
+
+$scripts/release-desktop.sh 1.2.3
+
+That does, in order:
+
+Bumps wails.json productVersion + outputfilename
+
+Bumps version.go's AppVersion constant
+
+(Re)generates branded NSIS bitmaps from icon.ico via PowerShell
+
+Downloads + caches the offline WebView2 runtime (~125 MB, first time only)
+
+Runs wails build -nsis -platform windows/amd64 -trimpath -ldflags '-s -w'
+
+Runs makensis on project-slim.nsi with the same raw binary
+
+Tags v1.2.3, pushes the tag
+
+gh release create uploads three assets: raw .exe (auto-updater uses this), full installer, slim installer
+
+Requires: bash, jq, python3, wails, makensis (NSIS), gh (GitHub CLI), and powershell.exe on PATH (Git Bash on Windows gives you all of these except NSIS — install with winget install NSIS.NSIS).
+
+Frontend wiring (auto-mounted)
+
+The scaffold mounts <UpdateBanner /> in your root layout already, so nothing for you to wire up. The hook polls every 6 hours; on focus / dismiss patterns are handled inside the banner. If you want a manual  "Check for updates" button in Settings, drop in:
+
+frontend/src/routes/_layout/settings.tsx
+Copy to clipboard
+
+import { useUpdateChecker } from '@/hooks/use-update-checker'
+
+import { APP_VERSION } from '@/lib/version'
+
+export function SettingsPage() {
+
+const { isChecking, checkNow, update, isUpdateAvailable } = useUpdateChecker()
+
+return (
+
+<div className="space-y-4">
+
+<p>Current version: <strong>v{APP_VERSION}</strong></p>
+
+<button
+
+onClick={() => checkNow()}
+
+disabled={isChecking}
+
+className="rounded-md bg-primary text-primary-foreground px-3 py-1.5 text-sm disabled:opacity-50"
+
+>
+
+{isChecking ? 'Checking…' : 'Check for updates'}
+
+</button>
+
+{isUpdateAvailable && update && (
+
+<p className="text-sm text-success">v{update.version} is available.</p>
+
+)}
+
+</div>
+
+)
+
+}
+
+Code signing (optional but recommended)
+
+An unsigned .exe shows the Windows SmartScreen warning the first time a user runs it ("Windows protected your PC") — you lose installs and gain support tickets. A code-signing cert is ~$200/year from any reputable CA (DigiCert, Sectigo, SSL.com). Once you have a .pfx, add a step to the release script before the final gh release create:
+
+scripts/release-desktop.sh (extra step)
+Copy to clipboard
+
+# Sign the raw .exe and both installers
+
+SIGN_CERT="${HOME}/.certs/code-signing.pfx"
+
+SIGN_PASS="${CODE_SIGN_PASSWORD}"   # from env, not committed
+
+for exe in "${RAW_EXE}" "${TARGET_FULL}" "${SLIM_TARGET}"; do
+
+signtool.exe sign \
+
+/f "${SIGN_CERT}" \
+
+/p "${SIGN_PASS}" \
+
+/tr http://timestamp.digicert.com \
+
+/td sha256 \
+
+/fd sha256 \
+
+"$exe"
+
+done
+
+For macOS notarization the same pattern applies with codesign + xcrun notarytool — covered in the dedicated macOS release guide (coming soon).
+
+Emergency rollback / override
+
+If you push a bad release and need to roll back without yanking the GitHub release: set UPDATER_PROXY_URL to a custom endpoint that returns the previous version. Or — if you're already using a proxy — flip an OVERRIDE_VERSION env var on your server and every client picks up the pinned version on its next 6-hour poll.
+
+Ready to ship
+
+grit new-desktop my-app gives you all of this out of the box. Then scripts/release-desktop.sh 0.1.1 publishes your first release and the auto-updater takes over from there.
+
+Desktop guideDesktop tech kit
+
+Desktop overviewDesktop tech kit

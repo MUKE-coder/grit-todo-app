@@ -1,0 +1,146 @@
+Backend
+Passkeys
+
+Sign in with a fingerprint, a face or a device PIN. The private key never leaves the authenticator and the server stores only the public half, so there is nothing here for a breach to leak and nothing for a phishing page to collect.
+
+What a passkey actually is
+
+A key pair, generated and held by the authenticator: your phone's secure enclave, a laptop's biometric sensor, a hardware key. Registration hands the server the public half. Signing in means the server sends a challenge and the authenticator signs it.
+
+Two consequences are the whole reason to want this. A database breach yields public keys, which are useless to an attacker. And a convincing fake login page gets nothing, because the browser will only sign a challenge for the origin the credential was registered to, and the user has no secret to hand over even if they want to.
+
+Setting it up
+
+Nothing to install. A new project has the tables, the endpoints and the management card; an existing one gets them on grit upgrade followed by grit migrate.
+
+The one thing that has to be right is the origin, because the relying party id is derived from it:
+
+# .env — the origins your frontends actually run on
+
+CORS_ORIGINS=https://admin.example.com,https://example.com
+
+Copy to clipboard
+
+At boot the API logs which relying party it built, and that line is worth reading once:
+
+Passkeys enabled for example.com (origins: https://admin.example.com, https://example.com)
+
+Copy to clipboard
+
+Getting the relying party id wrong is the classic WebAuthn failure. The browser refuses with a SecurityError that names nothing useful, and it looks like the code is broken. So it is derived from the first origin rather than configured a second time, and logged where you can see it. A deployment with no usable origin gets no relying party at all, and every passkey route answers 501 rather than panicking: passkeys are optional, a broken boot is not.
+
+The two ceremonies
+
+register/begin
+
+server issues a challenge
+
+navigator.credentials.create
+
+authenticator signs
+
+register/finish
+
+server verifies, stores the public key
+
+the challenge is stored server-side, single use, five minutes
+
+login/begin
+
+public: no session yet
+
+navigator.credentials.get
+
+authenticator signs
+
+login/finish
+
+same tokens a password login issues
+
+POST /api/v1/auth/passkeys/register/begin    behind auth
+
+POST /api/v1/auth/passkeys/register/finish
+
+POST /api/v1/auth/passkeys/login/begin       public
+
+POST /api/v1/auth/passkeys/login/finish
+
+GET    /api/v1/auth/passkeys                 list
+
+PATCH  /api/v1/auth/passkeys/:id             rename
+
+DELETE /api/v1/auth/passkeys/:id             remove
+
+Copy to clipboard
+
+Registration is behind auth because you add a passkey to an account you are already in. Sign-in is public by necessity, and that is exactly where the server-side challenge is doing the real work.
+
+Four decisions worth knowing
+
+Sign-in is usernameless
+
+No email field. The authenticator already knows which account it holds and tells the server through the user handle, so asking first buys nothing and costs a step. Sign-in issues the same tokens a password login does and records the same session, so a passkey device appears in Active Sessions and is revoked like any other.
+
+Ceremonies live in a table, not in memory
+
+The same reason refresh sessions do. The moment there are two API instances, an in-memory challenge is a coin flip on whether sign-in works: begin lands on one process and finish on the other. Single use, deleted on read, five-minute life.
+
+Registration excludes what is already registered
+
+Otherwise the same laptop can produce a second credential, and the list shows two identical rows nobody can tell apart.
+
+A backwards sign counter is logged, not blocked
+
+Authenticators keep a counter. A counter that goes backwards means two devices are answering for one credential, which is the signature of a clone. It is logged rather than refused, because plenty of authenticators never increment at all and blocking on it would lock out honest users to catch a rare case.
+
+In the admin
+
+A card on /account/security lists the registered authenticators, when each was added and last used, and whether it syncs across the owner's devices.
+
+The card hides itself when the browser has no platform authenticator, rather than offering a button that opens a dialog and fails. Support is a runtime fact, not a configuration one, so it is checked with isUserVerifyingPlatformAuthenticatorAvailable() rather than assumed.
+
+Testing it
+
+A passkey needs an authenticator, so asserting that a button exists proves nothing. Chrome's virtual authenticator over CDP is the honest way, and it is what Grit's own tests use:
+
+const cdp = await page.context().newCDPSession(page)
+
+await cdp.send('WebAuthn.enable')
+
+const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
+
+options: {
+
+protocol: 'ctap2',
+
+transport: 'internal',
+
+hasResidentKey: true,
+
+hasUserVerification: true,
+
+isUserVerified: true,
+
+automaticPresenceSimulation: true,
+
+},
+
+})
+
+// ... click "Add a passkey" ...
+
+const { credentials } = await cdp.send('WebAuthn.getCredentials', { authenticatorId })
+
+expect(credentials.length).toBe(1)
+
+Copy to clipboard
+
+What this does not do
+
+No lossy fallback to a password prompt on the sign-in page yet. The endpoints exist and work; the sign-in screen does not offer a "use a passkey" button out of the box.
+
+No attestation verification. Grit accepts any authenticator rather than checking it against a metadata service. Enterprises that need to require specific hardware would add that; for everyone else it is a barrier with no benefit.
+
+Passkeys do not replace the password. They sit beside it, and the account still has recovery contacts and two-factor. Making a passkey the only way in means losing the device means losing the account.
+
+AuthenticationAccount Security

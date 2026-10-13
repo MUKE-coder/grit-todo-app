@@ -1,0 +1,146 @@
+Mobile
+Your First Mobile App
+
+Build a small Notes app end to end: scaffold the project, generate a Note resource, and run the generated screens on your phone. In about ten minutes you go from an empty folder to a native CRUD app backed by a Go API.
+
+Prefer a narrative walkthrough? There's a story-form companion on the blog: Build a mobile app with Grit →
+
+Scaffold the Project
+
+Create a mobile project. This gives you a Go API in apps/api, an Expo app in apps/expo, and a shared types package — all wired together in a Turborepo monorepo.
+
+Terminal
+Copy to clipboard
+
+$grit new notes-app --mobile
+
+$cd notes-app
+
+Generate the Note Resource
+
+One command generates the full stack for a resource — Go model, service, handler, shared Zod schema and TypeScript types, and the Expo screens. Give Note a title, a body, and a pinned flag:
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Note --fields "title:string,body:text,pinned:bool"
+
+Grit writes and wires these files (nothing to register by hand):
+
+generated for Note
+Copy to clipboard
+
+apps/api/internal/models/note.go              # GORM model + AutoMigrate
+
+apps/api/internal/services/note.go            # CRUD + pagination
+
+apps/api/internal/handlers/note.go            # Gin handlers (+ note_import.go)
+
+apps/api/internal/routes/...                  # routes registered
+
+packages/shared/schemas/note.ts               # Zod schema
+
+packages/shared/types/note.ts                 # TypeScript type
+
+apps/expo/hooks/use-notes.ts                  # typed React Query hook
+
+apps/expo/app/notes/index.tsx                 # list screen
+
+apps/expo/app/notes/[id].tsx                  # detail screen
+
+apps/expo/app/notes/new.tsx                   # create screen
+
+apps/expo/app/notes/edit/[id].tsx             # edit screen
+
+apps/expo/components/resource-forms/notes-form.tsx   # shared form
+
+# and a "Notes" card is injected into app/(tabs)/explore.tsx (the More tab)
+
+Migrate and Seed
+
+Create the notes table and seed the built-in admin account so you have credentials to log in with.
+
+Terminal
+Copy to clipboard
+
+$grit migrate
+
+$grit seed
+
+The seeder creates admin@example.com / admin123. IDs are UUID strings and roles are uppercase (ADMIN, EDITOR, USER) — the admin account is an ADMIN.
+
+Run It
+
+Start the API in one terminal and Expo in another, then scan the QR code with Expo Go on your phone (phone and computer on the same Wi-Fi).
+
+Terminal
+Copy to clipboard
+
+# terminal 1
+
+$grit start server        # Go API on :8080
+
+# terminal 2
+
+$grit start expo          # Metro + QR code
+
+Log in with the seeded admin. The app opens on the tab bar — head to the More tab and tap the Notes card that the generator added. You are now on the generated list screen.
+
+Tour the Generated Screens
+
+Every screen is real and navigable — a complete create / read / update / delete flow the moment you generate the resource. Here is what each one does:
+
+List — app/notes/index.tsx
+
+A scrollable table with a search box, sortable columns, pull-to-refresh, and infinite scroll (it fetches the next page as you reach the end). A + button opens a bottom sheet with the create form. Export and import buttons sit in the header.
+
+Detail — app/notes/[id].tsx
+
+Tap a row to open the record. Every field is shown as a labelled row, with Edit and Delete actions at the bottom (delete asks for confirmation first).
+
+Create / Edit — new.tsx & edit/[id].tsx
+
+Both render the shared NotesForm. title becomes a text input, body a multi-line textarea, and pinned a native toggle. Edit pre-fills the form from the record.
+
+The list, detail, and forms all talk to the API through one typed hook, use-notes.ts. It exposes an infinite-scroll list query, a single-record query, and create / update / delete mutations that invalidate the cache on success — so a create instantly shows up in the list:
+
+apps/expo/hooks/use-notes.ts (excerpt)
+Copy to clipboard
+
+export function useNotes(search = "", filters = {}, sortBy = "created_at", sortOrder = "desc", pageSize = 20) {
+
+return useInfiniteQuery({
+
+queryKey: ["notes", { search, filters, sortBy, sortOrder, pageSize }],
+
+initialPageParam: 1,
+
+queryFn: async ({ pageParam }) => { /* GET /notes?page=… */ },
+
+getNextPageParam: (last) =>
+
+last.meta.page < last.meta.pages ? last.meta.page + 1 : undefined,
+
+});
+
+}
+
+export function useCreateNote() {
+
+const qc = useQueryClient();
+
+return useMutation({
+
+mutationFn: async (input) => api.post("/notes", input),
+
+onSuccess: () => qc.invalidateQueries({ queryKey: ["notes"] }),
+
+});
+
+}
+
+Make It Yours
+
+The generated screens are a starting point, not a cage. Restyle the list rows, swap components, or rework the form in components/resource-forms/notes-form.tsx. Because the whole stack shares one set of types from packages/shared, a change to the Go model flows to the client — run grit sync to regenerate the TypeScript types after editing a model, and the compiler tells you exactly what to update.
+
+Getting StartedResource Generation

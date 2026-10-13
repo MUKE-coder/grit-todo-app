@@ -1,0 +1,185 @@
+Plugin
+
+Stripe
+
+Take money for an order without trusting the browser with the price. Your server works out what is owed, Stripe's form takes the card, and the order is marked paid when Stripe says so, once, however many times Stripe says it.
+
+grit plugin add stripe
+
+grit migrate
+
+pnpm install
+
+Copy to clipboard
+
+Then set the keys from the Stripe dashboard: STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET for the API, NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY for the web app. Without a secret key the payment routes answer PAYMENTS_UNAVAILABLE rather than failing somewhere less obvious. On a project made before v3.311.0, run grit upgrade first.
+
+Start a payment from your own handler
+
+There is deliberately no route that starts a payment. Your checkout handler already knows the order, so it works out the total and asks for that amount. The browser receives a client secret that can confirm this one payment and nothing else.
+
+// In your checkout handler, after the order is priced on the server.
+
+started, err := h.Payments.Create(ctx, payments.Checkout{
+
+UserID:    userID,
+
+Reference: "order:" + order.ID,
+
+Amount:    order.TotalCents, // cents, as Stripe counts
+
+Currency:  "usd",
+
+})
+
+// started.ClientSecret goes to the browser; started.Payment is the row.
+
+Copy to clipboard
+
+A customer who reloads the checkout gets the same payment back, not a second one. If the basket changed, the payment for the old amount is canceled at Stripe first, so its secret cannot be used to pay the old price.
+
+Mark the order paid
+
+// routes.go, after paymentService is made.
+
+paymentService.OnSucceeded = func(ctx context.Context, tx *gorm.DB, p models.Payment) error {
+
+orderID, ok := strings.CutPrefix(p.Reference, "order:")
+
+if !ok {
+
+return nil
+
+}
+
+return tx.Model(&models.Order{}).
+
+Where("id = ? AND total_cents = ?", orderID, p.Amount).
+
+Update("status", "paid").Error
+
+}
+
+Copy to clipboard
+
+It runs inside the transaction that marks the payment succeeded. If it returns an error, neither change is kept, the webhook is recorded as failed, and replaying it from the admin runs both again. OnRefunded works the same way for refunds.
+
+The payment form
+
+import { StripeCheckout, PaymentResult } from "@/components/stripe-checkout";
+
+// The checkout page: started is what your endpoint answered.
+
+<StripeCheckout started={started} returnPath="/orders/thanks" />
+
+// The return page: reads ?payment= and checks with Stripe.
+
+<PaymentResult id={searchParams.get("payment") ?? undefined} />
+
+Copy to clipboard
+
+Stripe's Payment Element, in the app's colours, with whatever payment methods are switched on in the dashboard. Card details go from the browser to Stripe and never reach the API. The plugin adds Stripe.js to the web app's Content-Security-Policy: its script, its frames and its API, each of which the browser otherwise refuses with nothing but a console message.
+
+Subscriptions
+
+A recurring charge brings card updates, failed renewals, dunning, proration, tax and cancellation with it, and every one of those is a screen somebody has to build and keep correct. So subscriptions go through Stripe's own hosted checkout and billing portal, which are already localised and already handle 3-D Secure. The only thing your app has to get right is what happens when access starts and stops.
+
+// routes.go, after subscriptionService is made.
+
+subscriptionService.OnActive = func(ctx context.Context, tx *gorm.DB, s models.Subscription) error {
+
+return tx.Model(&models.User{}).Where("id = ?", s.UserID).Update("plan", "pro").Error
+
+}
+
+subscriptionService.OnEnded = func(ctx context.Context, tx *gorm.DB, s models.Subscription) error {
+
+return tx.Model(&models.User{}).Where("id = ?", s.UserID).Update("plan", "free").Error
+
+}
+
+Copy to clipboard
+
+The browser asks for a checkout and goes where it is told. Your plan table holds the price ids you made in the Stripe dashboard; nothing about the plan is hard-coded in the plugin.
+
+import { startSubscription, openBillingPortal } from "@/lib/subscription";
+
+import { useSubscription } from "@/hooks/use-subscription";
+
+const { data } = useSubscription();   // { subscription, entitled }
+
+<button onClick={() => startSubscription({ price_id: "price_...", success_path: "/billing/done" })}>
+
+Subscribe
+
+</button>
+
+// Already subscribed: cards, invoices and cancelling all live in Stripe's portal.
+
+<button onClick={() => openBillingPortal("/billing")}>Manage billing</button>
+
+Copy to clipboard
+
+Return URLs are built from SITE_URL and a path, never from a URL the caller sends, because a return URL the browser chooses is an open redirect with a payment attached.
+
+What each renewal charged
+
+A subscription row says what somebody is entitled to. It says nothing about the money: what they paid, when, or whether this month went through. So every paid invoice is recorded as a Payment, the same row a one-off purchase writes, referenced subscription:<id>, and your OnSucceeded hook runs for it exactly as it does for a one-off. A receipt written once covers both.
+
+paymentService.OnSucceeded = func(ctx context.Context, tx *gorm.DB, p models.Payment) error {
+
+if strings.HasPrefix(p.Reference, "subscription:") {
+
+return sendRenewalReceipt(ctx, p)   // a renewal
+
+}
+
+return markOrderPaid(ctx, tx, p)        // a one-off purchase
+
+}
+
+Copy to clipboard
+
+A renewal that failed is recorded too, with what the bank said, because that is the one somebody has to see. A redelivered invoice changes nothing, and a failure event arriving late cannot unpay an invoice that was paid. What this buys you is an app that can answer "what did we take this month" and "what did this customer pay" out of its own database, with no trip to the Stripe dashboard.
+
+An invoice whose subscription this app has never seen is recorded as a failed webhook rather than shrugged off: Stripe retries, by then the subscription event has usually arrived, and the retry runs. Money is not something to drop quietly.
+
+What you get
+
+EndpointDoes
+
+POST /webhooks/stripeStripe's events, verified with STRIPE_WEBHOOK_SECRET and stored once per event id. Settles payments, cancellations and refunds.
+
+GET /api/v1/payments/:idOne of your payments, as recorded.
+
+POST /api/v1/payments/:id/refreshAsks Stripe how it stands and records it, so the return page works where no webhook reaches the API, such as on a laptop.
+
+GET /api/v1/admin/paymentsEvery payment, filterable by status, reference and user.
+
+POST /api/v1/admin/payments/:id/refundRefunds all of a payment, or the amount given.
+
+GET /api/v1/subscriptions/meWhat this account is subscribed to, and entitled: the one question the rest of the app asks.
+
+POST /api/v1/subscriptions/checkoutThe hosted checkout URL for a price. An account that already pays is sent to the portal instead.
+
+POST /api/v1/subscriptions/portalStripe's billing portal: cards, invoices, cancelling.
+
+POST /api/v1/subscriptions/refreshSettles the checkout on the page Stripe returns to, without waiting for the webhook. A session belonging to somebody else grants nothing.
+
+The details that matter
+
+Stripe's word, never the browser's. A redirect back to your site proves nothing. A payment is marked paid by a signed webhook, or by the API reading the intent back from Stripe with the secret key, and only when the amount and currency Stripe reports are the ones the payment was for.
+
+At least once, in any order. Stripe retries and does not promise order. Every change is a conditional update from the states it may come from, so a second delivery changes nothing and a late processing cannot undo a succeeded.
+
+Retries do not charge twice. Each intent is created with the payment's own id as its idempotency key, and each refund with a key made of what has been refunded so far, so a double click makes one refund.
+
+A failed renewal does not lock anyone out on the first retry. past_due still counts as entitled, because Stripe spends the next couple of weeks retrying the card and most of those succeed. Access ends when Stripe gives up, at unpaid or canceled. Cancelling keeps the days already paid for.
+
+No SDK. Four REST calls with the API version pinned. stripe-go's webhook parser refuses any event whose API version differs from the library's, which breaks a working endpoint on the first upgrade; the signature check every Grit project already has does not care.
+
+Built for the storefront blueprint, and checked against a running API on a new project: a wrong signature was refused with 401, a redelivered event was skipped as a duplicate, a late processing left a paid payment paid, an intent reporting 1 cent against a payment of 1000 was recorded as a failed event with that reason and left unpaid, and a partial refund was recorded. The shipped tests run the rest against a fake Stripe.
+
+Testing webhooks locally: stripe listen --forward-to localhost:8080/webhooks/stripe prints the signing secret to use. Or skip it: the return page's refresh settles card payments on its own.
+
+VideoWriting a plugin

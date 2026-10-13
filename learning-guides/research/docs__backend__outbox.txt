@@ -1,0 +1,104 @@
+Backend
+The transactional outbox
+
+A webhook that fires for an order the database rolled back is worse than one that never fires. The outbox writes the message in the same transaction as the business data, so the two commit together or neither does, and a relay delivers it afterwards.
+
+Enqueue inside the transaction
+
+outbox.Enqueue takes the transaction, not the database. That is the whole point: the row lands with the write it is about.
+
+internal/services/order.go
+Copy to clipboard
+
+func (s *OrderService) Place(in OrderInput) error {
+
+return s.DB.Transaction(func(tx *gorm.DB) error {
+
+order := models.Order{Total: in.Total, UserID: in.UserID}
+
+if err := tx.Create(&order).Error; err != nil {
+
+return err
+
+}
+
+// Same transaction. If the order does not commit, neither does this.
+
+return outbox.Enqueue(tx, "orders.created", order, outbox.Key("order:"+order.ID))
+
+})
+
+}
+
+outbox.Key makes the message idempotent: the key is unique in the table, so a retry of the same operation enqueues nothing the second time rather than sending twice. outbox.After delays a message.
+
+A relay delivers it
+
+Nothing is sent until a relay claims the row and calls your Deliver. Grit starts one relay of its own, for the durable event bus, and it takes only the topics that begin with event:. Every other topic is yours, which means a topic of your own needs a relay of your own.
+
+cmd/relay/main.go
+Copy to clipboard
+
+relay := &outbox.Relay{
+
+DB:          db,
+
+TopicPrefix: "orders.",          // leave empty to take every topic
+
+Interval:    time.Second,        // how often to look when the last poll was empty
+
+Batch:       50,
+
+MaxAttempts: 12,                 // then the message is parked at "failed"
+
+BaseBackoff: time.Second,        // doubles each attempt, up to MaxBackoff
+
+MaxBackoff:  5 * time.Minute,
+
+Deliver: func(ctx context.Context, m outbox.Message) error {
+
+return postToWebhook(ctx, m.Topic, m.Payload)
+
+},
+
+}
+
+go relay.Start(ctx)
+
+Return an error from Deliver and the message is retried with an exponential backoff. After MaxAttempts it is parked at failed rather than deleted: a message nobody can deliver is evidence of a bug, and deleting the evidence is how the bug survives.
+
+A topic with no relay is a queue that only growsThe write succeeds, the transaction commits, and the row sits at pending with zero attempts forever. Nothing fails and nothing logs. grit doctor checks for this: it reads the topics your code enqueues and the relays your code starts, and reports any topic no relay covers.
+
+Running more than one
+
+A relay claims a batch under its own name and honours the claim for ClaimTimeout, so several replicas can run the same relay without delivering each other's messages. Set the timeout comfortably above your slowest delivery: too low and a slow send is retried by a second relay while the first is still going.
+
+Ordering is per message, not global. Messages are claimed oldest first, and a failing message is retried later without blocking the ones behind it, which is what you want for webhooks and not what you want if two messages must arrive in order. When order matters, put the sequence in the payload and let the receiver sort.
+
+What the table looks like
+
+outbox_messages carries the topic, the key, the JSON payload, the status, the attempt count, the last error, and the claim. It is ordinary SQL, so the backlog is a query rather than a dashboard:
+
+-- Anything stuck?
+
+SELECT topic, status, count(*), max(attempts)
+
+FROM outbox_messages
+
+GROUP BY topic, status;
+
+-- Parked messages, with the reason.
+
+SELECT topic, key, attempts, last_error
+
+FROM outbox_messages
+
+WHERE status = 'failed'
+
+ORDER BY updated_at DESC;
+
+Copy to clipboard
+
+Verified under load2,200 messages enqueued by 32 concurrent workers, delivered by a relay whose Deliver refused a third of the time: 2,200 delivered, 1,091 refusals retried, every key delivered exactly once, drained in ten seconds. The retry path is exercised in internal/outbox's own tests, which ship into your project.
+
+Append-only RecordsWorkflows

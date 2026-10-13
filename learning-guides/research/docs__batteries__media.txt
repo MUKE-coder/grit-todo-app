@@ -1,0 +1,389 @@
+Batteries
+Image Optimisation
+
+Somebody uploads a 6 MB photograph straight off a phone. What you want stored is about 150 KB, correctly oriented, with the GPS coordinates removed and a thumbnail beside it. That happens by default, before the file is written, with no configuration at all.
+
+You do not have to configure anything
+
+Every image upload goes through the pipeline using DefaultProfile(). Measured on a real 6.08 MB camera photo:
+
+6.08 MB  4000x3000 JPEG        the upload
+
+141 KB   1600x1200 JPEG q82    what gets stored
+
+9 KB    400x400  JPEG        the thumbnail, alongside it
+
+------------------------------------------------------------
+
+41x smaller, and the 6 MB file never reaches your public bucket
+
+Copy to clipboard
+
+The defaults, and why each number is what it is:
+
+Fit inside 1600x1600. Covers a 2x retina display at a typical content width. Storing more is paying to keep pixels no browser will draw.
+
+Quality 0.82. The point at which JPEG is visually indistinguishable from the source. Below about 0.75, artifacts appear on gradients and skin.
+
+A 400x400 thumbnail. What an admin table row or a card grid needs at 2x.
+
+The original is kept, under a private prefix, so a profile change can be replayed later. Private because it is for reprocessing, not for serving.
+
+EXIF is oriented, then stripped. The one nobody thinks of. Orientation first, or a portrait photo comes out sideways. Stripping second, because a phone photo carries GPS coordinates, and a shop publishing product photos would otherwise publish the seller's home address with them.
+
+The format is chosen per image, not configured
+
+Asking a developer to pick an output format is asking them to get it wrong once. The decision is made from the pixels:
+
+decode + auto-orient
+
+EXIF applied, then dropped
+
+resize into the profile's box, never upscaling
+
+has alpha?
+
+any pixel not opaque
+
+WebP lossless
+
+yes: transparency survives
+
+JPEG at quality
+
+no: ~20x smaller than lossless
+
+The failure this prevents is a transparent logo encoded as JPEG, which silently gains a black box behind it. Under Auto that cannot happen.
+
+It also explains what the default backend will not do. No lossy WebP and no AVIF, because there is no pure-Go encoder for either. Measured on a photograph, pure-Go lossless WebP produced 778 KB where JPEG q82 produced 35 KB: it is not a substitute for lossy encoding, it is a PNG replacement, which is exactly the job it is given here. Both formats are available on the libvips backend below.
+
+Two backends, and what swapping costs
+
+The pipeline has a swappable backend. The default needs no system libraries; build with -tags vips and it uses libvips instead. Measured on the same 6.08 MB photograph, in the same container:
+
+pure Go (default)        libvips (-tags vips)
+
+default profile         149.9 KB  JPEG  1001ms    33.9 KB  lossy WebP  1853ms
+
+JPEG, forced            141.0 KB        950ms    123.7 KB              1366ms
+
+AVIF                    downgrades to JPEG        79.9 KB              7544ms
+
+Copy to clipboard
+
+libvips produces files about 4x smaller and is not faster. It is slower here, on both the default path and a like-for-like JPEG comparison. The often-quoted 4-8x speedup is libvips against ImageMagick, not against Go's native image package, and it did not reproduce. The reason to want libvips is bandwidth and storage, which is the thing that actually costs money.
+
+Note what AVIF costs: 7.5 seconds for one image, and on this photograph it came out larger than lossy WebP. It is worth having for the cases where it wins, but it is not a default and it is not viable on a synchronous upload.
+
+The catch is cgo. grit deploy cross-compiles to linux/amd64 with CGO_ENABLED=0 from whatever machine you run it on, and cgo cannot cross-compile without a target toolchain, so the vips build has to happen where it will run. Docker is that place:
+
+docker build --build-arg IMAGE_BACKEND=vips -f Dockerfile.api .
+
+Copy to clipboard
+
+The same profiles drive both backends. What changes is what Auto resolves to: lossy WebP under libvips, JPEG or lossless WebP under pure Go. A profile asking for AVIF on the pure-Go backend is downgraded rather than refused, so one binary still serves a project whose profiles assume libvips, and the ref records what was really produced. That is what format on the FileRef is for, and the backend is named in the upload log line.
+
+Profiles, when a field wants something different
+
+Profiles live in internal/media/profiles.go, a file written once and never regenerated, so what you put there survives grit generate and grit upgrade.
+
+apps/api/internal/media/profiles.go
+Copy to clipboard
+
+func init() {
+
+media.Define("product-image", media.Profile{
+
+Max:     media.Fit(1000, 1000),
+
+Quality: 0.8,
+
+Renditions: map[string]media.Size{
+
+"thumb": media.Fill(300, 300),
+
+"card":  media.Fit(600, 600),
+
+},
+
+})
+
+media.Define("avatar", media.Profile{
+
+// Fill, not Fit: a portrait shown in a round frame should crop,
+
+// not letterbox.
+
+Max:             media.Fill(400, 400),
+
+Renditions:      map[string]media.Size{"thumb": media.Fill(80, 80)},
+
+DiscardOriginal: true,
+
+})
+
+}
+
+Name it from the upload:
+
+POST /api/v1/uploads?profile=product-image
+
+Copy to clipboard
+
+A field you leave zero keeps the default, so a profile that only wants a different size says only that. An unknown or misspelled name falls back to the default rather than failing the upload, because a stale profile name in a deployed client build should degrade, not break.
+
+Note DiscardOriginal rather than a KeepOriginal that defaults to true. A Go bool cannot distinguish false from not-set, so a keep-flag would have silently discarded originals for every profile that did not mention it, while the documentation promised the opposite. The negative phrasing makes the zero value the recommended behaviour.
+
+What lands on the record
+
+{
+
+"url": ".../uploads/2026/08/photo-178761052.jpg",
+
+"name": "big-photo.jpg",
+
+"mime": "image/jpeg",
+
+"size": 144333,
+
+"width": 1600, "height": 1200,
+
+"format": "jpeg",
+
+"optimised": true,
+
+"thumbnail_url": ".../uploads/2026/08/photo-178761052-thumb.jpg",
+
+"original_key": "originals/2026/08/178761052-big-photo.jpg",
+
+"original_size": 6375170,
+
+"renditions": {
+
+"thumb": { "url": "...", "width": 400, "height": 400, "size": 9135 }
+
+}
+
+}
+
+Copy to clipboard
+
+format is recorded rather than inferred from the URL, so a client never has to guess what it actually received. optimised is false when the transform failed and the file was stored as it arrived, which is the default failure policy: losing somebody's upload because an encoder choked is worse than storing a large file. Set OnError: media.Reject on a profile to refuse those instead.
+
+Client-side, which is where it belongs
+
+Uploads go from the browser straight to storage through a presigned URL and never pass through the API. So the optimisation happens on the client, in @repo/upload, before the bytes leave the device. That is not a compromise. Measured in real Chromium on the same 5 MB photograph:
+
+pure-Go server backend      149.9 KB
+
+libvips server backend       33.9 KB   (needs cgo)
+
+browser, client-side         35.0 KB   <- 147x smaller, no server involved
+
+Copy to clipboard
+
+The browser matches libvips, because it has a lossy WebP encoder built in. That is the one thing pure Go could not do without cgo, and it turns out to have been on the client the whole time. Nothing is spent on server CPU or server bandwidth, and on a phone the 5 MB never leaves the handset.
+
+apps/admin/lib/uploader.ts
+Copy to clipboard
+
+import { createUploader, createAxiosTransport } from "@repo/upload";
+
+import { optimizeImage } from "@repo/upload/web";
+
+import { apiClient } from "@/lib/api-client";
+
+export const uploader = createUploader({
+
+transport: createAxiosTransport(apiClient),
+
+optimize: optimizeImage,
+
+});
+
+The optimiser is injected rather than imported, so the same uploader works on Next.js, a Vite SPA and Expo without any bundler resolving a platform. Expo swaps in @repo/upload/expo, which uses expo-image-manipulator because React Native has no canvas. React apps get useUpload from @repo/upload/react, with per-file progress and describeSaving() for the "6.1 MB to 41 KB" label.
+
+Profiles come from GET /api/v1/media/profiles, so the client uses the server's numbers rather than its own copy of them. Two copies drift the first time one changes.
+
+The admin's dropzone already uses this. Every file field in a generated project optimises before it uploads, with no wiring on your part: measured in the browser, a 2.53 MB photo dropped on a form asks to upload 64 KB and a 3.5 KB thumbnail, both WebP.
+
+There is a Grit UI block for it too, if you want the dropzone rather than the hook. It shows the saving as it happens, keeps a failed file in the list with the reason instead of letting it vanish, and puts a real file input behind a label so keyboard activation and the mobile picker come for free:
+
+npx shadcn@latest add https://ui.gritframework.dev/r/application-ui-file-upload-optimizing-dropzone.json
+
+Copy to clipboard
+
+Using it outside Grit
+
+Inside a Grit monorepo the package is a workspace dependency, resolved from disk, so there is nothing to install and no registry involved. For a React app that is not a Grit project, it is on npm:
+
+npm install @gritframework/upload
+
+npx expo install expo-image-manipulator   # Expo only
+
+Copy to clipboard
+
+It has no dependency on Grit. What it needs is three endpoints your API provides: GET /media/profiles, POST /uploads/presign and POST /uploads/complete. The README documents the shapes, including the two things a presign endpoint should do once the client is the one optimising.
+
+The published package and the copy in your project are the same source: the scaffolder embeds packages/upload from the Grit repository rather than keeping its own template, so the two cannot drift.
+
+What the server does once it stops doing the work
+
+A presigned URL is a capability handed to a browser, so the server can no longer guarantee what landed in the bucket. Its job becomes constraining and verifying rather than transforming, and two things do that.
+
+The exact byte count is signed into the URL. The client optimises first, so it knows the size before it asks, and S3 rejects a PUT of any other length. Without that the URL is an unbounded write capability: ask to upload two megabytes, send five gigabytes, and nothing on the server side ever sees it happen.
+
+The completion call re-reads the object from storage. Every number in that request is a claim, since the bytes never came through the API. Believing the reported size would make every storage total in the admin fiction. It now asks the bucket, and deletes anything over the limit.
+
+The server pipeline is still there
+
+The transform is synchronous, which costs roughly half a second to two seconds on a large photograph, most of it decoding and resampling rather than encoding. That cost buys two things.
+
+The 6 MB file never lands in your public bucket, which is the entire point. And the record is only ever written with final URLs.
+
+The version this replaces did it the other way around. It stored the original, queued a job, and returned a reference whose thumbnail field was still empty because the worker had not run yet. That reference is what got written into the record, so every thumbnail Grit generated for a resource file field was orphaned: produced, paid for, and referenced by nothing. Doing the primary transform inline is what fixes it.
+
+Presigned uploads go straight from the browser to S3 and never pass through your server, so they cannot be transformed this way. Use the multipart endpoint for fields that want optimisation.
+
+Working with an image in code
+
+Profiles cover uploads. When a handler needs to do something to an image itself, such as crop an avatar, blur a preview or pull a placeholder colour, the media package has a chain for it. Each step returns a new image, and an error anywhere in the chain comes out of Encode or Store, so the whole thing reads as one expression.
+
+apps/api/internal/handlers/avatar.go
+Copy to clipboard
+
+file, err := c.FormFile("avatar")
+
+// ...open it...
+
+img, err := media.Open(src)
+
+if err != nil {
+
+// not an image, over 20 MB, over 50 megapixels, or a GIF
+
+}
+
+disk := h.Storage.Disk()
+
+key, err := img.Orient().Cover(150, 150).ToWebP().
+
+Store(ctx, disk, "avatars", media.PublicFile)
+
+url := disk.URL(key)
+
+// One decode, several outputs: every step returns a new image.
+
+preview, err := img.Fit(800, 0).Blur(30).Grayscale().Quality(70).ToJPEG().Encode()
+
+placeholder, err := img.DominantColor()   // media.HexColor(placeholder) is "#6c5ce7"
+
+Operations
+
+CallWhat it does
+
+Cover(w, h)Scale and crop to exactly w x h, keeping the centre. Avatars and cards.
+
+Fit(w, h)Scale down to sit inside w x h. A 0 leaves that side unbounded. Never enlarges.
+
+Resize(w, h)Scale to w x h. A 0 keeps the aspect ratio. Will enlarge, up to the pixel limit.
+
+Crop(x, y, w, h)Keep a rectangle. One reaching outside the image is an error, not clipped.
+
+Rotate(deg, bg)Turn clockwise. Right angles are exact; other angles fill the corners with bg, transparent when nil.
+
+FlipH(), FlipV()Mirror left to right, or top to bottom.
+
+Grayscale()Remove the colour.
+
+Blur(0-100)Gaussian blur. 100 is a sigma of 20 pixels.
+
+Sharpen(0-100)Unsharp mask. 100 is a sigma of 5; 10 to 30 suits a thumbnail.
+
+Orient()Apply the EXIF orientation. Open already does, so this only matters after WithoutAutoOrient().
+
+A size with one side 0 keeps the aspect ratio everywhere, in profiles too: media.Fit(800, 0) on a 2000x1000 photo gives 800x400. Before this, the zero reached the resampler, which returned an empty 0x0 image that was encoded and stored without an error.
+
+Inspection
+
+Width(), Height(), Dimensions(): the current size, 0 once the chain has failed.
+
+MIME() and Extension(): what Encode will produce, for a Content-Type header and a file name. SourceFormat() is what came in.
+
+Orientation(): the EXIF orientation the file carried, 1 to 8.
+
+DominantColor(): the most common colour, from a 64x64 sample counted into 4096 buckets, returned as the average of the fullest bucket so a solid colour comes back exactly.
+
+Err(): the first error so far, when you want it before the end of the chain.
+
+Encoders, and what needs libvips
+
+With no To call, the image encodes the way a profile's Auto does. Quality runs from 1 to 100 and defaults to 82.
+
+CallPure Go (default)-tags vips
+
+ToJPEG()JPEG at QualityJPEG at Quality
+
+ToPNG()PNG, losslessPNG, lossless
+
+ToWebP()Lossless WebP. Quality is ignored.Lossy WebP at Quality
+
+ToLossyWebP()Error: ErrNeedsVipsLossy WebP at Quality
+
+ToAVIF()Error: ErrNeedsVipsAVIF at Quality (libvips with libheif)
+
+The chain refuses where a profile downgrades. A profile asking for AVIF on the pure-Go backend quietly gets JPEG, because one binary has to keep serving uploads. Code that calls ToAVIF() or ToLossyWebP() asked for something specific, so it gets ErrNeedsVips with the build tag in the message instead of a lossless file twenty times the size. Pure-Go WebP ignoring quality is the same limitation: there is no pure-Go lossy WebP encoder.
+
+Every output is written from pixels, so no EXIF survives, GPS included.
+
+Loading from a disk or a URL
+
+img, err := media.Open(r)                              // any io.Reader
+
+img, err := media.FromDisk(ctx, disk, "uploads/a.jpg")  // a storage.Disk
+
+img, err := media.FromURL(ctx, "https://example.com/photo.jpg")
+
+// Limits, on any of the three:
+
+img, err := media.FromURL(ctx, url,
+
+media.WithMaxBytes(5<<20),          // default 20 MB
+
+media.WithMaxPixels(20_000_000),    // default 50 megapixels
+
+media.WithTimeout(5*time.Second),   // FromURL only, default 10s
+
+)
+
+Copy to clipboard
+
+FromURL is for URLs somebody else chose, such as "import avatar from a link", so it goes through safefetch. A loopback, private or cloud metadata address is refused before a connection is made, including one a public hostname resolves to or redirects to, and the error wraps safefetch.ErrBlocked. The body is read up to the byte limit, and a server that declares a larger Content-Length is refused before reading.
+
+Every entry point reads the header first and refuses anything over the pixel limit before decoding, and every operation that can grow an image checks its output against the same limit, so Resize(20000, 0) on a thumbnail is refused rather than allocated. All pixel work, whether decode, operation or encode, waits for the same per-CPU slot the upload pipeline uses.
+
+Storing
+
+Store(ctx, disk, dir, visibility) encodes, writes through the disk and returns the key. It works on every storage driver, local disk and buckets alike, because it only uses the Disk interface.
+
+media.PublicFile writes under uploads/<dir>/, a public prefix: the local driver serves it without a signature and the bucket policy allows anonymous reads. Link to it with disk.URL(key).
+
+media.PrivateFile writes under private/<dir>/, which nothing serves without a signature. Link to it with disk.TemporaryURL(ctx, key, ttl).
+
+The file is named with 24 random hex characters and the extension of what was encoded, and the content type is set from the same. A directory containing .. is refused.
+
+Decompression bombs are refused
+
+A solid-colour PNG compresses to almost nothing whatever its dimensions, so an upload that passes every file-size check on the way in can still be enormous once decoded. Measured: a 165 KB file at 12000x12000 allocated 224 MB, and ten concurrent uploads of it would have been 2.2 GB.
+
+The dimensions are read from the header before any pixels are allocated, and anything over MaxPixels is refused. The default is 50 megapixels, which passes a 48 MP professional camera frame and refuses the bomb.
+
+What is not optimised
+
+GIF, deliberately. Decoding one keeps the first frame only, so optimising an animation would silently throw it away.
+
+SVG is rejected at upload rather than optimised. It is a stored-XSS vector and always was.
+
+PDF and video. The shape generalises, the implementation does not: both need external binaries, and neither fits in a static Go binary.
+
+File StorageProduct Variants

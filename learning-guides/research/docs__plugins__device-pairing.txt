@@ -1,0 +1,77 @@
+Plugin
+
+Device pairing
+
+A browser shows a QR code. A device that is already signed in scans it, is shown what it is about to trust, and approves. The browser is signed in. This is the WhatsApp Web flow, and how Telegram Web, Discord, Steam and most TV apps onboard a second screen.
+
+grit plugin add device-pairing
+
+grit migrate
+
+Copy to clipboard
+
+How it works
+
+Shown before approvingSingle use
+The approver sees the browser and address before they approve, and the code can only be spent once
+What you get
+
+EndpointAuthDoes
+
+POST /pair/startnoneMints a code and returns it with a QR PNG data URI
+
+GET /pair/:codenonePolled by the browser; returns tokens once approved
+
+GET /pair/:code/requestsessionWhat the code is asking for: user agent, IP, times
+
+POST /pair/:code/approvesessionBinds the request to the caller
+
+POST /pair/:code/denysessionRefuses it and burns the code
+
+Plus a /link page in the web app that shows the QR and polls, and a System → Link a device screen in the admin for approving one.
+
+Why it is built this way
+
+A pairing code is a bearer credential for a whole account. Most of the design here exists because of that, and the parts that look like extra work are the parts that make the difference between a QR somebody photographed across a room being useless and being a silent takeover.
+
+You see what you are approving
+
+Approval is two steps. The approving device fetches the browser and IP behind the code and shows them before it asks. Approving an opaque code is not consent: the user has no way to tell their own laptop from somebody who read the QR over their shoulder. Deny is a first-class endpoint next to it, because "that wasn't me" has to be one tap.
+
+Single use, enforced by the database
+
+The claim is a conditional UPDATE, not a read followed by a write. Two polls arriving together would otherwise both see "approved, unclaimed" and both walk away with a token pair. Approval is guarded the same way, so two devices racing on one code cannot both bind it. The generated test suite races eight approvals and asserts exactly one wins.
+
+Short-lived, and rate limited
+
+Codes are 32 bytes from crypto/rand and expire in two minutes. A QR on a screen in a public place is visible to everyone in the room, so the window has to be small enough that somebody would have to be waiting for it. /pair/start is anonymous, so one address may hold five codes in flight; the row is deleted the moment it is claimed, denied or expires.
+
+A paired browser is an ordinary session
+
+There is no Device model. Approval creates a normal session row and sets the same HttpOnly cookies a password login does, so a paired browser appears under Account → Security alongside everything else and is signed out from there. A parallel device table would be a second list of the same thing, drifting from the first.
+
+Revoking that session closes its realtime socket immediately, so a device you sign out stops receiving pushed events as well as losing its API access. See Realtime.
+
+Customising it
+
+The plugin writes ordinary files into your repo. Nothing here is framework indirection, so change what you need:
+
+apps/api/internal/models/pairing_request.go       the handshake row
+
+apps/api/internal/handlers/device_pairing.go     the five endpoints
+
+apps/api/internal/handlers/device_pairing_test.go the race tests
+
+apps/web/app/link/page.tsx                       the QR screen
+
+apps/web/hooks/use-pairing.ts                    start + poll
+
+apps/admin/app/(dashboard)/system/link-device/   the approval screen
+
+Copy to clipboard
+
+The two constants worth knowing are at the top of the handler: pairingTTL (two minutes) and pairingPerIP (five in flight). Lengthen the TTL and you widen the window an onlooker has; that is the trade, and it is yours to make.
+
+If you add a scanner. The admin screen takes a typed or pasted code, and accepts either the bare code or the whole URL a QR scanner returns. If you wire a camera to it, keep the typed field: a camera is not always available, not always permitted, and not always the thing the user reaches for. A pairing flow with no fallback strands people.
+
+Saved viewsWriting a plugin

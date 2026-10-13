@@ -1,0 +1,188 @@
+Backend
+
+The Request Lifecycle
+
+Everything a request passes through, in the order it actually happens. Most of the confusing bugs in a Go API — a CORS header that never appears, a WAF rule that blocks the wrong thing, a CSRF rejection on a mobile client — are ordering problems. This page is the map.
+
+The order
+
+From internal/routes/routes.go, top to bottom. Each layer wraps the ones below it, so a request goes down the list and the response comes back up.
+
+┌─ request in
+
+│
+
+1  Maintenance          503 for everyone but allowlisted IPs
+
+2  SecurityHeaders      CSP, HSTS, X-Frame-Options, nosniff
+
+3  RequestLimits        body cap and deadlines per route, before anything reads the body
+
+4  RequestID            X-Request-ID, threaded through every log line
+
+5  Logger               method, path, status, latency, request id
+
+6  Recovery             turns a panic into a 500 instead of a dead process
+
+7  CORS                 preflight + Access-Control-* headers
+
+8  Gzip                 response compression
+
+9  AutoCSRF             enforces ONLY on cookie-authenticated mutations
+
+10  Idempotency          replays the cached 2xx when Idempotency-Key repeats
+
+11  Sentinel             WAF, rate limits, AuthShield, anomaly + geo  (if enabled)
+
+12  Pulse                tracing, N+1 detection, runtime metrics       (if enabled)
+
+│
+
+├─ route group middleware
+
+│    protected:  Auth → ActivityLogger
+
+│    admin:      Auth → RequireRole("ADMIN")
+
+│
+
+└─ your handler
+
+Copy to clipboard
+
+The global layers
+
+Order here is deliberate, and a few positions are load-bearing:
+
+Maintenance is first so a maintenance window costs nothing — no body read, no DB, no auth.
+
+RequestLimits precedes anything that reads the body. A cap applied after parsing is not a cap. An ordinary route gets 10 MB and the server's timeouts: 10 seconds for headers, 30 to read the body, 60 to answer. Routes listed as transfers get their own cap and 30 minutes to read or write: uploads (512 MB), the AI endpoints, the GDPR and audit exports and backup downloads. A generated resource's /export and /import (100 MB) are transfers without being listed. Add a route to the map in routes.go when it takes a large body, streams a response or waits on something slow.
+
+Recovery sits after Logger, not before. Gin runs middleware in registration order, so Logger wraps Recovery and a panicking request still gets logged with its status. Flip them and panics vanish from your logs.
+
+CORS runs before auth, because a browser preflight (OPTIONS) carries no credentials. Put CORS behind auth and every cross-origin call fails preflight with a 401 that never reaches your handler — the single most common “my frontend can't call my API” cause.
+
+CSRF only applies to cookie sessions
+
+AutoCSRF enforces the double-submit token only when a request is a state-changing method and authenticated by cookie. It deliberately skips:
+
+safe methods (it issues the token there instead);
+
+requests carrying Authorization: Bearer — those authenticate explicitly and can't be forged cross-site;
+
+bootstrap endpoints (login, register, refresh, password reset, TOTP verify) which have no token yet;
+
+the SAML assertion consumer — the identity provider posts it from its own origin and will never have a token.
+
+This is why a mobile or desktop client never sends a CSRF header and still works: those flows are bearer-authenticated. If you add an endpoint that must be callable cross-origin without a session, it needs an explicit exemption — see internal/middleware/csrf.go.
+
+Group middleware
+
+Below the global stack, routes hang off groups that add their own layers:
+
+internal/routes/routes.go
+Copy to clipboard
+
+v1 := r.Group("/api/" + APIVersion)
+
+// Public: auth endpoints, SSO, public form submissions.
+
+auth := v1.Group("/auth")
+
+// Authenticated: everything a signed-in user can reach.
+
+protected := v1.Group("")
+
+protected.Use(middleware.Auth(db, authService))
+
+protected.Use(middleware.ActivityLogger(db))
+
+// Admin-only.
+
+admin := v1.Group("")
+
+admin.Use(middleware.Auth(db, authService))
+
+admin.Use(middleware.RequireRole("ADMIN"))
+
+Auth populates the gin context with user_id, user_email, user_role and user_grants, so everything after it — including your handler — can read the caller without another query.
+
+Where does my logic go?
+
+You want to…Put it…
+
+Reject a request before any work happensGlobal middleware, high in the list
+
+Require a permission for one routemiddleware.RequireRole("perm:invoices.delete") on that route
+
+Require it for a whole section.Use() on a route group
+
+Check the caller owns the recordIn the handler, via authz.MustOwn — it needs the record
+
+Business rulesThe service layer. Handlers stay thin; see Services
+
+An invariant every writer must obeyA GORM hook or callback, returning respond.Rule(...) — see below
+
+Record that something happenedservices.LogActivity from the handler, after it succeeds
+
+Invariants, and telling the caller why
+
+Most business rules belong in the service layer. Some do not: a rule that must hold no matter who writes the row belongs on the model, because the service layer is not the only thing holding the database handle. GORM Studio ships mounted at /studio and edits tables directly, the CSV importer writes through the same gorm.DB, and so does every handler nobody has written yet. A ledger that balances only when saved through one service method does not balance.
+
+Put those in a hook or a callback and return respond.Rule, which marks an error as one the caller is meant to read:
+
+apps/api/internal/models/journal_entry.go
+Copy to clipboard
+
+func (e *JournalEntry) BeforeCreate(tx *gorm.DB) error {
+
+debits, credits := sum(e.Lines)
+
+if debits != credits {
+
+return respond.Rule("does not balance: debits %s, credits %s", debits, credits)
+
+}
+
+return nil
+
+}
+
+The generated handlers pass whatever a write returns to respond.WriteError, which turns a Rule into 422 carrying that sentence, a missing row into 404, and anything else into an opaque 500 with the error logged.
+
+Why not just return the errorMost errors arriving from a write are not for the caller. A driver failure or a constraint violation carries schema details and sometimes SQL, and echoing those to an API client hands out a map of the database. Rule is how your code says which errors are the exception. An error you did not mark keeps the generic 500 it always had.
+
+Adding your own middleware
+
+A Grit middleware is an ordinary Gin one. Register it in routes.go at the position its job implies — cheap rejections high, anything needing an authenticated user below Auth:
+
+internal/middleware/tenant.go
+Copy to clipboard
+
+func RequireTenant() gin.HandlerFunc {
+
+return func(c *gin.Context) {
+
+tenant := c.GetHeader("X-Tenant")
+
+if tenant == "" {
+
+respond.BadRequest(c, "X-Tenant header is required")
+
+c.Abort() // Abort, not return — return alone continues the chain
+
+return
+
+}
+
+c.Set("tenant", tenant)
+
+c.Next()
+
+}
+
+}
+
+c.Abort() is not optional. Writing a response and returning does not stop the chain — the handler still runs, and you get a rejected request that also did the work. Any middleware that denies a request must call c.Abort().
+
+MiddlewareAPI Response Format

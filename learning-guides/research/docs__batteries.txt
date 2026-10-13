@@ -1,0 +1,187 @@
+Batteries Included
+Everything, out of the box
+
+Grit is batteries included — auth, storage, email, jobs, AI, security and observability are wired into every scaffolded project. No plugins to install, no glue to write. Here is the full set, each with the one line you actually call.
+
+auth.http
+
+POST /api/auth/register
+POST /api/auth/login
+// -> { "token": "eyJ...", "user": {...} }
+
+Authentication
+
+JWT register/login, bcrypt hashing and protected routes — /api/auth/* is live on day one.
+Read the docs
+
+routes.go
+
+admin := r.Group("/api/admin")
+admin.Use(middleware.RequireRole("ADMIN"))
+admin.GET("/users", h.ListUsers)
+
+RBAC & Roles
+
+Uppercase roles and a RequireRole guard — lock any route to ADMIN, EDITOR or USER.
+Read the docs
+
+upload.go
+
+url, err := storage.PresignPut(ctx, "avatars/u1.png")
+if err != nil {
+return err
+}
+// client PUTs the file straight to the bucket
+
+File Storage
+
+S3-compatible storage across MinIO, R2 and AWS S3. Hand the client a presigned upload URL.
+Read the docs
+
+mailer.go
+
+mailer.Send(ctx, mail.Message{
+To:       user.Email,
+Template: mail.Welcome,
+Data:     map[string]any{"Name": user.Name},
+})
+
+Email (Resend)
+
+Transactional email through Resend with typed HTML templates for welcome, reset and verify.
+Read the docs
+
+handler.go
+
+jobs.Enqueue(ctx, jobs.SendEmail{
+UserID: user.ID, // UUID string
+Kind:   "welcome",
+})
+
+Background Jobs
+
+Redis-backed async queue (asynq). Enqueue work off the request path and process it in a worker.
+Read the docs
+
+scheduler.go
+
+scheduler.Register("0 * * * *", func(ctx context.Context) error {
+return report.GenerateHourly(ctx)
+})
+
+Cron Scheduler
+
+Register recurring tasks with plain cron expressions — monitored from the admin dashboard.
+Read the docs
+
+service.go
+
+if v, ok := cache.Get(ctx, key); ok {
+return v, nil
+}
+cache.Set(ctx, key, stats, 5*time.Minute)
+
+Redis Caching
+
+A tiny cache service plus response middleware. Cache hot reads with a TTL, invalidate on write.
+Read the docs
+
+ai.go
+
+stream, err := ai.Stream(ctx, ai.Request{
+Model:  "anthropic/claude-sonnet-4-6",
+Prompt: "Summarise this ticket",
+})
+
+AI
+
+Stream completions through the Vercel AI Gateway — swap models with one string, no SDK churn.
+Read the docs
+
+main.go
+
+if err := sentinel.MountE(r, db, sentinel.Config{
+RateLimit: 100, // req/min per IP
+}); err != nil {
+log.Fatal(err)
+}
+
+Sentinel
+
+WAF, rate limiting, brute-force and anomaly detection — one mount and every route is shielded.
+Read the docs
+
+main.go
+
+pulse.Mount(ctx, r, db, pulse.Config{
+Path: "/pulse",
+})
+// dashboard live at /pulse
+
+Pulse
+
+Self-hosted observability: request tracing, DB monitoring, runtime metrics and a live dashboard.
+Read the docs
+
+terminal
+
+$ grit studio
+✓ GORM Studio running at http://localhost:8080/studio
+
+GORM Studio
+
+A visual database browser embedded in the API. Inspect and edit rows without leaving the app.
+Read the docs
+
+handler.go
+
+if flags.IsEnabled(c, "new-checkout") {
+return h.newCheckout(c)
+}
+return h.legacyCheckout(c)
+
+Feature Flags
+
+Ship behind flags with percentage rollouts, allow/block lists and sticky per-user bucketing.
+Read the docs
+
+webhooks.go
+
+hooks.Register("stripe", webhook.StripeVerifier(secret))
+// POST /webhooks/:provider  ->  verified & deduped
+
+Webhooks
+
+One inbound endpoint with built-in Stripe, GitHub and HMAC verifiers plus idempotent dedupe.
+Read the docs
+
+hub.go
+
+hub.SendToUser(user.ID, realtime.Event{
+Type: "job.finished",
+Data: map[string]any{"id": job.ID},
+})
+
+Realtime
+
+A WebSocket hub with JWT handshake auth. Push events to one user or broadcast to everyone.
+Read the docs
+
+Frequently asked questions
+
+Do I have to use all of these?
+No. Every battery is opt-in at the call site — if you never call mailer.Send or mount Pulse, it simply does nothing. Nothing here forces a pattern on the rest of your app; unused batteries add no runtime cost and can be deleted outright.
+Can I swap the storage / email / AI provider?
+Yes — that's the point of the wrappers. Storage speaks the S3 API, so MinIO in dev and Cloudflare R2 or AWS S3 in prod are a config change. Email is Resend by default but the mailer is an interface. AI routes through the Vercel AI Gateway, so switching from anthropic/claude-sonnet-4-6 to another model is a one-string edit.
+Are these external services or built into Grit?
+Both, depending on the battery. Auth, RBAC, caching, jobs, cron, Sentinel, Pulse, GORM Studio, feature flags, webhooks and realtime are pure Go that ships inside your binary. File storage, email and AI are thin, swappable clients in front of services you bring (an S3 bucket, a Resend key, an AI Gateway key). No proprietary Grit cloud is required.
+What do the batteries cost me in bundle size or dependencies?
+Nothing on the frontend — these are backend features, so your Next.js bundle is untouched. On the Go side they compile into one static binary, and unused packages are eliminated by the compiler. The heaviest shared dependency is Redis, and only jobs, cron and caching need it.
+Do the batteries work in every architecture mode?
+Yes. Because they live in the Go API, they're available whether you scaffold the full triple stack, a single embedded binary, an API-only backend, or a mobile/desktop client talking to a Grit API. See architecture modes for the details.
+
+Something wrong, unclear, or missing on this page?
+
+Open an issue: your feedback shapes Grit, and we fix docs fast.
+
+Raise an issue on GitHub

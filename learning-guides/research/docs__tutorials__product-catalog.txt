@@ -1,0 +1,838 @@
+Tutorial
+Build a Product Catalog
+
+Build a product catalog with multi-step admin forms, sortable data tables on both admin and web apps, and a public inquiry form — all powered by Grit's code generator and standalone components.
+
+One resourceAdmin · web · form
+One resource powers the admin table, a public web catalog, and an inquiry form
+
+What you'll learn
+
+✓Generate full-stack resources with grit generate resource
+
+✓Configure multi-step forms with custom steps in the admin panel
+
+✓Use DataTable as a standalone component on the web app
+
+✓Use FormBuilder as a standalone component for a public inquiry form
+
+✓Wire everything together into a working product catalog
+
+Prerequisites
+
+✓Go 1.26.6+ installed (an older Go downloads it)
+
+✓Node.js 18+ and pnpm installed
+
+✓Docker and Docker Compose installed
+
+✓Grit CLI installed — see /docs/getting-started/installation (one-line install script)
+
+1
+
+Scaffold the project
+
+Create a new Grit monorepo called product-catalog. This scaffolds the Go API, Next.js web app, admin panel, shared package, and Docker configuration.
+
+Terminal
+Copy to clipboard
+
+$grit new product-catalog
+
+$cd product-catalog
+
+Grit creates the folder structure, initializes go.mod, runs pnpm install, and prints the next steps. Your monorepo is ready.
+
+2
+
+Start Docker services
+
+Spin up PostgreSQL, Redis, MinIO, and Mailhog. These run in the background and persist data across restarts.
+
+Terminal
+Copy to clipboard
+
+$docker compose up -d
+
+3
+
+Generate the Product resource
+
+Use the code generator to create a full-stack Product resource with fields for name, description, price, SKU, stock, category, and status flags. This single command generates the Go model, handler, service, Zod schemas, TypeScript types, React Query hooks, and admin page.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Product --fields "name:string,description:text,price:float,sku:string:unique,category:string,stock:int,image_url:string,published:bool,featured:bool"
+
+The generator creates these files:
+
+generated files
+Copy to clipboard
+
+apps/api/internal/models/product.go        # GORM model
+
+apps/api/internal/handlers/product.go      # CRUD handler
+
+apps/api/internal/services/product.go      # Business logic
+
+packages/shared/schemas/product.ts         # Zod validation
+
+packages/shared/types/product.ts           # TypeScript types
+
+apps/web/hooks/use-products.ts             # React Query hooks (web)
+
+apps/admin/hooks/use-products.ts           # React Query hooks (admin)
+
+apps/admin/app/resources/products/page.tsx # Admin page
+
+apps/admin/resources/products.ts           # Resource definition
+
+Here is the generated Go model:
+
+apps/api/internal/models/product.go
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"gorm.io/gorm"
+
+)
+
+type Product struct {
+
+ID          uint           `gorm:"primarykey" json:"id"`
+
+Name        string         `gorm:"size:255;not null" json:"name" binding:"required"`
+
+Description string         `gorm:"type:text" json:"description"`
+
+Price       float64        `gorm:"not null;default:0" json:"price"`
+
+Sku         string         `gorm:"size:255;uniqueIndex;not null" json:"sku" binding:"required"`
+
+Category    string         `gorm:"size:255" json:"category"`
+
+Stock       int            `gorm:"default:0" json:"stock"`
+
+ImageUrl    string         `gorm:"size:255" json:"image_url"`
+
+Published   bool           `gorm:"default:false" json:"published"`
+
+Featured    bool           `gorm:"default:false" json:"featured"`
+
+CreatedAt   time.Time      `json:"created_at"`
+
+UpdatedAt   time.Time      `json:"updated_at"`
+
+DeletedAt   gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+
+}
+
+4
+
+Configure multi-step forms in the admin resource
+
+Products have many fields, so let's organize the admin form into three steps: Basic Info, Pricing & Inventory, and Display Settings. Open the generated resource definition and set formView to "modal-steps" with custom steps.
+
+apps/admin/resources/products.ts
+Copy to clipboard
+
+import { defineResource } from "@/lib/resource";
+
+export default defineResource({
+
+name: "Product",
+
+endpoint: "/api/products",
+
+icon: "Package",
+
+// Use multi-step modal form
+
+formView: "modal-steps",
+
+table: {
+
+columns: [
+
+{ key: "id", label: "ID", sortable: true },
+
+{ key: "name", label: "Name", sortable: true, searchable: true },
+
+{ key: "sku", label: "SKU", sortable: true },
+
+{ key: "category", label: "Category", sortable: true, format: "badge" },
+
+{ key: "price", label: "Price", sortable: true, format: "currency" },
+
+{ key: "stock", label: "Stock", sortable: true },
+
+{ key: "published", label: "Status", format: "badge",
+
+badge: {
+
+true: { label: "Published", color: "green" },
+
+false: { label: "Draft", color: "yellow" },
+
+},
+
+},
+
+{ key: "featured", label: "Featured", format: "boolean" },
+
+{ key: "created_at", label: "Created", format: "relative", sortable: true },
+
+],
+
+defaultSort: { key: "created_at", direction: "desc" },
+
+filters: [
+
+{
+
+key: "published",
+
+type: "select",
+
+label: "Status",
+
+options: [
+
+{ label: "Published", value: "true" },
+
+{ label: "Draft", value: "false" },
+
+],
+
+},
+
+{
+
+key: "category",
+
+type: "select",
+
+label: "Category",
+
+options: [
+
+{ label: "Electronics", value: "Electronics" },
+
+{ label: "Clothing", value: "Clothing" },
+
+{ label: "Books", value: "Books" },
+
+{ label: "Home & Garden", value: "Home & Garden" },
+
+],
+
+},
+
+],
+
+},
+
+form: {
+
+// Define custom steps
+
+steps: [
+
+{
+
+title: "Basic Info",
+
+description: "Product name, description, and category",
+
+fields: ["name", "description", "category"],
+
+},
+
+{
+
+title: "Pricing & Inventory",
+
+description: "Set the price, SKU, and stock level",
+
+fields: ["price", "sku", "stock"],
+
+},
+
+{
+
+title: "Display Settings",
+
+description: "Image, visibility, and featured status",
+
+fields: ["image_url", "published", "featured"],
+
+},
+
+],
+
+// Horizontal step indicator (default)
+
+stepVariant: "horizontal",
+
+fields: [
+
+{ key: "name", label: "Product Name", type: "text", required: true,
+
+placeholder: "e.g. Wireless Headphones" },
+
+{ key: "description", label: "Description", type: "textarea", rows: 4,
+
+placeholder: "Describe the product..." },
+
+{ key: "category", label: "Category", type: "select", required: true,
+
+options: [
+
+{ label: "Electronics", value: "Electronics" },
+
+{ label: "Clothing", value: "Clothing" },
+
+{ label: "Books", value: "Books" },
+
+{ label: "Home & Garden", value: "Home & Garden" },
+
+] },
+
+{ key: "price", label: "Price ($)", type: "number", required: true,
+
+placeholder: "29.99" },
+
+{ key: "sku", label: "SKU", type: "text", required: true,
+
+placeholder: "e.g. WH-1000XM5" },
+
+{ key: "stock", label: "Stock Quantity", type: "number",
+
+placeholder: "0" },
+
+{ key: "image_url", label: "Image URL", type: "text",
+
+placeholder: "https://example.com/image.jpg" },
+
+{ key: "published", label: "Published", type: "toggle",
+
+description: "Make this product visible to customers" },
+
+{ key: "featured", label: "Featured", type: "toggle",
+
+description: "Show on the homepage featured section" },
+
+],
+
+},
+
+});
+
+Multi-step forms
+
+Setting formView: "modal-steps" renders a wizard-style modal with step indicators, per-step validation, and a progress bar. Each step only validates its own fields before allowing navigation to the next step. You can also use "page-steps" for a full-page layout. See the Multi-Step Forms guide for all options.
+
+5
+
+Start the app and test the admin panel
+
+Start all services with a single command. The Go API runs migrations automatically on startup, creating the products table in PostgreSQL.
+
+Terminal
+Copy to clipboard
+
+$grit start
+
+Open the admin panel at http://localhost:3001 and navigate to the Products page in the sidebar. Click Create to see the multi-step form in action:
+
+1.Step 1: Fill in the product name, description, and category
+
+2.Step 2: Set the price, SKU, and stock quantity
+
+3.Step 3: Configure the image URL and toggle published/featured
+
+Each step validates its own fields before allowing you to proceed. The progress bar at the top shows your completion status, and you can click on completed steps to go back and edit.
+
+6
+
+Add a public products endpoint
+
+The generated API requires authentication by default. Add a public endpoint that returns only published products for the web app. Open the product handler and add a new method:
+
+apps/api/internal/handlers/product.go — add this method
+Copy to clipboard
+
+// GetPublished returns only published products for the public storefront.
+
+func (h *ProductHandler) GetPublished(c *gin.Context) {
+
+page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+
+pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+
+search := c.Query("search")
+
+sort := c.DefaultQuery("sort", "created_at")
+
+order := c.DefaultQuery("order", "desc")
+
+var products []models.Product
+
+var total int64
+
+query := h.db.Model(&models.Product{}).Where("published = ?", true)
+
+if search != "" {
+
+query = query.Where("name ILIKE ? OR description ILIKE ?",
+
+"%"+search+"%", "%"+search+"%")
+
+}
+
+query.Count(&total)
+
+direction := "ASC"
+
+if order == "desc" {
+
+direction = "DESC"
+
+}
+
+query = query.Order(sort + " " + direction)
+
+offset := (page - 1) * pageSize
+
+query.Offset(offset).Limit(pageSize).Find(&products)
+
+pages := int(total) / pageSize
+
+if int(total)%pageSize != 0 {
+
+pages++
+
+}
+
+c.JSON(http.StatusOK, gin.H{
+
+"data": products,
+
+"meta": gin.H{
+
+"total":     total,
+
+"page":      page,
+
+"page_size": pageSize,
+
+"pages":     pages,
+
+},
+
+})
+
+}
+
+Register the route in routes.go under the public group (no auth required):
+
+apps/api/internal/routes/routes.go — public group
+Copy to clipboard
+
+// Public routes (no authentication required)
+
+public := router.Group("/api")
+
+{
+
+// ... existing public routes ...
+
+// Published products — public access
+
+public.GET("/products/published", productHandler.GetPublished)
+
+}
+
+7
+
+Build a public product catalog with standalone DataTable
+
+Now the interesting part — use the DataTable component from the admin panel as a standalone component on the web app to display a sortable, filterable product listing for customers.
+
+Standalone components
+
+Grit's DataTable and FormBuilder are fully prop-driven. They work outside the admin resource system on any page in any app. See the Standalone Usage guide for the full reference.
+
+First, copy the components you need from the admin app into the web app (or import across apps if your monorepo supports it). You need:
+
+files to copy from admin to web
+Copy to clipboard
+
+# Core types
+
+apps/admin/lib/resource.ts → apps/web/lib/resource.ts
+
+# Table components
+
+apps/admin/components/tables/data-table.tsx
+
+apps/admin/components/tables/column-header.tsx
+
+apps/admin/components/tables/table-pagination.tsx
+
+apps/admin/components/tables/cell-renderers.tsx
+
+apps/admin/components/tables/formatters.ts
+
+Now create the public product catalog page:
+
+apps/web/app/(dashboard)/products/page.tsx
+Copy to clipboard
+
+"use client";
+
+import { useState } from "react";
+
+import { useQuery } from "@tanstack/react-query";
+
+import { apiClient } from "@/lib/api-client";
+
+import { DataTable } from "@/components/tables/data-table";
+
+import type { ColumnDefinition } from "@/lib/resource";
+
+// Define columns — same format as admin resource definitions
+
+const columns: ColumnDefinition[] = [
+
+{ key: "name", label: "Product", sortable: true, searchable: true },
+
+{ key: "category", label: "Category", sortable: true, format: "badge" },
+
+{ key: "price", label: "Price", sortable: true, format: "currency" },
+
+{ key: "stock", label: "In Stock", sortable: true },
+
+];
+
+export default function ProductCatalogPage() {
+
+const [page, setPage] = useState(1);
+
+const [pageSize] = useState(12);
+
+const [search, setSearch] = useState("");
+
+const [sort, setSort] = useState("created_at");
+
+const [order, setOrder] = useState<"asc" | "desc">("desc");
+
+const { data, isLoading } = useQuery({
+
+queryKey: ["products", "published", page, pageSize, search, sort, order],
+
+queryFn: async () => {
+
+const { data } = await apiClient.get("/api/products/published", {
+
+params: { page, page_size: pageSize, search, sort, order },
+
+});
+
+return data;
+
+},
+
+});
+
+return (
+
+<div className="space-y-6">
+
+<div>
+
+<h1 className="text-3xl font-bold tracking-tight">Products</h1>
+
+<p className="text-muted-foreground mt-1">
+
+Browse our complete product catalog
+
+</p>
+
+</div>
+
+<DataTable
+
+columns={columns}
+
+data={data?.data ?? []}
+
+totalItems={data?.meta?.total ?? 0}
+
+page={page}
+
+pageSize={pageSize}
+
+onPageChange={setPage}
+
+sort={sort}
+
+order={order}
+
+onSortChange={(key, dir) => {
+
+setSort(key);
+
+setOrder(dir);
+
+}}
+
+search={search}
+
+onSearchChange={(val) => {
+
+setSearch(val);
+
+setPage(1);
+
+}}
+
+isLoading={isLoading}
+
+/>
+
+</div>
+
+);
+
+}
+
+The standalone DataTable gives your public catalog the same polished experience as the admin panel — sortable columns, search, pagination, formatted badges and currency — with zero extra code.
+
+8
+
+Add an inquiry form with standalone FormBuilder
+
+Use the FormBuilder component standalone on the web app to create a product inquiry form. Copy the form components from admin:
+
+files to copy from admin to web
+Copy to clipboard
+
+# Form components
+
+apps/admin/components/forms/form-builder.tsx
+
+apps/admin/components/forms/fields/text-field.tsx
+
+apps/admin/components/forms/fields/textarea-field.tsx
+
+apps/admin/components/forms/fields/number-field.tsx
+
+apps/admin/components/forms/fields/select-field.tsx
+
+apps/admin/components/forms/fields/toggle-field.tsx
+
+Now create the inquiry page with a FormDefinition:
+
+apps/web/app/(dashboard)/inquiry/page.tsx
+Copy to clipboard
+
+"use client";
+
+import { useState } from "react";
+
+import { FormBuilder } from "@/components/forms/form-builder";
+
+import type { FormDefinition } from "@/lib/resource";
+
+import { apiClient } from "@/lib/api-client";
+
+const inquiryForm: FormDefinition = {
+
+layout: "two-column",
+
+fields: [
+
+{ key: "name", label: "Full Name", type: "text", required: true,
+
+placeholder: "John Doe" },
+
+{ key: "email", label: "Email Address", type: "text", required: true,
+
+placeholder: "john@example.com" },
+
+{ key: "phone", label: "Phone Number", type: "text",
+
+placeholder: "+1 (555) 000-0000" },
+
+{ key: "product", label: "Product of Interest", type: "select",
+
+required: true,
+
+options: [
+
+{ label: "Wireless Headphones", value: "headphones" },
+
+{ label: "Smart Watch", value: "smartwatch" },
+
+{ label: "Bluetooth Speaker", value: "speaker" },
+
+{ label: "Other", value: "other" },
+
+] },
+
+{ key: "quantity", label: "Quantity", type: "number",
+
+placeholder: "1" },
+
+{ key: "budget", label: "Budget Range", type: "select",
+
+options: [
+
+{ label: "Under $50", value: "under-50" },
+
+{ label: "$50 - $100", value: "50-100" },
+
+{ label: "$100 - $500", value: "100-500" },
+
+{ label: "$500+", value: "500-plus" },
+
+] },
+
+{ key: "message", label: "Message", type: "textarea", rows: 4,
+
+placeholder: "Tell us about your requirements..." },
+
+],
+
+};
+
+export default function InquiryPage() {
+
+const [submitted, setSubmitted] = useState(false);
+
+const handleSubmit = async (data: Record<string, unknown>) => {
+
+await apiClient.post("/api/inquiries", data);
+
+setSubmitted(true);
+
+};
+
+if (submitted) {
+
+return (
+
+<div className="max-w-lg mx-auto text-center py-20">
+
+<div className="text-4xl mb-4">&#10003;</div>
+
+<h1 className="text-2xl font-bold mb-2">Inquiry Submitted</h1>
+
+<p className="text-muted-foreground">
+
+Thank you! We'll get back to you within 24 hours.
+
+</p>
+
+</div>
+
+);
+
+}
+
+return (
+
+<div className="max-w-2xl mx-auto py-8">
+
+<h1 className="text-3xl font-bold tracking-tight mb-2">
+
+Product Inquiry
+
+</h1>
+
+<p className="text-muted-foreground mb-8">
+
+Interested in a product? Fill out this form and our team will
+
+reach out to you.
+
+</p>
+
+<FormBuilder
+
+form={inquiryForm}
+
+onSubmit={handleSubmit}
+
+onCancel={() => window.history.back()}
+
+submitLabel="Send Inquiry"
+
+/>
+
+</div>
+
+);
+
+}
+
+The FormBuilder handles validation, error messages, and the submit/cancel buttons. You define the fields declaratively and it renders a polished form with zero boilerplate. The web app already includes react-hook-form as a dependency, so it works out of the box.
+
+9
+
+Run and test everything
+
+With the Go API and both frontend apps running, open these URLs in your browser:
+
+http://localhost:3001— Admin panel — create products with the multi-step form, manage with the DataTable
+
+http://localhost:3000/products— Web app — browse published products with the standalone DataTable
+
+http://localhost:3000/inquiry— Web app — submit a product inquiry with the standalone FormBuilder
+
+http://localhost:8080/studio— GORM Studio — browse the products table directly
+
+Try creating a few products in the admin panel using the multi-step form. Set some as published, then switch to the web app to see them in the public catalog. Submit an inquiry to test the standalone form.
+
+What you've built
+
+✓A full-stack product catalog with Go API and Next.js frontend
+
+✓A Product resource generated with a single CLI command
+
+✓A multi-step admin form with three steps: Basic Info, Pricing & Inventory, Display Settings
+
+✓Per-step validation, progress bar, and clickable step navigation
+
+✓An admin DataTable with sorting, filtering by status and category, and search
+
+✓A public product catalog on the web app using standalone DataTable
+
+✓A product inquiry form on the web app using standalone FormBuilder
+
+✓A public API endpoint for published products only
+
+✓Docker-based PostgreSQL, Redis, MinIO, and Mailhog running locally
+
+Next steps
+
+Now that you have a working product catalog, here are some ideas to extend it:
+
+Vertical step variant — Change stepVariant to "vertical" to render a sidebar-style step indicator for a different look.
+
+Page-steps form — Change formView to "page-steps" for a full-page wizard experience instead of a modal.
+
+Image uploads — Use Grit's file storage service to upload actual product images instead of URLs.
+
+Multi-step checkout — Use the standalone FormStepper on the web app to build a multi-step checkout flow for purchasing products.
+
+Relationships — Generate a Category resource and add a belongs_to relationship so products have proper category management.
+
+Build an E-Commerce StoreUsing Grit with Claude

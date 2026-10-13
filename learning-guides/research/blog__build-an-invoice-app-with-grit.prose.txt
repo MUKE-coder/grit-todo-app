@@ -1,0 +1,268 @@
+ All postsFeature lists are easy to skim and hard to remember. So instead of listing what's
+new in Grit, let's build something with it, a small but real invoice app, and
+pick up every new piece along the way. By the end you'll have customers, invoices
+with line items, auto-generated invoice numbers, a status dropdown, and a
+printable invoice, and you'll have touched relations, the new field types
+(including the one-modifier auto invoice number), grit g field, and the print
+view without any of them feeling like a detour.
+
+Ten minutes. One command per step. Each step links to the docs that explain it in
+full.
+
+Step 1: Scaffold, with a theme that fits
+
+An invoicing tool is a business app, so let's give it a business look. Grit ships
+three themes; pulse is the Cloudflare-inspired one: confident blue CTAs, cool
+grey-blue canvas, white elevated cards. Pick it right at scaffold time:
+
+That's a Turborepo with a Go API, a Next.js web app, and an admin panel, all
+sharing one set of types and Zod schemas. (aurora is the Apple-style
+black/white/grey theme if you'd rather; atlas is the default.)
+
+📖 Docs: Creating a project ·
+Architecture modes
+
+Step 2: Customers, so invoices have someone to belong to
+
+Every invoice needs a customer. Generate the resource first, it's the parent side
+of our first relation:
+
+One command, and you have the Go model, service, and handler; the REST routes; the
+Zod schema and TypeScript types in the shared package; the React Query hooks; and
+a fully working admin page with a searchable, sortable table and a form. Nothing
+to wire.
+
+📖 Docs: Code generation, what the eight
+generated files are and how to customize them.
+
+Step 3, The invoice: two relations and two choice fields
+
+This is the heart of the app, so let's slow down. One generate resource call
+models an invoice that belongs to a customer, has many line items, and
+uses the new option-backed field types for its status and a flag:
+
+What is number:string:auto:INV? It's the invoice number, auto-generated.
+Read it as "a string column named number, auto-numbered with the prefix INV."
+That one modifier stands up an atomic counter, fills the field on the server as
+INV-202607-0001, marks the column optional, and hides it from the form, so the
+user never types or even sees an empty number box. We unpack exactly what it does
+in Step 4.
+
+That's a lot on one line, so here's each piece, on its own.
+
+The two relations
+
+customer:belongs_to:Customer is the to-one side. The invoice gets a
+customer_id foreign key, and, the part you'd otherwise hand-build, the admin
+form renders a searchable customer picker instead of a raw ID box, backed by a
+live query against /api/customers.
+
+--items "InvoiceItem:description:string,qty:int,unit_rate:float" is the
+to-many side. It does three things in one flag: generates the whole
+InvoiceItem resource, gives it a belongs_to back to the invoice, and renders
+it as an inline, add/remove line-items table right inside the invoice form.
+When you save the invoice, its rows are written in the same database
+transaction, so an invoice and its items are always consistent.
+
+📖 Docs: Relationships in the admin ·
+Invoices & line items (the full --items breakdown,
+including how to do it as two separate commands).
+
+The two choice fields, and how they render
+
+status and sent use Grit's new option-backed field types. There are four,
+and the whole point is that you declare the choices in the field spec and Grit
+generates the control, the validation, and the types to match. Here's each one:
+
+You writeRenders in the form asStored asTypes generatedstatus:select:draft=Draft|paid=Paida dropdown (<select>)Go stringZod z.enum([...]), TS "draft" | "paid"rating:radio:low=Low|high=Higha radio-button group (single choice)Go stringZod z.enum([...]), TS "low" | "high"channels:check:email=Email|sms=SMSa checkbox group (multi-select)Go datatypes.JSONSlice[string] (JSON array)Zod z.array(z.enum([...])), TS ("email" | "sms")[]sent:togglea switchGo boolZod z.boolean(), TS boolean
+So in our invoice, status:select:… becomes a dropdown with Draft / Sent /
+Paid, stored as a string and validated against exactly those three values
+everywhere: the Go binding, the Zod schema, and the TypeScript union all agree
+because they're generated from the same token. And sent:toggle is a simple
+on/off switch backed by a boolean.
+
+select and radio are both single-choice from a fixed list and generate the
+exact same Go/Zod/TS: the only difference is the control. select is a compact
+dropdown; radio lays every option out as a button. Reach for radio when there
+are just a few choices you want visible at once (a plan tier, a priority), and
+select when the list is longer or space is tight.
+
+Want multiple choices instead of one? That's check: it renders a checkbox
+group and stores the ticked values as a JSON array. For example, if invoices could
+be delivered several ways: channels:check:email=Email|sms=SMS|push=Push.
+
+Labels are optional
+
+The syntax is type:value=Label|value=Label, but the =Label part is
+optional. Give just the values and Grit generates the labels for you by
+capitalizing each one:
+
+Multi-word values are humanized, not just capitalized: in_progress becomes
+In Progress, awaiting_payment becomes Awaiting Payment. You only reach
+for value=Label when the label needs to differ from the stored value (say
+net_30=Net 30, or a value that's an abbreviation you want spelled out). Mix and
+match freely: status:select:draft|sent=Sent to client|paid works.
+
+📖 Docs: Field types, the full table mapping
+every type to its Go, GORM, TypeScript, Zod, and form representation.
+
+The same shape, four other apps
+
+An invoice is just one instance of a parent with a lifecycle status and a table
+of child rows. Once you see the shape, it's everywhere. Here are four other apps,
+each one command, each leaning on the new field types the same way:
+
+E-commerce: orders and line items. A select for the order lifecycle, a
+radio for the two shipping options, line items as order lines.
+
+Loan management: loans and repayments. A select for the loan state, a
+radio for the risk band, and each repayment carries a date and a toggle.
+
+Subscriptions: plans and line charges. Two selects (the plan and the
+billing state) and an auto_renew toggle; line charges are the children.
+
+Clinic: prescriptions and medications. A select for the prescription
+status, a radio for priority, and the prescribed drugs as line items.
+
+Notice none of these spell out a single label: the bare select/radio values
+get capitalized automatically (past_due → Past Due). Swap the nouns, keep
+the moves.
+
+Step 4: Auto-number the invoices
+
+Nobody should type INV-0001 by hand, and two people creating invoices at the
+same moment must never collide. Here's the surprise: we already did this in
+Step 3. The number:string:auto:INV field is the entire feature. There's no
+second command, no hook to write. Let's unpack what that one modifier bought us.
+
+What auto generated for you. Declaring the field with :auto made Grit:
+
+Stand up an atomic counter. It wrote internal/sequence/: a generic
+counter package whose count lives in a database row that's locked and
+incremented in a transaction, which is what makes it atomic and gap-free, and
+registered its table with AutoMigrate. (First auto field in the project only;
+later ones reuse it.)
+
+Fill the field in BeforeCreate. The generated model assigns the next
+number on insert, and only when one isn't already set, so an imported invoice
+keeps its original:
+
+Make the column optional and hide it from the form. The API never demands a
+number, and the create/edit form has no Number box at all: it still shows on the
+table and detail page.
+
+So what does the user see? They fill in the customer, status, and line items,
+hit Save, and the invoice comes back numbered INV-202607-0001. The number was
+assigned on the server, at create time, never typed, never even shown as an
+empty field. The counter increments in the same transaction as the insert, so
+it's safe under concurrent load: no duplicates, no gaps.
+
+Why is the sequence name "invoice_number" and not "invoice"? Each auto
+field gets its own counter keyed by <model>_<field>, so an invoice could have a
+separate auto reference number on its own series without the two colliding.
+
+When you need more control: grit generate sequence. auto is a shortcut over
+a lower-level command, and it makes one choice for you: monthly reset, 4-digit
+width. Want a yearly reset, no reset, or a different width? Or to number an
+existing column, or call the counter from your own handler code? Generate the
+sequence explicitly instead:
+
+This writes the same counter package plus a typed helper,
+services.NextInvoiceNumber(db, t), that you call yourself, from a handler
+(where importing services is fine), or by hand-writing the same BeforeCreate
+hook auto generates. One rule if you call it from a model: use the generic
+sequence.Next directly, never the services.NextInvoiceNumber wrapper:
+the wrapper imports models, so calling it from a model is a models → services → models import cycle that won't compile. The sequence package imports no
+models, so a model can always call it. --reset never drops the date segment
+entirely for one continuous series (INV-000001, INV-000002, …), and if you want
+a shape like 2026/Q3/0001, the helper is plain Go you can edit.
+
+📖 Docs: Invoices & line items → Auto-numbering ·
+Field types → Auto-number
+
+Step 5: The column you forgot
+
+You build for ten minutes and realize invoices need a due date. In most
+generators that means regenerating (and clobbering the auto-number BeforeCreate
+hook) or hand-editing five files. In Grit it's one command that adds the column
+in place:
+
+It injects the field into the Go model, the create and update Zod schemas, the
+TypeScript type, and the admin form and table, at structural anchors, so your
+BeforeCreate edit is untouched. There's no migration file to manage; the model
+is the source of truth, so the database column appears on the next migrate:
+
+The same command adds a dropdown just as easily, labels-optional and all:
+grit g field Invoice terms:select:net_15=Net 15|net_30=Net 30.
+
+📖 Docs: grit g field ·
+Migrations
+
+Step 6: Run it, and print an invoice
+
+Bring the schema up and start everything:
+
+Open the admin panel, add a customer, then create an invoice: pick the customer
+from the searchable dropdown, choose a status from the select, flip the
+sent switch, add a couple of line items in the inline table, and save. You
+never touch the number: it fills itself in on save (Step 4).
+
+Where does the line-item total come from?
+
+As you type quantities and rates, the inline table shows a per-row Total and a
+grand total at the bottom, and you didn't ask for either. That's a small
+convenience, so it's worth knowing exactly how it works, because it's driven by
+column names, not magic:
+
+The line-items table looks for one column whose name matches a quantity
+pattern (qty or quantity) and one that matches a money pattern
+(unit_rate, unit_price, rate, price, or amount).
+
+If it finds both, it shows Total = quantity × money per row, and sums them.
+Our qty:int and unit_rate:float match, so you get it for free.
+
+Two things follow from that. First, the total is display-only: it's computed
+in the browser to help data entry; only your declared columns (description,
+qty, unit_rate) are actually submitted and stored. If you need a persisted
+total, add an amount column and compute it in the item's BeforeSave hook: the
+same pattern as the invoice number. Second, because the trigger is the column
+name, if you rename qty to count or unit_rate to cost, the auto-total
+quietly stops appearing: rename them back to a name in those patterns (or keep
+qty/unit_rate) and it returns. Nothing breaks either way; you just gain or lose
+the convenience column.
+
+Now open that invoice's detail page and hit Print. Every generated resource
+detail page ships with the button, and a print stylesheet does the rest: the
+detail content lives in a #print-area, and the sidebar, navbar, Edit/Delete
+controls, and unrelated tables are all marked no-print. What reaches the paper
+is exactly the invoice and its line items (customer, status, dates, the itemized
+table) with no per-resource template to write.
+
+📖 Docs: Migrations ·
+Invoices & line items → Printing
+
+What you actually built
+
+Ten minutes, six commands, and you have:
+
+Customers and invoices with a belongs_to relation and a searchable picker.
+
+Line items as an inline, atomically-saved table (--items).
+
+A status dropdown and a switch, with their options: labels optional:
+generated across Go, Zod, and TypeScript so they can't disagree.
+
+Auto-numbered invoices that are safe under concurrent load.
+
+A due date you added after the fact without regenerating anything.
+
+A printable invoice, for free.
+
+And "Invoice" is just the example: the exact same moves build orders and
+order-items, subscriptions and line charges, or purchase-orders and receipts.
+Swap the nouns; the commands don't change.
+
+Written & published byJB, Creator of GritFounder of Grit and author of The Daily Grit. A 5-minute morning read on building full-stack apps with Go + React.
+SubscribeBuild it with Grit
+Go + React, batteries included. Scaffold a production-ready app in one command.
+Get started

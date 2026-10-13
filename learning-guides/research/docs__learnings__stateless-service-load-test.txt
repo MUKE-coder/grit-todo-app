@@ -1,0 +1,578 @@
+Learnings · Challenge #1
+Stateless service + k6 load test
+
+Scaffold a stateless Go API with grit new myapp --api, load-test the /api/health endpoint with k6, and commit a latency chart showing p50 / p95 / p99 of the run.
+
+Stateless APIMeasured result
+Scaffold a stateless API, hammer /api/health with k6, and commit the p50 / p95 / p99 chart
+
+The challenge
+
+Scaffold the repo; a stateless HTTP service + health-check endpoint; load-test it (k6 or autocannon); record p50 / p95 / p99.
+
+Milestone: A committed latency chart of the service under load.
+
+What we're measuring (and why)
+
+Two terms drive the whole exercise. Get them right and the rest is mechanical.
+
+Stateless HTTP service
+
+The server keeps no per-client memory between requests. Every request stands alone — no session in RAM, no in-process counter, no "remember me from last time". That property is what makes load tests meaningful: throughput scales horizontally, and a slow request is the service's fault, not state contention.
+
+p50 / p95 / p99 latency
+
+Percentiles, not averages. p50 is the median — half of requests were faster, half slower. p95 is the value 95% of requests beat. p99 is what 99% of requests beat — i.e. only 1 in 100 was slower. Averages hide tail latency; percentiles expose it. A service with p50 of 5 ms and p99 of 2,000 ms is unusable for that unlucky 1% — and the average won't show it.
+
+Prerequisites
+
+Go 1.24+ installed (verify with `go version`)
+
+Grit CLI installed (`go install github.com/MUKE-coder/grit/v3/cmd/grit@latest`) — needs to be from v3.24+ for SQLite support
+
+k6 — install instructions in Step 4 below
+
+Either curl or any HTTP client to sanity-check the endpoint
+
+1
+
+Scaffold the stateless API
+
+The --api flag tells Grit to produce a headless Go API kit — pure Gin + GORM, no frontend at all. That's exactly what we want: the smallest possible surface area to load-test.
+
+Terminal
+Copy to clipboard
+
+$grit new bench-api --api
+
+$cd bench-api
+
+The scaffolder creates a small monorepo with the Go API inside apps/api/. Trimmed to what matters for this exercise:
+
+bench-api/
+Copy to clipboard
+
+bench-api/
+
+├── .env                       ← DATABASE_URL, JWT_SECRET, etc. live here
+
+├── .env.example
+
+├── docker-compose.yml         ← Postgres + Redis + MinIO for local dev
+
+├── grit.json
+
+└── apps/
+
+└── api/
+
+├── go.mod
+
+├── .air.toml          ← hot reload via air
+
+├── cmd/
+
+│   ├── server/        ← main.go is here — entry point for the API
+
+│   ├── migrate/
+
+│   └── seed/
+
+└── internal/
+
+├── config/        ← loads .env, exposes typed Config struct
+
+├── database/      ← Postgres connection + AutoMigrate
+
+├── handlers/
+
+├── middleware/
+
+├── models/
+
+├── routes/
+
+│   └── routes.go  ← the /api/health route lives here
+
+└── services/
+
+Two things to know up front:
+--api still produces a monorepo (apps/api/) — not a flat single-folder project. The main.go entry point is at apps/api/cmd/server/main.go.
+
+The .env sits at project root (bench-api/.env), and the config loader expects you to run the server with the project root as your working directory. If you cd into apps/api/cmd/server and run go run ., .env won't be loaded and you'll see Failed to load config: DATABASE_URL is required. Step 3 shows the right invocation.
+
+2
+
+Tour the health-check endpoint
+
+Grit pre-wires /api/health as a public, no-auth endpoint. Open apps/api/internal/routes/routes.go and find it:
+
+apps/api/internal/routes/routes.go
+Copy to clipboard
+
+// Health check
+
+r.GET("/api/health", func(c *gin.Context) {
+
+c.JSON(http.StatusOK, gin.H{
+
+"status":  "ok",
+
+"version": "0.1.0",
+
+})
+
+})
+
+It's deliberately tiny — no DB hit, no auth, no allocation beyond the JSON response. That gives us a clean read of the framework's overhead (Gin + Go's net/http) without database or external service noise polluting the number.
+
+Why this endpoint is the right one to bench: it answers the question "how fast can my framework hand off a request and serialize a tiny JSON response?". Once you add a DB query or external API call, you're measuring that, not the service. Start clean, then complicate.
+
+3
+
+Switch to SQLite & run the API
+
+The scaffold defaults to Postgres (via the docker-compose service it ships). For a benchmark we want zero infrastructure, so let's flip the connection to SQLite — Grit's database package supports both. Open .env at project root and edit the DATABASE_URL line:
+
+bench-api/.env
+Copy to clipboard
+
+# Database — Postgres (default) or SQLite
+
+#   postgres://...        → Postgres (requires docker compose up -d postgres)
+
+#   sqlite:./app.db       → SQLite file (no Docker, pure-Go driver)
+
+#   sqlite::memory:       → SQLite in memory (great for tests; gone on restart)
+
+DATABASE_URL=sqlite:./bench.db
+
+APP_ENV=production
+
+# Turn Sentinel (WAF) and Pulse (observability) OFF for the benchmark.
+
+# Both sit in the request middleware chain — leaving them on means we'd be
+
+# benchmarking them, not Gin. Re-enable them when you're done.
+
+SENTINEL_ENABLED=false
+
+PULSE_ENABLED=false
+
+Now run the server with grit start server. It launches the Go API from apps/api/ (where go.mod lives) with the working directory set correctly, so the config loader finds ../../.env — and it hot-reloads on changes.
+
+Terminal
+Copy to clipboard
+
+$grit start server
+
+You should see Grit's startup banner, Database connected successfully, and a line like listening on :8080. In another terminal, prove it's alive:
+
+Terminal
+Copy to clipboard
+
+$curl -i http://localhost:8080/api/health
+
+$HTTP/1.1 200 OK
+
+$Content-Type: application/json; charset=utf-8
+
+$Content-Length: 33
+
+${"status":"ok","version":"0.1.0"}
+
+Don't run from apps/api/cmd/server/. If you cd in and run go run ., the config loader can't find ../../.env (which resolves to apps/api/.env from there — wrong location) and exits with Failed to load config: DATABASE_URL is required. The fix is to run from apps/api/ with go run ./cmd/server.
+
+Why we set APP_ENV=production: Gin runs in debug mode by default — it adds non-trivial per-request overhead (extra logging, route printing on startup, slower error rendering). Always bench in release mode. Restart the server after editing .env.
+
+Prefer Postgres? Skip the .env edit, keep the original postgres://... DSN, and run docker compose up -d postgres from project root before starting the API. The rest of the tutorial works identically — the latency numbers will be slightly different (Postgres has its own connection round-trip) but the methodology is the same.
+
+4
+
+Install k6
+
+k6 is a single binary written in Go that runs JS test scripts. It's open source (Grafana Labs) and the de-facto standard for HTTP load testing.
+
+macOS
+
+Terminal
+Copy to clipboard
+
+$brew install k6
+
+Windows (winget or Chocolatey)
+
+Terminal
+Copy to clipboard
+
+$winget install k6 --source winget
+
+# or
+
+$choco install k6
+
+Linux (Debian/Ubuntu)
+
+Terminal
+Copy to clipboard
+
+$sudo gpg -k && sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+
+$echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+
+$sudo apt-get update && sudo apt-get install k6
+
+Verify with k6 version. You want v0.50+ for the built-in HTML report we'll use later.
+
+5
+
+Write the smoke test
+
+Before slamming the service with traffic, run a 30-second smoke test with one virtual user. This verifies the script works, the endpoint is reachable, and the response shape is what you expect.
+
+Create a folder for your k6 scripts:
+
+Terminal
+Copy to clipboard
+
+$mkdir -p loadtests && cd loadtests
+
+Then create smoke.js:
+
+loadtests/smoke.js
+Copy to clipboard
+
+import http from 'k6/http'
+
+import { check, sleep } from 'k6'
+
+export const options = {
+
+vus: 1,           // one virtual user
+
+duration: '30s',  // for 30 seconds
+
+thresholds: {
+
+http_req_failed:   ['rate<0.01'],    // <1% requests can fail
+
+http_req_duration: ['p(95)<200'],    // p95 must beat 200ms
+
+},
+
+}
+
+export default function () {
+
+const res = http.get('http://localhost:8080/api/health')
+
+check(res, {
+
+'status is 200':            (r) => r.status === 200,
+
+'body has "status":"ok"':   (r) => r.body.includes('"status":"ok"'),
+
+})
+
+sleep(1)
+
+}
+
+Run it:
+
+Terminal
+Copy to clipboard
+
+$k6 run smoke.js
+
+What to look for: at the end you'll see checks_succeeded at 100% and http_req_duration with low single-digit milliseconds for p50 and p95. If anything fails here, fix it before scaling up — the load test won't magically clarify a broken script.
+
+6
+
+Write the real load test
+
+The load test ramps virtual users (VUs) up, holds a peak, then ramps down. That shape — ramp → plateau → ramp-down — is the canonical "average load" profile from k6's testing types catalog. It surfaces both steady-state behavior and what happens when VUs spin up.
+
+loadtests/load.js
+Copy to clipboard
+
+import http from 'k6/http'
+
+import { check } from 'k6'
+
+export const options = {
+
+scenarios: {
+
+average_load: {
+
+executor: 'ramping-vus',
+
+startVUs: 0,
+
+stages: [
+
+{ duration: '30s',  target: 50  },   // ramp to 50 VUs over 30s
+
+{ duration: '1m30s', target: 50 },   // hold 50 VUs for 1m30s
+
+{ duration: '30s',  target: 100 },   // ramp to 100 VUs over 30s
+
+{ duration: '2m',   target: 100 },   // hold 100 VUs for 2m
+
+{ duration: '30s',  target: 0   },   // ramp down
+
+],
+
+gracefulRampDown: '10s',
+
+},
+
+},
+
+thresholds: {
+
+http_req_failed:   ['rate<0.01'],     // <1% requests can error
+
+http_req_duration: [
+
+'p(50)<50',                          // p50 under 50ms
+
+'p(95)<200',                         // p95 under 200ms
+
+'p(99)<500',                         // p99 under 500ms
+
+],
+
+},
+
+summaryTrendStats: ['min', 'med', 'avg', 'p(95)', 'p(99)', 'max'],
+
+}
+
+export default function () {
+
+const res = http.get('http://localhost:8080/api/health')
+
+check(res, { 'status is 200': (r) => r.status === 200 })
+
+}
+
+What each part does: the stages array drives the VU count over time. thresholds turns the test into a pass/fail check — if p95 climbs over 200 ms, k6 exits with a non-zero code, which is what you want in CI. summaryTrendStats tells k6 which percentiles to print at the end.
+
+7
+
+Run the load test & capture the data
+
+Run with two outputs: the JSON sample stream (for charting later) and the JSON summary (for the final aggregated numbers).
+
+Terminal
+Copy to clipboard
+
+$k6 run \
+
+$  --out json=results.jsonl \
+
+$  --summary-export=summary.json \
+
+$  load.js
+
+You'll see live progress bars and rolling metrics in the terminal. When it finishes, two new files sit in the folder:
+
+results.jsonl — one JSON sample per request (used for the chart)
+
+summary.json — aggregated metrics (used for the README table)
+
+And in the terminal, the end-of-run summary block. The line you care about most:
+
+http_req_duration..............: avg=3.42ms  min=0.31ms  med=2.81ms  max=121.6ms  p(95)=7.84ms  p(99)=18.2ms
+
+http_reqs.....................: 24812  165.41/s
+
+iteration_duration............: avg=3.78ms
+
+vus...........................: 100    min=0    max=100
+
+Copy to clipboard
+
+Run on the same machine? Cap your expectations. Running k6 and the service on one laptop costs you accuracy — they fight for the same CPU and you measure the worst of both. For a serious number, put k6 on a separate box (or another VM) on the same network.
+
+8
+
+Generate the latency chart
+
+You have three solid options for the chart, in increasing order of effort and fidelity:
+
+EASIEST
+k6's built-in HTML report
+
+k6 v0.50+ ships a one-flag HTML report with percentile lines, request rate, and error rate over time. Add a single env var when you run:
+
+Terminal
+Copy to clipboard
+
+$K6_WEB_DASHBOARD=true K6_WEB_DASHBOARD_EXPORT=report.html \
+
+$  k6 run --summary-export=summary.json load.js
+
+report.html opens in any browser. Commit it directly — that's your chart.
+
+DIY
+Custom chart from results.jsonl
+
+If you want a custom-styled chart in your README, write a short Node script that bins the JSONL into seconds and renders an SVG. Drop this into loadtests/chart.mjs:
+
+loadtests/chart.mjs
+Copy to clipboard
+
+import fs from 'node:fs'
+
+const rows = fs.readFileSync('results.jsonl', 'utf8')
+
+.trim().split('\n').map(JSON.parse)
+
+.filter(r => r.metric === 'http_req_duration' && r.type === 'Point')
+
+// Bin by second since first sample
+
+const start = new Date(rows[0].data.time).getTime()
+
+const buckets = new Map()
+
+for (const r of rows) {
+
+const t = Math.floor((new Date(r.data.time).getTime() - start) / 1000)
+
+if (!buckets.has(t)) buckets.set(t, [])
+
+buckets.get(t).push(r.data.value)
+
+}
+
+const pct = (xs, p) => {
+
+const s = [...xs].sort((a, b) => a - b)
+
+return s[Math.floor(s.length * p)] || 0
+
+}
+
+const series = [...buckets.entries()]
+
+.sort(([a], [b]) => a - b)
+
+.map(([t, vs]) => ({ t, p50: pct(vs, 0.5), p95: pct(vs, 0.95), p99: pct(vs, 0.99) }))
+
+// emit an SVG line chart
+
+const w = 800, h = 320, pad = 40
+
+const maxY = Math.max(...series.flatMap(s => [s.p50, s.p95, s.p99])) * 1.1
+
+const x = i => pad + (i / (series.length - 1)) * (w - pad * 2)
+
+const y = v => h - pad - (v / maxY) * (h - pad * 2)
+
+const line = key => series.map((s, i) => `${i ? 'L' : 'M'}${x(i)},${y(s[key])}`).join(' ')
+
+const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}">
+
+<rect width="${w}" height="${h}" fill="#0a0a0f"/>
+
+<path d="${line('p99')}" fill="none" stroke="#ff6b6b" stroke-width="2"/>
+
+<path d="${line('p95')}" fill="none" stroke="#fdcb6e" stroke-width="2"/>
+
+<path d="${line('p50')}" fill="none" stroke="#6c5ce7" stroke-width="2"/>
+
+<text x="${pad}" y="${pad - 10}" fill="#e8e8f0" font-family="monospace" font-size="14">Latency (ms) — p50 (purple) · p95 (yellow) · p99 (red)</text>
+
+</svg>`
+
+fs.writeFileSync('latency.svg', svg)
+
+console.log('wrote latency.svg')
+
+Run with node chart.mjs — out pops latency.svg ready to commit and embed in your README.
+
+PRO
+InfluxDB + Grafana (for repeat use)
+
+For a permanent perf dashboard, point k6 at an InfluxDB and import the official k6 Grafana dashboard (ID 2587). Worth setting up once when you'll be doing repeated runs; overkill for a one-shot.
+
+Terminal
+Copy to clipboard
+
+$k6 run --out influxdb=http://localhost:8086/k6 load.js
+
+For the milestone, option 1 is enough — commit report.html. If you want the chart on your README too, run option 2 and embed the SVG.
+
+9
+
+Make sense of the numbers
+
+Numbers without interpretation are noise. Here's the cheat sheet for what each metric means and what "good" looks like for a tiny health endpoint on a local box.
+
+MetricMeaningHealthy
+
+http_req_duration p50Median request time end-to-end< 10 ms
+
+http_req_duration p9595% of requests beat this< 50 ms
+
+http_req_duration p9999% of requests beat this< 200 ms
+
+http_req_failedFraction of requests that errored< 0.1 %
+
+http_reqs / iterationsThroughput (RPS)As high as the box allows
+
+vusConcurrent virtual users at sample timeMatches your stages
+
+http_req_waitingTime waiting for the first byte (TTFB)Should track p50 closely — if much higher, the server is slow to respond, not slow to send
+
+http_req_connectingTCP handshake timeEffectively 0 with keep-alive on
+
+Three traps to avoid:
+Reading averages. "Avg 5 ms" can hide a 5,000 ms p99. Always look at p95 and p99.
+
+Comparing across hardware. Numbers on your laptop tell you your laptop's number. They don't map to a $5 VPS or a 64-core server.
+
+Forgetting http_req_failed. 0% failures is table-stakes. If latency looks great but errors are at 12%, your "great latency" is just the fast failures.
+
+10
+
+Commit the milestone
+
+You've got everything. Wrap the deliverable into git:
+
+Terminal
+Copy to clipboard
+
+$git add loadtests/load.js loadtests/smoke.js loadtests/report.html loadtests/summary.json
+
+$git commit -m "perf: k6 load test — p50/p95/p99 chart of /api/health"
+
+$git push
+
+Optional but high-value: add a loadtests/README.md with the resulting numbers in a table (pasted from summary.json) and the hardware you ran it on (CPU, RAM, network). Future-you will thank you when you re-run the benchmark after a release.
+
+What I learned
+
+Percentiles > averages, every time. A 4 ms average that hides a 2-second p99 is a production fire waiting to happen.
+
+Gin in release mode is fast. Debug mode adds easily 2–3× to the median on this endpoint. Always bench release.
+
+Co-located bench is fine for relative numbers. If you're comparing "before vs after" for one change, running k6 next to the service is OK. For absolute numbers, separate boxes.
+
+Thresholds turn k6 into CI. Once the test exits non-zero on a p95 regression, you can wire it into GitHub Actions and catch perf bugs the same way you catch unit-test failures.
+
+Where to go next
+
+Bench an endpoint that hits the DB. /api/users with seeded data shows you how GORM + Postgres add to the tail.
+
+Add Sentinel rate limiting and re-run. See where p99 starts climbing as the limiter sheds requests.
+
+Move to a spike test — same setup, 5s ramp to 500 VUs. The full k6 testing catalogue lives at /docs/testing — six pre-written tests for smoke, average, stress, spike, soak, and breakpoint.
+
+Run the test against the deployed instance instead of localhost. Numbers on your VPS are the numbers that matter.
+
+All LearningsPerformance & Pentest Testing

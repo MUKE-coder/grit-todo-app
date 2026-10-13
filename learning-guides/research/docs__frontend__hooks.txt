@@ -1,0 +1,542 @@
+Frontend
+React Query Hooks
+
+Every resource generated with grit generate resource produces a complete set of React Query hooks for CRUD operations with pagination, search, sorting, cache invalidation, and optimistic updates.
+
+Query (cached)Mutation
+Generated hooks wrap the API — queries cache, mutations invalidate, everything typed
+
+Auto-Generated Hooks Pattern
+
+When you run grit generate resource Post, Grit creates a hook file at hooks/use-posts.ts in both apps/web and apps/admin. Each file contains five hooks that map to the CRUD API endpoints.
+
+HookHTTP MethodPurpose
+
+usePosts()GET /api/postsPaginated list with sorting and search
+
+useGetPost(id)GET /api/posts/:idFetch a single post by ID
+
+useCreatePost()POST /api/postsCreate a new post
+
+useUpdatePost()PUT /api/posts/:idUpdate an existing post
+
+useDeletePost()DELETE /api/posts/:idSoft-delete a post
+
+useList Hook
+
+The list hook accepts pagination, search, and sort parameters. It returns a React Query result with the paginated data and metadata (total, page, pages).
+
+hooks/use-posts.ts (list hook)
+Copy to clipboard
+
+interface UsePostsParams {
+
+page?: number;
+
+pageSize?: number;
+
+search?: string;
+
+sortBy?: string;
+
+sortOrder?: string;
+
+}
+
+export function usePosts({
+
+page = 1,
+
+pageSize = 20,
+
+search = "",
+
+sortBy = "created_at",
+
+sortOrder = "desc",
+
+}: UsePostsParams = {}) {
+
+return useQuery<PostsResponse>({
+
+queryKey: ["posts", { page, pageSize, search, sortBy, sortOrder }],
+
+queryFn: async () => {
+
+const params = new URLSearchParams({
+
+page: String(page),
+
+page_size: String(pageSize),
+
+sort_by: sortBy,
+
+sort_order: sortOrder,
+
+});
+
+if (search) {
+
+params.set("search", search);
+
+}
+
+const { data } = await apiClient.get(`/api/posts?${params}`);
+
+return data;
+
+},
+
+});
+
+}
+
+useGetById Hook
+
+Fetches a single resource by ID. The query is disabled when no valid ID is provided, preventing unnecessary API calls. The query key includes the resource name and ID for precise cache targeting.
+
+hooks/use-posts.ts (getById hook)
+Copy to clipboard
+
+export function useGetPost(id: number) {
+
+return useQuery<Post>({
+
+queryKey: ["posts", id],
+
+queryFn: async () => {
+
+const { data } = await apiClient.get(`/api/posts/${id}`);
+
+return data.data;
+
+},
+
+enabled: !!id,
+
+});
+
+}
+
+useCreate, useUpdate, useDelete
+
+All mutation hooks use useMutation from React Query. On success, each mutation automatically invalidates the list query cache, causing the table to refetch fresh data from the server.
+
+hooks/use-posts.ts (mutations)
+Copy to clipboard
+
+export function useCreatePost() {
+
+const queryClient = useQueryClient();
+
+return useMutation({
+
+mutationFn: async (input: Record<string, unknown>) => {
+
+const { data } = await apiClient.post("/api/posts", input);
+
+return data;
+
+},
+
+onSuccess: () => {
+
+queryClient.invalidateQueries({ queryKey: ["posts"] });
+
+},
+
+});
+
+}
+
+export function useUpdatePost() {
+
+const queryClient = useQueryClient();
+
+return useMutation({
+
+mutationFn: async ({
+
+id,
+
+...input
+
+}: { id: number } & Record<string, unknown>) => {
+
+const { data } = await apiClient.put(`/api/posts/${id}`, input);
+
+return data;
+
+},
+
+onSuccess: () => {
+
+queryClient.invalidateQueries({ queryKey: ["posts"] });
+
+},
+
+});
+
+}
+
+export function useDeletePost() {
+
+const queryClient = useQueryClient();
+
+return useMutation({
+
+mutationFn: async (id: number) => {
+
+await apiClient.delete(`/api/posts/${id}`);
+
+},
+
+onSuccess: () => {
+
+queryClient.invalidateQueries({ queryKey: ["posts"] });
+
+},
+
+});
+
+}
+
+Query Key Patterns
+
+Grit follows a consistent query key structure that enables precise cache management. The first element is always the resource name (plural), and optional subsequent elements narrow the scope.
+
+Query KeyScope
+
+["posts"]All post queries (invalidates everything)
+
+["posts", {...params}]Specific list page with filters
+
+["posts", 42]Single post by ID
+
+When a mutation calls invalidateQueries({queryKey: ["posts"]}), React Query invalidates all queries whose key starts with ["posts"] -- including all paginated list queries and individual item queries. This is why your table automatically refreshes after creating, updating, or deleting a post.
+
+Cache Invalidation on Mutations
+
+Grit's generated hooks use the onSuccess callback to invalidate related queries after every mutation. This pattern ensures the UI always reflects the latest server state without manual refetching.
+
+invalidation-flow.txt
+Copy to clipboard
+
+User clicks "Delete" on row
+
+-> useDeletePost.mutate(42)
+
+-> DELETE /api/posts/42
+
+-> 200 OK
+
+-> onSuccess fires
+
+-> queryClient.invalidateQueries(["posts"])
+
+-> usePosts() refetches from server
+
+-> Table re-renders with updated data
+
+Pagination + Search Parameters
+
+The list hook accepts all pagination and filter parameters as a single options object. Each combination of parameters creates a unique cache entry, so navigating between pages is instant on revisit.
+
+example-usage.tsx
+Copy to clipboard
+
+// Fetch page 2 with 10 items, search for "react", sort by title
+
+const { data, isLoading, error } = usePosts({
+
+page: 2,
+
+pageSize: 10,
+
+search: "react",
+
+sortBy: "title",
+
+sortOrder: "asc",
+
+});
+
+// Access the paginated response
+
+console.log(data?.data);          // Post[]
+
+console.log(data?.meta.total);    // 42
+
+console.log(data?.meta.pages);    // 5
+
+console.log(data?.meta.page);     // 2
+
+Using Hooks in Components
+
+Here is a complete example of a posts list page using the generated hooks, including search, pagination, and delete functionality.
+
+app/(dashboard)/posts/page.tsx
+Copy to clipboard
+
+"use client";
+
+import { useState } from "react";
+
+import { usePosts, useDeletePost } from "@/hooks/use-posts";
+
+import { toast } from "sonner";
+
+export default function PostsPage() {
+
+const [page, setPage] = useState(1);
+
+const [search, setSearch] = useState("");
+
+const [sortBy, setSortBy] = useState("created_at");
+
+const [sortOrder, setSortOrder] = useState("desc");
+
+const { data, isLoading, error } = usePosts({
+
+page,
+
+pageSize: 20,
+
+search,
+
+sortBy,
+
+sortOrder,
+
+});
+
+const deletePost = useDeletePost();
+
+const handleDelete = (id: number) => {
+
+deletePost.mutate(id, {
+
+onSuccess: () => toast.success("Post deleted"),
+
+onError: () => toast.error("Failed to delete post"),
+
+});
+
+};
+
+const handleSort = (column: string) => {
+
+if (sortBy === column) {
+
+setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+
+} else {
+
+setSortBy(column);
+
+setSortOrder("asc");
+
+}
+
+};
+
+if (isLoading) return <div>Loading...</div>;
+
+if (error) return <div>Error loading posts</div>;
+
+return (
+
+<div>
+
+<div className="flex items-center justify-between mb-6">
+
+<h1 className="text-2xl font-bold">Posts</h1>
+
+<input
+
+type="text"
+
+placeholder="Search posts..."
+
+value={search}
+
+onChange={(e) => {
+
+setSearch(e.target.value);
+
+setPage(1); // Reset to first page on search
+
+}}
+
+className="px-3 py-2 rounded-lg border border-border bg-bg-secondary"
+
+/>
+
+</div>
+
+{/* Table */}
+
+<table className="w-full">
+
+<thead>
+
+<tr>
+
+<th onClick={() => handleSort("title")}>Title</th>
+
+<th onClick={() => handleSort("created_at")}>Created</th>
+
+<th>Actions</th>
+
+</tr>
+
+</thead>
+
+<tbody>
+
+{data?.data.map((post) => (
+
+<tr key={post.id}>
+
+<td>{post.title}</td>
+
+<td>{new Date(post.created_at).toLocaleDateString()}</td>
+
+<td>
+
+<button onClick={() => handleDelete(post.id)}>
+
+Delete
+
+</button>
+
+</td>
+
+</tr>
+
+))}
+
+</tbody>
+
+</table>
+
+{/* Pagination */}
+
+<div className="flex items-center gap-2 mt-4">
+
+<button
+
+onClick={() => setPage((p) => Math.max(1, p - 1))}
+
+disabled={page === 1}
+
+>
+
+Previous
+
+</button>
+
+<span>
+
+Page {data?.meta.page} of {data?.meta.pages}
+
+</span>
+
+<button
+
+onClick={() => setPage((p) => p + 1)}
+
+disabled={page >= (data?.meta.pages ?? 1)}
+
+>
+
+Next
+
+</button>
+
+</div>
+
+</div>
+
+);
+
+}
+
+Custom Hooks Beyond Generated Ones
+
+The generated hooks cover standard CRUD operations. For custom endpoints, queries, or business logic, create additional hooks following the same pattern. Use the sharedapiClient instance to ensure JWT tokens are automatically injected.
+
+hooks/use-post-stats.ts
+Copy to clipboard
+
+import { useQuery } from "@tanstack/react-query";
+
+import { apiClient } from "@/lib/api-client";
+
+interface PostStats {
+
+total: number;
+
+published: number;
+
+draft: number;
+
+viewsThisWeek: number;
+
+}
+
+export function usePostStats() {
+
+return useQuery<PostStats>({
+
+queryKey: ["posts", "stats"],
+
+queryFn: async () => {
+
+const { data } = await apiClient.get("/api/posts/stats");
+
+return data.data;
+
+},
+
+staleTime: 60 * 1000, // 1 minute
+
+});
+
+}
+
+// Bulk publish mutation
+
+export function useBulkPublish() {
+
+const queryClient = useQueryClient();
+
+return useMutation({
+
+mutationFn: async (ids: number[]) => {
+
+const { data } = await apiClient.post("/api/posts/bulk-publish", {
+
+ids,
+
+});
+
+return data;
+
+},
+
+onSuccess: () => {
+
+// Invalidate both posts list and stats
+
+queryClient.invalidateQueries({ queryKey: ["posts"] });
+
+},
+
+});
+
+}
+
+Convention: Always place hooks in the hooks/ directory, name them with the use- prefix and kebab-case file names, and follow the query key pattern ["resource", ...specifics].
+
+Web AppShared Package

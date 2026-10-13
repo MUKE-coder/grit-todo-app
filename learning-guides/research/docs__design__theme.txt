@@ -1,0 +1,361 @@
+Design System
+Theme & Colors
+
+Grit ships with a premium dark theme inspired by Linear, Vercel Dashboard, and Raycast. Every component, from login pages to admin tables, is designed to look polished out of the box.
+
+Design Philosophy
+
+Grit's visual identity is built on three principles:
+
+Dark by Default
+
+The dark theme is not an afterthought — it is the primary design surface. Every color, shadow, and border is tuned for dark backgrounds. Light mode is available as an option, but dark mode is the identity of Grit.
+
+Premium CRM Aesthetic
+
+Think Linear, Vercel, or Raycast — not generic Bootstrap or Material Design. Subtle gradients, muted borders, careful spacing, and purposeful use of color create a sense of quality.
+
+Functional Beauty
+
+Every design choice serves usability. Color contrast meets WCAG guidelines. Spacing provides visual hierarchy. The UI looks good because it works well.
+
+Color System
+
+Grit uses CSS custom properties (design tokens) for all colors. This makes the theme fully customizable and enables dark/light mode switching.
+
+Background Colors
+
+Layered backgrounds create depth and visual hierarchy:
+
+--bg-primary#0a0a0f
+
+Page background, base layer
+
+--bg-secondary#111118
+
+Card backgrounds, sidebar
+
+--bg-tertiary#1a1a24
+
+Elevated cards, modals
+
+--bg-elevated#22222e
+
+Elevated surfaces, dropdowns
+
+--bg-hover#2a2a38
+
+Hover states, active items
+
+--border#2a2a3a
+
+Borders, dividers, separators
+
+Text Colors
+
+Three tiers of text prominence:
+
+Aa
+
+--text-primary#e8e8f0
+
+Headings, primary content, important text
+
+Aa
+
+--text-secondary#9090a8
+
+Body text, descriptions, labels
+
+Aa
+
+--text-muted#606078
+
+Timestamps, placeholders, subtle info
+
+Accent Color
+
+The accent color is used for interactive elements, links, buttons, and focus rings:
+
+--accent#6c5ce7
+
+Primary accent — buttons, links, active states
+
+--accent-hover#7c6cf7
+
+Hover state for accent elements
+
+Semantic Colors
+
+Used for status indicators, alerts, and feedback:
+
+--success#00b894
+
+Success states, positive actions, active badges
+
+--danger#ff6b6b
+
+Errors, destructive actions, delete buttons
+
+--warning#fdcb6e
+
+Warnings, caution notices, pending states
+
+--info#74b9ff
+
+Informational messages, tips, neutral badges
+
+Full Palette
+
+bg-primary
+
+bg-secondary
+
+bg-tertiary
+
+bg-elevated
+
+bg-hover
+
+border
+
+accent
+
+success
+
+danger
+
+warning
+
+info
+
+text
+
+Typography
+
+Grit uses two fonts that complement each other:
+
+FontUsageWeights
+
+OnestUI elements: headings, body text, labels, buttons400, 500, 600, 700
+
+JetBrains MonoCode blocks, terminal output, monospace labels400, 500, 600
+
+Font Loading
+
+Fonts are loaded via Google Fonts in the root layout. Next.js automatically optimizes font loading with next/font:
+
+apps/web/app/layout.tsx
+Copy to clipboard
+
+import { Onest, JetBrains_Mono } from 'next/font/google'
+
+const onest = Onest({
+
+subsets: ['latin'],
+
+variable: '--font-onest',
+
+weight: ['400', '500', '600', '700'],
+
+})
+
+const jetbrainsMono = JetBrains_Mono({
+
+subsets: ['latin'],
+
+variable: '--font-mono',
+
+weight: ['400', '500', '600'],
+
+})
+
+Using the Theme
+
+The theme tokens are available as Tailwind CSS classes via shadcn/ui's configuration. Use them like any Tailwind utility:
+
+Tailwind usage examples
+Copy to clipboard
+
+{/* Background colors */}
+
+<div className="bg-background">       {/* --bg-primary */}
+
+<div className="bg-card">             {/* --bg-secondary */}
+
+<div className="bg-accent">           {/* --bg-tertiary */}
+
+{/* Text colors */}
+
+<h1 className="text-foreground">      {/* --text-primary */}
+
+<p className="text-muted-foreground"> {/* --text-secondary */}
+
+{/* Accent / primary color */}
+
+<button className="bg-primary text-primary-foreground">
+
+<a className="text-primary hover:text-primary/80">
+
+{/* Borders */}
+
+<div className="border border-border">
+
+<hr className="border-border/30">
+
+Dark / Light Mode Toggle
+
+The admin panel includes a theme toggle powered by next-themes. The toggle switches between dark and light modes by updating the class attribute on the <html> element.
+
+Theme toggle component
+Copy to clipboard
+
+'use client'
+
+import { useTheme } from 'next-themes'
+
+import { Moon, Sun } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
+
+export function ThemeToggle() {
+
+const { theme, setTheme } = useTheme()
+
+return (
+
+<Button
+
+variant="ghost"
+
+size="icon"
+
+onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+
+>
+
+<Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+
+<Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+
+</Button>
+
+)
+
+}
+
+The theme preference is stored in localStorage and persists across sessions. The default is dark.
+
+Customizing the Theme
+
+All theme tokens are defined in your globals.css file. To customize the theme, update the CSS custom properties:
+
+app/globals.css
+Copy to clipboard
+
+@layer base {
+
+:root {
+
+/* Light mode tokens */
+
+--background: 0 0% 100%;
+
+--foreground: 240 10% 3.9%;
+
+--card: 0 0% 97%;
+
+--primary: 262 52% 63%;      /* Purple accent */
+
+--primary-foreground: 0 0% 100%;
+
+/* ... */
+
+}
+
+.dark {
+
+/* Dark mode tokens (Grit defaults) */
+
+--background: 240 33% 4%;     /* #0a0a0f */
+
+--foreground: 240 14% 93%;    /* #e8e8f0 */
+
+--card: 240 18% 8%;           /* #111118 */
+
+--primary: 252 75% 63%;       /* #6c5ce7 */
+
+--primary-foreground: 0 0% 100%;
+
+--muted: 240 10% 42%;         /* #606078 */
+
+--muted-foreground: 248 12% 61%; /* #9090a8 */
+
+--border: 240 17% 20%;        /* #2a2a3a */
+
+--accent: 240 18% 12%;        /* #1a1a24 */
+
+/* ... */
+
+}
+
+}
+
+To change the accent color from purple to blue, for example, update the --primary value in both light and dark sections:
+
+Custom blue accent
+Copy to clipboard
+
+.dark {
+
+--primary: 217 91% 60%;   /* #3b82f6 — Tailwind blue-500 */
+
+}
+
+Tip: Use the shadcn/ui theme builder to visually design your custom theme, then paste the generated CSS into your globals.css. Grit is fully compatible with any shadcn/ui theme.
+
+Quick Reference
+
+TokenHexTailwind Class
+
+Background
+
+#0a0a0f
+bg-background
+
+Card
+
+#111118
+bg-card
+
+Accent surface
+
+#1a1a24
+bg-accent
+
+Primary (purple)
+
+#6c5ce7
+bg-primary / text-primary
+
+Foreground
+
+#e8e8f0
+text-foreground
+
+Muted foreground
+
+#9090a8
+text-muted-foreground
+
+Border
+
+#2a2a3a
+border-border
+
+Destructive
+
+#ff6b6b
+bg-destructive
+
+DeploymentTutorials

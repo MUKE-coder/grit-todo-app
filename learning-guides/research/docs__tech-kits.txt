@@ -1,0 +1,67 @@
+Tech Kits
+The fastest way to start your
+
+next application
+
+With authentication, registration, settings, and best practices built in. Our tech kits let you skip the setup and start building what really matters. Pick the kit that matches your shape — single binary, monorepo, mobile, desktop, or pure API — and ship in minutes.
+
+Single — Go + embedded SPA
+
+One binary. Embed your React frontend in the Go server. Smallest possible deploy.
+grit new my-app --single
+View kit 
+
+Single — Vite + TanStack Router
+
+Same single-binary shape but with a Vite SPA + TanStack Router instead of Next.js.
+grit new my-app --single --vite
+View kit 
+
+Double — Web + API monorepo
+
+Two apps in a Turborepo. Public Next.js frontend talking to a separate Go API.
+grit new my-app --double
+View kit 
+
+Triple — Web + Admin + API
+
+The full SaaS shape. Marketing site, Filament-style admin, Go API — all in one monorepo.
+grit new my-app --triple
+View kit 
+
+API — Go backend only
+
+Headless Go API. Bring your own frontend — mobile, native desktop, Discord bot.
+grit new my-app --api
+
+Mobile — Expo + API
+
+React Native (Expo) frontend talking to a Grit API. Same generated types front + back.
+grit new my-app --mobile
+
+Desktop — Wails + GORM
+
+Native desktop app via Wails. Offline-first SQLite, frameless window, draggable panels.
+grit new-desktop my-app
+
+An authenticated application out of the box
+
+Authentication options to suit your application's needs — flip a flag in.envor compose your own.
+
+Default
+
+Built-in Grit auth
+
+Robust and secure authentication: registration, login, password reset, email verification, JWT access + refresh tokens, OAuth (Google / GitHub), and TOTP two-factor with trusted-device cookies.
+
+Optional
+
+WorkOS AuthKit + SSO
+
+Drop in WorkOS / Auth0 / Clerk for enterprise SSO, SAML, SCIM provisioning, and magic links. The Grit auth middleware is interface-driven so the swap is one config line.
+
+Ready to build?
+
+Create the incredible, with Grit.
+
+Quick start Use the stack selector

@@ -1,0 +1,629 @@
+Infrastructure
+Docker Setup
+
+Grit uses Docker Compose to run all infrastructure services locally. One command gives you PostgreSQL, Redis, MinIO, and Mailhog — ready to go.
+
+One commandYour local stack
+One command brings up Postgres, Redis, MinIO, and Mailhog — your whole local stack
+
+Overview
+
+Every Grit project ships with two Docker Compose files:
+
+✓docker-compose.yml — Development infrastructure (databases, caching, storage, email)
+
+✓docker-compose.prod.yml — Production deployment (includes API, web, admin containers)
+
+You do not need Docker to run the Go API or Next.js apps directly — Docker is only required for the infrastructure services (PostgreSQL, Redis, etc.). The API and frontends run natively during development for faster iteration.
+
+Development Compose File
+
+The development docker-compose.yml spins up four services. Start them all with a single command:
+
+terminal
+
+$ docker compose up -d
+
+docker-compose.yml
+Copy to clipboard
+
+services:
+
+postgres:
+
+image: postgres:16-alpine
+
+container_name: myapp-postgres
+
+restart: unless-stopped
+
+ports:
+
+# Host 5434 (not 5432) avoids collisions; container still listens on 5432.
+
+- "127.0.0.1:5434:5432"
+
+# Credentials come from .env — the :- syntax provides a fallback default.
+
+environment:
+
+POSTGRES_USER: ${POSTGRES_USER:-grit}
+
+POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-grit}
+
+POSTGRES_DB: ${POSTGRES_DB:-myapp}
+
+volumes:
+
+- postgres-data:/var/lib/postgresql/data
+
+healthcheck:
+
+test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-grit}"]
+
+interval: 5s
+
+timeout: 5s
+
+retries: 5
+
+redis:
+
+image: redis:7-alpine
+
+container_name: myapp-redis
+
+restart: unless-stopped
+
+ports:
+
+# Host 6380 (not 6379); container still listens on 6379.
+
+- "127.0.0.1:6380:6379"
+
+volumes:
+
+- redis-data:/data
+
+healthcheck:
+
+test: ["CMD", "redis-cli", "ping"]
+
+interval: 5s
+
+timeout: 5s
+
+retries: 5
+
+minio:
+
+image: minio/minio
+
+container_name: myapp-minio
+
+restart: unless-stopped
+
+ports:
+
+# Host 9002/9003 (not 9000/9001); container still listens on 9000/9001.
+
+- "9002:9000"
+
+- "9003:9001"
+
+environment:
+
+MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?set MINIO_ACCESS_KEY in .env}
+
+MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY in .env}
+
+volumes:
+
+- minio-data:/data
+
+command: server /data --console-address ":9001"
+
+mailhog:
+
+image: mailhog/mailhog
+
+container_name: myapp-mailhog
+
+restart: unless-stopped
+
+ports:
+
+- "1025:1025"
+
+- "8025:8025"
+
+volumes:
+
+postgres-data:
+
+redis-data:
+
+minio-data:
+
+Service Details
+
+ServicePort(s)CredentialsPurpose
+
+PostgreSQL5434grit / gritPrimary database
+
+Redis6380No authCache, sessions, job queues
+
+MinIO9002 / 9003the MINIO_ACCESS_KEY and MINIO_SECRET_KEY from .envS3-compatible file storage
+
+Mailhog1025 / 8025No authEmail testing (SMTP + Web UI)
+
+Accessing Services
+
+MinIO Console
+http://localhost:9003
+
+Web-based file browser for your S3-compatible storage. Create buckets, upload files, manage access policies. Login with the MINIO_ACCESS_KEY and MINIO_SECRET_KEY from .env.
+
+Mailhog UI
+http://localhost:8025
+
+Catches all outgoing emails from your application. View HTML emails, check headers, and test email flows without sending real emails.
+
+PostgreSQL
+localhost:5434
+
+Connect using any database client (pgAdmin, TablePlus, DBeaver). Connection string: postgres://grit:grit@localhost:5434/myapp?sslmode=disable
+
+Redis
+localhost:6380
+
+Connect with redis-cli or any Redis GUI client (RedisInsight, Medis). No authentication required in development.
+
+Production Compose File
+
+The docker-compose.prod.yml builds and runs your entire application stack including the Go API, Next.js web app, and admin panel alongside PostgreSQL and Redis.
+
+docker-compose.prod.yml
+Copy to clipboard
+
+# Nothing here uses "ports:" — only "expose:". Services are reachable
+
+# ONLY through your reverse proxy (Traefik, Caddy, nginx, Dokploy) on the
+
+# shared "myapp" network, never bound to the public host interface.
+
+services:
+
+api:
+
+build:
+
+context: ./apps/api
+
+dockerfile: Dockerfile
+
+container_name: myapp-api
+
+restart: unless-stopped
+
+expose:
+
+- "8080"
+
+env_file:
+
+- .env
+
+# Override POSTGRES_HOST to the container name and POSTGRES_PORT back to
+
+# 5432 (the container's internal port). The Go config builds DATABASE_URL
+
+# from these parts at startup.
+
+environment:
+
+APP_ENV: production
+
+POSTGRES_HOST: postgres
+
+POSTGRES_PORT: "5432"
+
+REDIS_URL: redis://redis:6379
+
+MINIO_ENDPOINT: http://minio:9000
+
+depends_on:
+
+postgres:
+
+condition: service_healthy
+
+redis:
+
+condition: service_healthy
+
+networks:
+
+- myapp
+
+web:
+
+build:
+
+context: .
+
+dockerfile: apps/web/Dockerfile
+
+args:
+
+NEXT_PUBLIC_API_URL: ${API_URL:-http://localhost:8080}
+
+container_name: myapp-web
+
+restart: unless-stopped
+
+expose:
+
+- "3000"
+
+networks:
+
+- myapp
+
+admin:
+
+build:
+
+context: .
+
+dockerfile: apps/admin/Dockerfile
+
+args:
+
+NEXT_PUBLIC_API_URL: ${API_URL:-http://localhost:8080}
+
+container_name: myapp-admin
+
+restart: unless-stopped
+
+expose:
+
+- "3000"
+
+networks:
+
+- myapp
+
+postgres:
+
+image: postgres:16-alpine
+
+container_name: myapp-postgres
+
+restart: unless-stopped
+
+env_file:
+
+- .env
+
+environment:
+
+POSTGRES_USER: ${POSTGRES_USER:-grit}
+
+POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-grit}
+
+POSTGRES_DB: ${POSTGRES_DB:-myapp}
+
+volumes:
+
+- postgres-data:/var/lib/postgresql/data
+
+healthcheck:
+
+test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-grit} -d ${POSTGRES_DB:-myapp}"]
+
+interval: 5s
+
+timeout: 5s
+
+retries: 5
+
+networks:
+
+- myapp
+
+redis:
+
+image: redis:7-alpine
+
+container_name: myapp-redis
+
+restart: unless-stopped
+
+volumes:
+
+- redis-data:/data
+
+healthcheck:
+
+test: ["CMD", "redis-cli", "ping"]
+
+interval: 5s
+
+timeout: 5s
+
+retries: 5
+
+networks:
+
+- myapp
+
+minio:
+
+image: minio/minio
+
+container_name: myapp-minio
+
+restart: unless-stopped
+
+env_file:
+
+- .env
+
+environment:
+
+MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?set MINIO_ACCESS_KEY in .env}
+
+MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY in .env}
+
+volumes:
+
+- minio-data:/data
+
+networks:
+
+- myapp
+
+command: server /data --console-address ":9001"
+
+networks:
+
+myapp:
+
+driver: bridge
+
+volumes:
+
+postgres-data:
+
+redis-data:
+
+minio-data:
+
+Deploy to production with:
+
+terminal
+
+$ docker compose -f docker-compose.prod.yml up -d --build
+
+Dockerfiles
+
+Go API (Multi-Stage Build)
+
+The API Dockerfile uses a multi-stage build. The first stage compiles the Go binary with all dependencies, and the second stage copies only the binary into a minimal Alpine image. The final image is typically under 20MB.
+
+apps/api/Dockerfile
+Copy to clipboard
+
+# Build stage
+
+FROM golang:1.24-alpine AS builder
+
+WORKDIR /app
+
+# Copy go mod files
+
+COPY go.mod go.sum ./
+
+RUN go mod download
+
+# Copy source code
+
+COPY . .
+
+# Build binary
+
+RUN CGO_ENABLED=0 GOOS=linux go build -o /app/server ./cmd/server
+
+# Run stage
+
+FROM alpine:3.19
+
+RUN apk --no-cache add ca-certificates tzdata
+
+# Non-root runtime user — chown before USER so Sentinel/Pulse can open
+
+# their embedded SQLite stores under /app.
+
+RUN addgroup -S app && adduser -S -G app app
+
+WORKDIR /app
+
+COPY --from=builder /app/server .
+
+RUN chown -R app:app /app
+
+USER app
+
+EXPOSE 8080
+
+CMD ["./server"]
+
+Next.js (Standalone Build)
+
+The Next.js Dockerfile also uses a multi-stage build. It installs dependencies, builds the app with standalone output, and runs the production server as a non-root user. Both the web and admin apps share this same Dockerfile pattern.
+
+apps/web/Dockerfile
+Copy to clipboard
+
+# Build stage
+
+FROM node:22-alpine AS base
+
+# Pin pnpm — pnpm@latest resolves to pnpm 11 which needs Node 22's node:sqlite
+
+# builtin. Pinning here avoids surprise breakage on rebuilds.
+
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+
+# Install dependencies
+
+FROM base AS deps
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+
+COPY apps/web/package.json ./apps/web/
+
+COPY packages/shared/package.json ./packages/shared/
+
+RUN pnpm install --frozen-lockfile
+
+# Build
+
+FROM base AS builder
+
+WORKDIR /app
+
+COPY --from=deps /app/node_modules ./node_modules
+
+COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
+
+COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
+
+COPY . .
+
+RUN pnpm --filter web build
+
+# Run
+
+FROM base AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+RUN addgroup --system --gid 1001 nodejs
+
+RUN adduser --system --uid 1001 nextjs
+
+COPY --from=builder /app/apps/web/.next/standalone ./
+
+COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
+
+COPY --from=builder /app/apps/web/public ./apps/web/public
+
+USER nextjs
+
+EXPOSE 3000
+
+ENV PORT=3000
+
+ENV HOSTNAME="0.0.0.0"
+
+CMD ["node", "apps/web/server.js"]
+
+Common Commands
+
+terminal
+
+$ docker compose up -d
+
+Start all development services in the background
+
+terminal
+
+$ docker compose down
+
+Stop and remove all containers
+
+terminal
+
+$ docker compose down -v
+
+Stop all containers and delete volumes (resets all data)
+
+terminal
+
+$ docker compose logs -f postgres
+
+Follow logs for a specific service
+
+terminal
+
+$ docker compose logs -f
+
+Follow logs for all services
+
+terminal
+
+$ docker compose ps
+
+Show running containers and their status
+
+terminal
+
+$ docker compose restart redis
+
+Restart a specific service
+
+terminal
+
+$ docker compose exec postgres psql -U grit myapp
+
+Open a psql shell inside the PostgreSQL container
+
+terminal
+
+$ docker compose exec redis redis-cli
+
+Open a Redis CLI session inside the container
+
+Data Persistence
+
+Docker named volumes keep your data safe across container restarts:
+
+VolumeMounted ToContains
+
+postgres-data/var/lib/postgresql/dataAll database tables and data
+
+redis-data/dataCached data, sessions, job queue state
+
+minio-data/dataUploaded files and bucket data
+
+Use docker compose down -v to delete all volumes and reset to a clean state. This is useful when you want to start fresh or if your database schema has diverged.
+
+Troubleshooting
+
+Port already in use
+
+Another process is using port 5434, 6380, etc. Stop the conflicting process or change the port mapping in docker-compose.yml. For example, change "5434:5432" to "5435:5432" and update your .env POSTGRES_PORT accordingly.
+
+Container keeps restarting
+
+Check the logs with "docker compose logs <service>". Common causes: incorrect credentials, corrupted volume data. Try "docker compose down -v && docker compose up -d" for a clean start.
+
+Cannot connect from API to PostgreSQL
+
+Ensure the API uses "localhost" (not the container name) when running outside Docker. The connection string in .env should be: postgres://grit:grit@localhost:5434/myapp?sslmode=disable
+
+MinIO bucket not found
+
+MinIO starts with no buckets. Open the MinIO console at http://localhost:9003, login with the MINIO_ACCESS_KEY and MINIO_SECRET_KEY from .env, and create your bucket. Or set MINIO_DEFAULT_BUCKETS in the compose file.
+
+Docker Compose V1 vs V2
+
+Grit uses "docker compose" (V2, no hyphen). If you see errors, make sure Docker Desktop is updated. The old "docker-compose" (V1, with hyphen) is deprecated.
+
+AI IntegrationDatabase & Migrations

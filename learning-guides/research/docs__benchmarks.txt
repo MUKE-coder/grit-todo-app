@@ -1,0 +1,486 @@
+Benchmarks
+The same CRUD API, built 7 times
+
+One products table, four scenarios, one shared Postgres, identical container limits, and every framework on its own ecosystem's ORM: GORM, Eloquent, Prisma, Drizzle. Each framework was run head to head against Grit, back to back, three times, and each has a page showing exactly how to reproduce it.
+
+Read the ratios, not the raw numbers
+
+All six pairs below were measured back to back in one sitting on v3.134.0, and even so Grit's single-row read ranged from 4,536 req/s in the Bun pair to 8,509 in the Express pair, from an identical binary, because the machine drifts as write scenarios accumulate in Postgres. Within a pair both sides ran minutes apart under the same conditions, so the ratio survives; lining Bun's 2,717 up against Encore's 663 would imply a shared baseline that does not exist. Every table below is grouped by pair for that reason.
+
+Results
+
+50 concurrent users, 30 seconds per run, 4 CPUs and 2 GB per app container. Every app shares one Postgres on 8 CPUs, deliberately more than any of them gets. Medians of three repetitions, never a best run.
+
+Grit vsBun
+v1.3 + Drizzle
+
+ScenarioGritBunRatio
+
+show
+
+GET /api/v1/products/:id
+
+4,536
+
+8.2 ms · neither saturated
+
+2,717
+
+16.2 ms · own ceiling
+1.67×
+
+write
+
+POST /api/v1/products
+
+4,959
+
+7.7 ms · neither saturated
+
+2,224
+
+18.0 ms · own ceiling
+2.23×
+
+list
+
+GET /api/v1/products?page=N&page_size=20
+
+615
+
+65.6 ms · DB-bound
+
+590
+
+70.8 ms · DB-bound
+1.04×within noise
+
+mixed
+
+a weighted blend of the three above
+
+568
+
+70.9 ms · DB-bound
+
+621
+
+65.8 ms · DB-bound
+0.91×within noise
+
+Grit vsEncore.ts
+v1.57 + Drizzle
+
+ScenarioGritEncore.tsRatio
+
+show
+
+GET /api/v1/products/:id
+
+6,646
+
+5.3 ms · neither saturated
+
+663
+
+71.9 ms · neither saturated
+10.02×
+
+write
+
+POST /api/v1/products
+
+4,345
+
+8.7 ms · neither saturated
+
+854
+
+51.9 ms · neither saturated
+5.09×
+
+list
+
+GET /api/v1/products?page=N&page_size=20
+
+617
+
+67.0 ms · DB-bound
+
+249
+
+166.0 ms · neither saturated
+2.48×
+
+mixed
+
+a weighted blend of the three above
+
+834
+
+50.7 ms · DB-bound
+
+363
+
+138.0 ms · neither saturated
+2.30×
+
+Grit vsExpress
+v5 + Prisma
+
+ScenarioGritExpressRatio
+
+show
+
+GET /api/v1/products/:id
+
+8,509
+
+4.5 ms · neither saturated
+
+982
+
+55.1 ms · own ceiling
+8.66×
+
+write
+
+POST /api/v1/products
+
+5,126
+
+7.5 ms · neither saturated
+
+748
+
+72.8 ms · own ceiling
+6.85×
+
+list
+
+GET /api/v1/products?page=N&page_size=20
+
+861
+
+46.8 ms · DB-bound
+
+280
+
+168.7 ms · own ceiling
+3.08×
+
+mixed
+
+a weighted blend of the three above
+
+763
+
+51.5 ms · DB-bound
+
+297
+
+151.5 ms · own ceiling
+2.57×
+
+Grit vsNext.js
+v15.5 + Prisma
+
+ScenarioGritNext.jsRatio
+
+show
+
+GET /api/v1/products/:id
+
+6,822
+
+5.5 ms · neither saturated
+
+433
+
+103.0 ms · own ceiling
+15.76×
+
+write
+
+POST /api/v1/products
+
+6,157
+
+6.2 ms · neither saturated
+
+499
+
+93.0 ms · own ceiling
+12.34×
+
+list
+
+GET /api/v1/products?page=N&page_size=20
+
+1,186
+
+35.6 ms · DB-bound
+
+247
+
+189.7 ms · own ceiling
+4.80×
+
+mixed
+
+a weighted blend of the three above
+
+1,053
+
+38.5 ms · DB-bound
+
+271
+
+181.0 ms · own ceiling
+3.89×
+
+Grit vsDjango
+v5.1 + Django ORM
+
+ScenarioGritDjangoRatio
+
+show
+
+GET /api/v1/products/:id
+
+5,983
+
+6.0 ms · neither saturated
+
+811
+
+73.4 ms · own ceiling
+7.38×
+
+write
+
+POST /api/v1/products
+
+5,901
+
+6.2 ms · neither saturated
+
+913
+
+65.1 ms · own ceiling
+6.46×
+
+list
+
+GET /api/v1/products?page=N&page_size=20
+
+1,094
+
+36.9 ms · DB-bound
+
+379
+
+118.5 ms · own ceiling
+2.89×
+
+mixed
+
+a weighted blend of the three above
+
+1,163
+
+36.2 ms · DB-bound
+
+481
+
+77.4 ms · own ceiling
+2.42×
+
+Grit vsLaravel
+v13 + Eloquent
+
+ScenarioGritLaravelRatio
+
+show
+
+GET /api/v1/products/:id
+
+7,167
+
+5.2 ms · neither saturated
+
+275
+
+68.8 ms · own ceiling
+26.06×
+
+write
+
+POST /api/v1/products
+
+4,497
+
+8.0 ms · neither saturated
+
+318
+
+23.9 ms · own ceiling
+14.14×
+
+list
+
+GET /api/v1/products?page=N&page_size=20
+
+1,130
+
+37.6 ms · DB-bound
+
+220
+
+71.7 ms · own ceiling
+5.14×
+
+mixed
+
+a weighted blend of the three above
+
+1,180
+
+34.7 ms · DB-bound
+
+210
+
+78.7 ms · own ceiling
+5.62×
+
+Where Grit loses
+
+Against Bun, two rows cannot be called. The paginated list and the mixed workload were measured four separate times. Mixed came out 0.91×, 1.21×, 1.19× and 0.91×, on both sides of even. Across seven repetitions Grit ranged from 329 to 643 req/s and Bun from 445 to 694. Any one of those numbers could be published as a result, which is exactly why none of them should be.
+
+The reason is in the CPU column. Postgres sits at 764–825% of its 800% allowance for both sides while Grit's own container idles at 125%. Neither framework is the limit; they are both waiting on the same database, so what moves between runs is database state rather than framework speed. Those two rows are marked within noise in the table above and no winner is claimed.
+
+The insert scenario used to be a real loss, and it is not any more. Bun was a quarter quicker at it. Postgres statement logging showed a single POST sending seven statements where Bun sent one: a transaction around an INSERT that Postgres already makes atomic, a SELECT re-reading the row just written, and an audit row written even for requests with no authenticated user. v3.134.0 fixed all three, inserts went from 2,686 to 4,959 req/s, and the scenario reversed from a 0.81× loss to a 2.23× win.
+
+What the CPU column is for
+
+A throughput number only means something when you know what stopped it. Where a framework's own container saturated, Laravel at 402–420% of its 400% allowance, Django at 398–408%, Next.js at 400–411%, Express at 416–434%, Bun at 399–411%. The figure is that framework's genuine ceiling on this hardware. Encore is the one exception: it never saturated anything, sitting at 142–195% with Postgres at 26–176%, so something else bounded it and its figures are a floor.
+
+The read-heavy rows are different. On list and mixed Grit used about 120–155% while Postgres sat near 900%: the database ran out first, not the framework. Those rows are a floor, and the real gap is wider than the ratio shows. Encore.ts is the mirror image: it never saturated anything, sitting at 155–211% with Postgres at 30–200%, so something else bounded it (most likely the Drizzle / node-postgres path rather than its Rust HTTP layer) and its numbers are a floor for Encore too.
+
+The list endpoint runs a COUNT(*) over the whole table on every request, on every framework. That is a fair comparison (they all do the same work) but at 50 concurrent users it is mostly a measurement of Postgres. For the cleanest read of framework overhead, look at show: one indexed lookup, one JSON encode, nothing else in the way. These runs predate v3.256.0, since when a Grit list reuses its total across pages until the table is written to, so a repeat of the list row would no longer count on every request.
+
+Three bugs this found in Grit
+
+The first draft of these numbers was much worse, and the reason was Grit's fault every time. Building a benchmark you intend to publish is an unusually good way to find out your own defaults are wrong.
+
+Connection-pool churn (fixed in v3.131.0)
+
+The scaffold shipped SetMaxIdleConns(10) alongside SetMaxOpenConns(100). Past ten concurrent requests, a connection handed back to a full idle pool is closed, and the next request makes Postgres fork a new backend. Under load that is a connection storm, and it shows up as database CPU rather than as anything you would think to look for in the application.
+
+Single-row reads went from ~810 to ~2,720 req/s on the one-line change. Idle now defaults to Open, tunable via DB_MAX_OPEN_CONNS and DB_MAX_IDLE_CONNS.
+
+REDIS_URL= did not disable Redis (fixed in v3.132.0)
+
+getEnv treated an empty value as unset and returned the default, so the asynq worker started anyway, failed to dial, and retried in a tight loop, burning CPU on reconnects with nothing in the logs but dial errors. Setting it empty now genuinely turns cache, jobs, worker and cron off, and says so once at boot.
+
+No prepared-statement cache (fixed in v3.133.0)
+
+GORM re-sent and Postgres re-planned every query. PrepareStmt is now on by default, so a query that runs a thousand times is planned once per connection. Turn it off with DB_PREPARED_STATEMENTS=false if you run pgbouncer in transaction mode, where server-side prepared statements do not survive between requests.
+
+Re-running the Bun pair afterwards is what put a number on it. Inserts went from 1,568 to 2,686 req/s on the same hardware, which took Grit from 2.09× slower than Bun to 1.23×. Bun still wins that scenario, and the withdrawn figures are gone from this page rather than left standing because they flattered the fix.
+
+How the comparison is kept fair
+
+A benchmark is only worth publishing if the loser was given every reasonable advantage. These rules apply to every pair; the framework-specific decisions are spelled out on each guide page.
+
+Every framework uses its ecosystem's ORM: GORM, Eloquent, Prisma, Drizzle. Not raw SQL. Hand-written SQL on one side against an ORM on the other measures the ORM, and nobody ships the framework that way.
+
+Every framework runs in production shape, not its dev server: php-fpm rather than artisan serve, a cluster worker per CPU for Node, a production build for Next.js.
+
+Identical schemas, down to the index on deleted_at. A benchmark where one side has an index the other lacks measures the index.
+
+The handlers match: same default page size and cap, same searchable columns, same sortable allow-list, same {data, meta} envelope, same version bump on update.
+
+No auth on either side. With a token in play, part of what you measure is JWT parsing rather than the request path.
+
+One app runs at a time, the other stopped rather than idle, and a warm-up run is discarded so nobody pays for the other's cold start.
+
+The database is truncated and reloaded before every single run, and the row count is verified at 10,000 before the run is allowed to start.
+
+Medians of three, never the best run, and any run with a single failed request is thrown out rather than published.
+
+Four ways this benchmark lied before it was fixed
+
+All four are worth knowing if you build one of these yourself, because none of them announces itself. You get plausible numbers that are simply wrong. Three hurt whichever framework was being measured; the fourth hurt only Laravel, and it was published for a day before it was caught.
+
+Laravel was measured with its dev dependencies loaded
+
+composer install had run without --no-dev, so laravel/pail and nunomaduro/collision were registered as service providers on every request. A route touching no database at all took 27 ms. With a production-only vendor it takes 7 ms.
+
+Two more, found alongside it: Laravel was opening a fresh Postgres connection on every request while every other framework here held a pool open, and Laravel's default sslmode=prefer made each of those connections attempt an SSL handshake and fall back. Nobody else was paying either cost.
+
+Corrected, Laravel's single-row read went from 113 to 175 req/s and the ratio on that scenario fell from 41.8× to 24.8×. The published figures now come from the corrected run. A benchmark that flatters you because the other side was misconfigured is not a benchmark, and this one said out loud that artisan optimize had been run when the harness never ran it.
+
+The write scenario poisoned the read ones
+
+Inserts persist. So list was running COUNT(*) against a table that grew for the whole session: 345,680 rows on the Grit side against 30,255 on Laravel's, because Grit writes faster and therefore polluted its own table harder, then paid for it on every read. Grit's list measured 20 req/s that way. With a verified reset before every run it measures in the hundreds.
+
+k6 must run inside the container network
+
+On Docker Desktop for Windows a published port goes through a userland proxy, and the proxy hits its ceiling before either framework does. Measured through it: 432 req/s with a 3.94 ms floor. Container-to-container, same test: 740 req/s at 1.11 ms. Everything on this page is container-to-container.
+
+A run that fails completely still prints a number
+
+When an app was not listening, k6 recorded thousands of instant connection refusals and summarised them as a perfectly plausible request rate with a sub-millisecond median. Nothing in the summary line says “all of these were errors.” The harness now health-checks before every measurement and refuses to publish any run whose failure rate is above zero.
+
+Reproduce it
+
+The whole harness is in benchmarks/ in the Grit repository, compose file, seed data, k6 script and every bench app. One pair per invocation, by design: running two at once means they share a Postgres under load and both sets of numbers are worthless.
+
+git clone https://github.com/MUKE-coder/grit && cd grit/benchmarks
+
+# the Grit side is scaffolded, not vendored — build it yourself
+
+grit new grit-bench --api
+
+(cd grit-bench && grit generate resource Product \
+
+name:string sku:string:unique price:float stock:int active:bool)
+
+docker compose up -d postgres
+
+./pair.sh bun          # resets all databases, runs 3 x 4 scenarios, one app at a time
+
+python pair-report.py bun
+
+Copy to clipboard
+
+pair-report.py prints the app and database CPU for every row and labels which side saturated, so you can tell a real ceiling from a database limit. It refuses to report any scenario where a request failed.
+
+Step-by-step guides
+
+Grit vs Bun
+
+Bun.serve with reusePort workers, Drizzle over Bun’s native SQL client
+
+Grit vs Encore.ts
+
+Rust HTTP runtime, compiled by Encore’s own CLI, Drizzle over its SQLDatabase
+
+Grit vs Express
+
+Express 5 on Node 22, one cluster worker per CPU, Prisma ORM
+
+Grit vs Next.js
+
+App Router route handlers, standalone production build, Prisma over Postgres
+
+Grit vs Django
+
+gunicorn with gevent workers, DRF-shaped views, Django ORM with connection pooling
+
+Grit vs Laravel
+
+nginx + php-fpm, opcache with a tracing JIT, production-only vendor, Eloquent
+
+DeploymentPerformance testing

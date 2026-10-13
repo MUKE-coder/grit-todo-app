@@ -1,0 +1,246 @@
+Backend
+API Documentation
+
+Every Grit project ships with auto-generated, interactive API documentation powered by gin-docs. No annotations, no comments, no manual spec files — your docs are generated directly from your Gin routes and GORM models.
+
+Go deeper: the API Docs: Scalar & Swagger course covers the doc UI end to end, and API-Only Masterclass builds a full REST API from scratch.
+
+How It Works
+
+When you scaffold a project with grit new, gin-docs is mounted in your routes file with a single function call. It introspects your Gin router and GORM models at startup to generate a complete OpenAPI 3.1 specification.
+
+Your routes & modelsOpenAPI specInteractive docs
+No @Summary comments — the spec is built from your routes and struct tags at startup
+
+Zero annotations. gin-docs reads your route definitions, struct tags (json, binding, gorm, docs), and handler signatures to generate documentation automatically. No // @Summary comments needed.
+
+What You Get
+
+After running your API, these endpoints are available:
+
+EndpointDescription
+
+GET /docsInteractive Scalar UI
+
+GET /docs?ui=swaggerSwagger UI alternative
+
+GET /docs/openapi.jsonOpenAPI 3.1 spec (JSON)
+
+GET /docs/openapi.yamlOpenAPI 3.1 spec (YAML)
+
+GET /docs/export/postmanPostman Collection v2.1
+
+GET /docs/export/insomniaInsomnia export
+
+Configuration
+
+The mount call in routes.go configures everything:
+
+internal/routes/routes.go
+Copy to clipboard
+
+// API Documentation (gin-docs)
+
+gindocs.Mount(r, db, gindocs.Config{
+
+Title:       cfg.AppName + " API",
+
+Description: "REST API built with Grit — Go + React meta-framework.",
+
+Version:     "1.0.0",
+
+UI:          gindocs.UIScalar,     // or gindocs.UISwagger
+
+ScalarTheme: "kepler",
+
+Models:      []interface{}{&models.User{}, &models.Upload{}, &models.Blog{}},
+
+Auth: gindocs.AuthConfig{
+
+Type:         gindocs.AuthBearer,
+
+BearerFormat: "JWT",
+
+},
+
+})
+
+Config Options
+
+OptionDefaultDescription
+
+Prefix/docsURL path for the docs UI
+
+TitleAPI DocumentationAPI title shown in the UI
+
+Version1.0.0API version
+
+UIUISwaggerUIScalar or UISwagger
+
+ScalarThemekeplerScalar UI theme (kepler, moon, purple, saturn, etc.)
+
+Models[]GORM models for schema generation
+
+AuthAuthNoneAuthConfig{Type: AuthBearer, BearerFormat: "JWT"}
+
+DevModefalseRegenerate spec on every request
+
+ReadOnlyfalseDisable “Try It Out” in the UI
+
+ExcludeRoutes[]Glob patterns to exclude routes
+
+GORM Model Schemas
+
+When you pass GORM models to the Models config, gin-docs automatically generates three schema variants for each model:
+
+Full Model — includes ID and timestamps, used for responses
+
+Create Variant — excludes auto-generated fields (ID, timestamps)
+
+Update Variant — all fields optional, for PATCH operations
+
+This means your struct tags drive the documentation:
+
+internal/models/user.go
+Copy to clipboard
+
+type User struct {
+
+ID        uint      `json:"id" gorm:"primarykey"`
+
+FirstName string    `json:"first_name" binding:"required,min=2"`
+
+LastName  string    `json:"last_name" binding:"required,min=2"`
+
+Email     string    `json:"email" binding:"required,email" gorm:"uniqueIndex"`
+
+Password  string    `json:"-"`
+
+Role      string    `json:"role" binding:"oneof=ADMIN EDITOR USER" gorm:"default:'USER'"`
+
+Active    bool      `json:"active" gorm:"default:true"`
+
+CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime"`
+
+UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime"`
+
+}
+
+Struct tags matter: binding:"required" marks fields as required, binding:"oneof=A B C" creates enums, json:"-" hides fields (like passwords), gorm:"primarykey" and gorm:"autoCreateTime" mark fields as read-only in create/update variants.
+
+Customizing Route Documentation
+
+While gin-docs infers most documentation automatically, you can customize individual routes using the fluent builder API:
+
+internal/routes/routes.go
+Copy to clipboard
+
+docs := gindocs.Mount(r, db, gindocs.Config{...})
+
+// Override a specific route's documentation
+
+docs.Route("POST /api/users").
+
+Summary("Create a new user").
+
+Description("Creates a user account with the given details.").
+
+RequestBody(CreateUserInput{}).
+
+Response(201, User{}, "User created successfully").
+
+Tags("Users")
+
+Or use inline middleware for per-handler documentation:
+
+internal/routes/routes.go
+Copy to clipboard
+
+r.POST("/api/users",
+
+gindocs.Doc(gindocs.DocConfig{
+
+Summary:     "Create user",
+
+RequestBody: CreateUserInput{},
+
+Response:    User{},
+
+}),
+
+userHandler.Create,
+
+)
+
+Adding Models for New Resources
+
+When you generate a new resource with grit generate resource, add the model to the Models slice in the gin-docs config:
+
+internal/routes/routes.go
+Copy to clipboard
+
+gindocs.Mount(r, db, gindocs.Config{
+
+// ...
+
+Models: []interface{}{
+
+&models.User{},
+
+&models.Upload{},
+
+&models.Blog{},
+
+&models.Product{},   // ← add new models here
+
+&models.Category{},
+
+},
+
+})
+
+Excluding Routes
+
+You can hide internal or admin-only routes from the documentation:
+
+gindocs.Mount(r, db, gindocs.Config{
+
+// ...
+
+ExcludeRoutes:    []string{"/api/admin/*"},
+
+ExcludePrefixes:  []string{"/studio", "/sentinel"},
+
+})
+
+Copy to clipboard
+
+Switching Between UIs
+
+Grit defaults to the Scalar UI (modern, dark theme), but you can switch to Swagger UI in config:
+
+// Use Swagger UI instead
+
+gindocs.Config{
+
+UI: gindocs.UISwagger,
+
+}
+
+Copy to clipboard
+
+You can also switch at runtime by adding a query parameter: /docs?ui=swagger or /docs?ui=scalar.
+
+Exporting Specs
+
+Use the export endpoints to import your API into other tools:
+
+GET /docs/openapi.json — for any OpenAPI-compatible tool
+
+GET /docs/openapi.yaml — YAML format
+
+GET /docs/export/postman — import directly into Postman
+
+GET /docs/export/insomnia — import directly into Insomnia
+
+RBAC & RolesAdmin Overview

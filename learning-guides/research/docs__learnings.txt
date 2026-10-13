@@ -1,0 +1,15 @@
+Learnings
+Engineering journal
+
+A running log of hands-on challenges I work through on top of the Grit framework. Each entry sticks to the same shape — the problem, the build, the numbers, and what I took away. Every script is copy-pasteable and every milestone is reproducible.
+
+Stateless service + k6 load test
+2026-05-31
+
+Scaffold a stateless Go API with grit new --api, load-test the /api/health endpoint with k6, and capture a latency chart (p50 / p95 / p99) of the run.
+
+GoGink6Performance
+
+MILESTONEA committed latency chart of the service under load
+
+More entries coming as I work through them. Each will land here with the same shape: problem · build · numbers · takeaways.

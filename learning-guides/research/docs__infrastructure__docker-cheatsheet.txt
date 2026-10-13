@@ -1,0 +1,261 @@
+Infrastructure
+Docker Cheat Sheet
+
+Quick reference for all Docker commands you'll need when working with Grit projects. Keep this page bookmarked — it covers starting services, viewing logs, database operations, Redis, MinIO, cleanup, and more.
+
+Default Services & Ports
+
+Every Grit project ships with these four infrastructure services via Docker Compose:
+
+ServicePortDashboard
+
+PostgreSQL5434—
+
+Redis6380—
+
+MinIO9002 (API), 9003 (Console)http://localhost:9003
+
+Mailhog1025 (SMTP), 8025 (UI)http://localhost:8025
+
+Starting & Stopping Services
+
+terminal
+
+$ docker compose up -d
+
+Start all services in the background
+
+terminal
+
+$ docker stop $(docker ps -q)
+
+Stop all containers even for other projects
+
+terminal
+
+$ docker compose down
+
+Stop all services and remove containers
+
+terminal
+
+$ docker compose restart
+
+Restart all services
+
+terminal
+
+$ docker compose up -d postgres
+
+Start a specific service only
+
+terminal
+
+$ docker compose stop redis
+
+Stop a specific service without removing it
+
+Checking Service Status
+
+terminal
+
+$ docker ps
+
+List all running containers
+
+terminal
+
+$ docker ps -a
+
+List all containers including stopped ones
+
+terminal
+
+$ docker compose ps
+
+List services for the current project
+
+terminal
+
+$ docker stats
+
+Live resource usage (CPU, memory, network I/O)
+
+Viewing Logs
+
+terminal
+
+$ docker compose logs
+
+Show all service logs
+
+terminal
+
+$ docker compose logs -f
+
+Follow logs live (stream in real time)
+
+terminal
+
+$ docker compose logs postgres
+
+Show logs for a specific service
+
+terminal
+
+$ docker compose logs --tail 50 redis
+
+Show only the last 50 lines for a service
+
+Database Operations
+
+Common commands for working with the PostgreSQL container directly. Replace grit_dev with your actual database name if you changed it.
+
+terminal
+
+$ docker compose exec postgres psql -U grit grit_dev
+
+Open an interactive psql shell
+
+terminal
+
+$ docker compose exec postgres pg_dump -U grit grit_dev > backup.sql
+
+Backup the entire database to a SQL file
+
+terminal
+
+$ docker compose exec -T postgres psql -U grit grit_dev < backup.sql
+
+Restore database from a SQL backup file
+
+terminal
+
+$ docker compose exec postgres psql -U grit -c "\dt" grit_dev
+
+List all tables in the database
+
+Redis Operations
+
+Commands for inspecting and managing the Redis cache, sessions, and job queue data.
+
+terminal
+
+$ docker compose exec redis redis-cli
+
+Open an interactive Redis CLI session
+
+terminal
+
+$ docker compose exec redis redis-cli KEYS "*"
+
+List all keys stored in Redis
+
+terminal
+
+$ docker compose exec redis redis-cli FLUSHALL
+
+Clear all Redis data (cache, sessions, queues)
+
+terminal
+
+$ docker compose exec redis redis-cli INFO memory
+
+Show Redis memory usage statistics
+
+Warning: FLUSHALL deletes everything in Redis including active sessions and pending job queue entries. Use with caution in shared environments.
+
+MinIO (File Storage)
+
+MinIO provides S3-compatible file storage for development. Access the web console to manage buckets and files visually.
+
+MinIO Console
+http://localhost:9003
+
+Web-based file browser. Create buckets, upload files, and manage access policies. Credentials, from .env: MINIO_ACCESS_KEY / MINIO_SECRET_KEY
+
+terminal
+
+$ docker compose exec minio mc alias set local http://localhost:9000 $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD
+
+Set up the MinIO client alias for CLI operations
+
+Cleanup & Reset
+
+Commands for cleaning up containers, images, and volumes. Use these when you need a fresh start or want to reclaim disk space.
+
+terminal
+
+$ docker compose down -v
+
+Stop all services and delete volumes (RESETS ALL DATA)
+
+terminal
+
+$ docker system prune
+
+Remove all unused containers, networks, and dangling images
+
+terminal
+
+$ docker volume ls
+
+List all Docker volumes
+
+terminal
+
+$ docker volume rm <volume-name>
+
+Remove a specific volume by name
+
+terminal
+
+$ docker rm -f $(docker ps -aq)
+
+Force remove ALL containers (running and stopped)
+
+terminal
+
+$ docker volume rm -f $(docker volume ls -q)
+
+Force remove ALL volumes (DELETES ALL DATA)
+
+Danger: docker compose down -v permanently deletes all volume data including your database, Redis cache, and uploaded files. Make sure to back up any important data first.
+
+Port Conflicts
+
+If a service fails to start because a port is already in use, these commands help diagnose and resolve the issue.
+
+terminal
+
+$ docker ps --format "table {{.Names}}\t{{.Ports}}"
+
+Show which containers are using which ports
+
+terminal
+
+$ docker stop $(docker ps -q)
+
+Stop all running containers (nuclear option)
+
+For more detailed troubleshooting steps including OS-specific port debugging, see the Troubleshooting page.
+
+Production Docker
+
+Grit ships with a separate production compose file that builds and runs the full application stack. These commands use docker-compose.prod.yml instead of the default development file.
+
+terminal
+
+$ docker compose -f docker-compose.prod.yml up -d
+
+Start all production services in the background
+
+terminal
+
+$ docker compose -f docker-compose.prod.yml logs -f api
+
+Follow production API logs
+
+For full production deployment guides including cloud providers and CI/CD, see the Deployment page.
+
+Database & MigrationsTroubleshooting

@@ -1,0 +1,240 @@
+Reference
+Command explorer
+
+Copy prompt to build with AI
+
+Every Grit CLI command, with the output it prints and the files it writes. Press run on any of them to watch it happen, then read what it touched before you point it at a project you care about.
+
+The output and the file lists here are captured from real runs against a freshly scaffolded project, not written from memory. 26 of the 38 commands write to your repo; the rest read, run or report, and say so.
+
+/
+
+All (38)Scaffold (3)Generate (6)Add (7)Run (8)Data (5)Ship (5)Meta (4)
+
+grit new
+
+Scaffold a new project: Go API, Next.js or Vite frontends, admin panel.
+
+grit new-desktop
+
+Create a Wails desktop application that shares the monorepo API.
+
+grit init
+
+Write CLAUDE.md / AGENTS.md convention docs into an existing project.
+
+grit generate resource
+
+A full-stack CRUD resource: model, service, handler, schemas, types, hooks, admin page.
+
+grit generate field
+
+Add one column to a resource that already exists, in place.
+
+grit generate seeder
+
+A seeder for an existing resource, with one example row or many faked ones.
+
+grit generate sequence
+
+A gap-free sequential number: INV-202605-0001.
+
+grit generate perf
+
+A k6 load test for this API.
+
+grit remove resource
+
+Delete a resource and unpick every injection it made.
+
+grit add variants
+
+Product options, values and a combination matrix, attached to one resource.
+
+grit add web-auth
+
+Login, register and password-reset pages for apps/web, plus route protection.
+
+grit add role
+
+A new role across the Go enum, the Zod schema, the types and the constants.
+
+grit add i18n
+
+next-intl on both frontends, translated API messages, en/fr/sw.
+
+grit add offline
+
+Offline-first sync: local mirror, outbox and version-checked conflicts.
+
+grit expose form
+
+A public page carrying a resource's form, at a path you choose.
+
+grit expose table
+
+A public page carrying a resource's table.
+
+grit start
+
+Run every service in the project, or one of them.
+
+grit studio
+
+Open GORM Studio, the database browser.
+
+grit routes
+
+List every registered API route with its handler and group.
+
+grit test
+
+Run every test suite in the project.
+
+grit ui
+
+Browse and install Grit UI components and blocks.
+
+grit swap
+
+Replace an admin component everywhere at once.
+
+grit mcp
+
+Expose the project to AI coding agents over MCP.
+
+grit migrate
+
+Create and alter database tables from the Go models.
+
+grit env
+
+Create .env from .env.example with fresh secrets, for a project you cloned.
+
+grit seed
+
+Run every registered seeder.
+
+grit sync
+
+Regenerate TypeScript types and Zod schemas from the Go models.
+
+grit backup
+
+Back up the entire database to an archive.
+
+grit restore
+
+Restore the database from a backup archive.
+
+grit deploy
+
+Cross-compile, upload, and configure systemd and Caddy with TLS.
+
+grit compile
+
+Build the desktop application executable.
+
+grit package
+
+Build a distributable desktop installer.
+
+grit down
+
+Put the application in maintenance mode.
+
+grit up
+
+Bring the application back online.
+
+grit upgrade
+
+Bring a project's scaffold files up to the current Grit version.
+
+grit update
+
+Update the Grit CLI itself to the latest release.
+
+grit plugin
+
+Install and manage Grit plugins.
+
+grit version
+
+Print the CLI version.
+
+myapp
+copyrun
+
+$grit new myapp --triple --next
+
+Press run to see what this does.
+
+What it touches
++8 created
+
+426 files across the monorepothe whole project
+
+apps/api/Go API, batteries wired
+
+apps/web/Next.js or Vite
+
+apps/admin/admin panel
+
+packages/shared/Zod schemas + TS types
+
+docker-compose.ymlPostgres, Redis, MinIO, Mailhog
+
+.envports, DB URL, secrets
+
+grit.jsonwhat this project is made of
+
+Why it exists
+
+The one command that turns an empty folder into a running full-stack project. It writes around 426 files: a Gin + GORM API with auth, roles, jobs, mail, storage and audit already wired, the frontends you asked for, a shared package of Zod schemas and TypeScript types, and the Docker compose file for Postgres, Redis, MinIO and Mailhog.
+
+When you reach for it
+
+Starting anything new.
+
+Trying an architecture out: run it twice with --single and --triple and compare.
+
+Scaffolding into a directory you already made, with --here.
+
+Flags
+
+--arch stringArchitecture: single, double, triple, api, mobile
+
+--frontend stringFrontend framework: next, vite (TanStack)
+
+--single / --double / --triple / --api / --mobileShorthand for --arch
+
+--next / --viteShorthand for --frontend
+
+--fullEverything: API + web + admin + desktop + Expo + docs site
+
+--desktopInclude a Wails desktop app sharing the monorepo API
+
+--expoInclude an Expo mobile app
+
+--i18nAdd internationalisation (next-intl, translated API messages)
+
+--style stringAdmin style: default, modern, minimal, glass
+
+--theme stringFull theme: atlas, aurora, pulse
+
+--hereScaffold into the current directory
+
+--forceAllow scaffolding into a non-empty directory
+
+Worth knowing first
+
+Interactive by default. Passing --triple --next (or any other pair) skips the prompts.
+
+`pnpm install` is not run for you. `grit start` fails on a missing module if you skip it.
+
+The database defaults to Postgres on port 5434. Set DATABASE_URL=sqlite:./app.db in .env to skip Docker entirely.
+
+Create a projectArchitecture modes
+
+CLI conceptsGenerated file map

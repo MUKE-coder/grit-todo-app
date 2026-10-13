@@ -1,0 +1,1130 @@
+AI Reference
+Grit Desktop — Complete LLM Reference
+
+The canonical guide for AI assistants building native desktop applications with Grit Desktop. Covers architecture, every CLI command, resource generation, field types, Wails bindings, DataTable, FormBuilder, code markers, building executables, and the rules that must never be broken.
+
+For AI tools: Read this entire page before generating any code for Grit Desktop projects. Every convention here is enforced by the CLI — deviating breaks grit generate and grit remove. Desktop is hybrid: CRUD goes through Wails bindings, plus an embedded Gin REST API on 127.0.0.1:34999 for uploads, health, and external clients.
+
+1What is Grit Desktop?
+
+Grit Desktop builds native desktop applications using Go + Wails + React. One command (grit new-desktop myapp) scaffolds a complete project that compiles to a single native binary. No browser, no Electron, no separate runtime.
+
+Backend
+
+Go (Wails v2 bindings) for CRUD + an embedded Gin REST API on 127.0.0.1:34999 for uploads, health, and external clients
+
+Frontend
+
+Vite + React + TanStack Router (file-based) + TanStack Query + Tailwind CSS
+
+Database
+
+SQLite (default, local) via GORM — fully offline-first
+
+Distribution
+
+Single binary (~10-15MB) for Windows, macOS, and Linux
+
+Code Generation
+
+grit generate resource — same CLI, auto-detects desktop
+
+Dev Tools
+
+GORM Studio (localhost:8080/studio), hot-reload, PDF/Excel export
+
+The scaffolded project includes JWT authentication, blog and contact CRUD resources, PDF and Excel data export, a custom frameless title bar, dark theme with shadcn/ui components, toast notifications, and GORM Studio for database browsing — all out of the box.
+
+2Why Wails (not Electron or Tauri)?
+
+Grit chose Wails because Go is already the backend language for Grit web projects. Using Wails means developers write Go for both web and desktop — no Rust learning curve (Tauri), and none of Electron's bloat.
+
+AspectWailsElectronTauri
+
+Backend languageGoJavaScript/C++Rust
+
+Binary size~10-15MB~150MB+~5-10MB
+
+RAM usage~30-50MB~200MB+~30-50MB
+
+FrontendAny web frameworkAny web frameworkAny web framework
+
+Backend callsDirect Go bindingsIPC (serialization overhead)Rust commands (compile-time checked)
+
+Learning curveGo + ReactJavaScript onlyRust + JavaScript
+
+Startup time<1s2-5s<1s
+
+Cross-platformWin / macOS / LinuxWin / macOS / LinuxWin / macOS / Linux
+
+--Go is the backend language — Wails is the natural choice (no Rust learning curve)
+
+--Direct function calls from React to Go — no serialization overhead, no IPC
+
+--Small binary size (~10-15MB vs Electron's 150MB+)
+
+--Memory efficient (~30-50MB vs Electron's 200MB+)
+
+--Same language for CLI, web API, and desktop — unified developer experience
+
+3Architecture
+
+Desktop projects are hybrid. CRUD goes through Wails bindings — the React frontend calls Go functions through generated TypeScript bindings, no HTTP — while an embedded Gin REST API bound to 127.0.0.1:34999 (in internal/api/) serves native file uploads, a health check, and any external clients.
+
+For generated resource CRUD, React calls Go functions directly via window.go.main.App.MethodName(). Do not route generated CRUD through HTTP/fetch/Axios — the embedded REST API is only for uploads, health, and external clients.
+
+Call Flow
+
+Desktop call flow
+Copy to clipboard
+
+React Component
+
+--> Wails TypeScript Binding (auto-generated)   [CRUD]
+
+--> Go App Method (on the App struct)
+
+--> GORM Service (business logic + queries)
+
+--> SQLite Database (app.db)
+
+React Component
+
+--> POST 127.0.0.1:34999/api/uploads            [file uploads]
+
+--> internal/api + internal/storage
+
+--> FileRef (internal/files) persisted on the record
+
+1
+
+App Struct (app.go)
+
+A Go struct with exported methods. Any method on this struct with exported name and supported types is automatically available to the React frontend. Wails generates TypeScript bindings during build.
+
+2
+
+React Frontend (frontend/)
+
+A Vite-powered React app with TanStack Router (file-based routing) and TanStack Query for state management. Calls Go functions via the generated Wails bindings for CRUD (no fetch/Axios); file uploads POST to the embedded REST API on 127.0.0.1:34999.
+
+3
+
+GORM Services (internal/service/)
+
+Business logic and database queries. Each resource has a service with List, ListAll, GetByID, Create, Update, Delete methods. Services operate on GORM models backed by SQLite.
+
+4
+
+SQLite Database
+
+Local file-based database (app.db). All data lives on the user's machine. Fully offline — no network connection required.
+
+4Project Structure
+
+Desktop projects are a single directory (not a monorepo). Go code lives at the root and in internal/, while the React frontend lives in frontend/.
+
+myapp/ (scaffolded desktop project)
+Copy to clipboard
+
+myapp/
+
+├── main.go                  # Wails entry point — creates app, binds methods
+
+├── app.go                   # App struct with all bound methods + constructor
+
+├── types.go                 # Input structs for bound methods
+
+├── wails.json               # Wails project configuration
+
+├── go.mod                   # Go module definition
+
+├── go.sum                   # Go dependency checksums
+
+│
+
+├── internal/
+
+│   ├── config/
+
+│   │   └── config.go        # App configuration (reads .env)
+
+│   ├── db/
+
+│   │   └── db.go            # GORM database setup (SQLite) + AutoMigrate
+
+│   ├── models/
+
+│   │   ├── user.go          # User model (auth)
+
+│   │   ├── blog.go          # Blog post model (scaffolded example)
+
+│   │   └── contact.go       # Contact model (scaffolded example)
+
+│   ├── service/
+
+│   │   ├── auth.go          # Authentication service (register, login, JWT)
+
+│   │   ├── blog.go          # Blog CRUD service
+
+│   │   ├── contact.go       # Contact CRUD service
+
+│   │   └── export.go        # PDF / Excel export service
+
+│   ├── api/
+
+│   │   ├── router.go        # Embedded Gin REST API (127.0.0.1:34999)
+
+│   │   └── uploads.go       # POST /api/uploads, GET /api/health
+
+│   ├── storage/
+
+│   │   └── storage.go       # Writes uploads into the OS app-data dir
+
+│   └── files/
+
+│       └── file_ref.go      # FileRef — stored upload JSON shape
+
+│
+
+├── frontend/
+
+│   ├── src/
+
+│   │   ├── main.tsx          # React entry point (TanStack Router)
+
+│   │   ├── routes/           # File-based routes (TanStack Router)
+
+│   │   │   ├── __root.tsx    # Root route
+
+│   │   │   ├── _layout.tsx   # Auth guard + sidebar layout
+
+│   │   │   └── _layout/      # Protected page routes
+
+│   │   ├── components/       # Shared UI: sidebar, title-bar, data-table, etc.
+
+│   │   │   └── sidebar.tsx   # App sidebar with navigation
+
+│   │   ├── hooks/            # TanStack Query hooks for Wails bindings
+
+│   │   └── lib/              # Utilities
+
+│   ├── index.html
+
+│   ├── package.json
+
+│   ├── vite.config.ts
+
+│   └── tailwind.config.ts
+
+│
+
+├── build/
+
+│   ├── appicon.png           # App icon (1024x1024 — auto-converted per platform)
+
+│   └── bin/                  # Build output directory
+
+│
+
+└── cmd/
+
+└── studio/
+
+└── main.go           # GORM Studio server (port 8080)
+
+Key difference from web projects: Desktop has app.go + types.go at the root instead of handlers/ and routes/. There is no apps/ directory, no Turborepo, no monorepo structure.
+
+5All CLI Commands
+
+Every desktop-relevant command. The CLI auto-detects desktop projects by checking for wails.json.
+
+CommandDescription
+
+grit new-desktop <name>Scaffold a complete desktop project with Go backend, React frontend, auth, CRUD, GORM Studio, and dark theme
+
+grit generate resource <Name> --fields "..."Generate a full-stack CRUD resource: Go model, service, React list page, React form page, plus 10 code injections
+
+grit remove resource <Name>Remove a generated resource: deletes files and reverses all 10 injections. Markers stay intact.
+
+grit startStart development mode (runs wails dev). Opens native window with hot-reload for Go and React.
+
+grit compileBuild native executable (runs wails build). Output in build/bin/.
+
+grit studioOpen GORM Studio at localhost:8080/studio — visual database browser.
+
+grit versionShow installed CLI version.
+
+Desktop projects do not have grit start server or grit start client. Those are web-only. For desktop, use grit start or wails dev directly. There is no grit migrate or grit seed for desktop — GORM AutoMigrate runs on startup automatically.
+
+6Resource Generation — Complete Reference
+
+The same grit generate resource command works for both web and desktop projects. The CLI auto-detects the project type by checking for wails.json.
+
+Syntax
+
+Terminal
+Copy to clipboard
+
+$grit generate resource <Name> --fields "field1:type,field2:type,field3:type"
+
+Supported Field Types
+
+TypeGo TypeForm InputNotes
+
+stringstringText inputShort text — titles, names, emails
+
+textstringTextareaLong text — descriptions, notes
+
+richtextstringTextareaRich content (rendered as textarea in desktop)
+
+intintNumber inputSigned integer — stock, quantity
+
+uintuintNumber inputUnsigned integer — IDs, counts
+
+floatfloat64Number input (decimal)Prices, coordinates, ratings
+
+boolboolToggle switchActive, published, featured flags
+
+datetime.TimeDate pickerDate only — due dates, birthdays
+
+datetimetime.TimeDateTime pickerDate + time — event timestamps
+
+slugstring (uniqueIndex)Auto-generated (excluded from form)URL-friendly slug from source field
+
+belongs_touint (foreign key)Relationship picker (searchable select)Loads related rows; resolves FK to parent model
+
+filefiles.FileRefNative upload (FileDropzone)Uploads via embedded /api/uploads → FileRef
+
+files[]files.FileRefMulti-file native uploadUploads via /api/uploads → FileRef[]
+
+Slug Field Syntax
+
+The slug type uses a special syntax to specify the source field:
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Article --fields "title:string,slug:slug:source=title,content:richtext"
+
+This adds a uniqueIndex and a GORM BeforeCreate hook that auto-generates the slug from the title. Slug fields are excluded from forms and input structs.
+
+Files Created Per Resource
+
+internal/models/<snake>.go
+GORM model struct with ID, fields, timestamps, and soft delete. Includes slug hook if applicable.
+
+internal/service/<snake>.go
+Service with List (paginated), ListAll, GetByID, Create, Update, Delete methods. Returns PaginatedResult for list queries.
+
+frontend/src/routes/_layout/<plural>.index.tsx
+List route — DataTable, search, pagination, PDF/Excel export
+
+frontend/src/routes/_layout/<plural>.new.tsx
+Create form route — field-type-based inputs, validation, toast
+
+frontend/src/routes/_layout/<plural>.$id.edit.tsx
+Edit form route — pre-fills from GetByID, type-safe params
+
+Example: Generate a Product Resource
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Product --fields "name:string,price:money,stock:int,published:bool"
+
+Generated Model
+
+internal/models/product.go
+Copy to clipboard
+
+package models
+
+import (
+
+"gorm.io/gorm"
+
+)
+
+type Product struct {
+
+gorm.Model
+
+Name      string  `gorm:"not null" json:"name"`
+
+Price     money.Money `json:"price"`
+
+Stock     int     `json:"stock"`
+
+Published bool    `gorm:"default:false" json:"published"`
+
+}
+
+type ProductInput struct {
+
+Name      string  `json:"name"`
+
+Price     money.Money `json:"price"`
+
+Stock     int     `json:"stock"`
+
+Published bool    `json:"published"`
+
+}
+
+Generated Service (Skeleton)
+
+internal/service/product.go
+Copy to clipboard
+
+package service
+
+import (
+
+"myapp/internal/models"
+
+"gorm.io/gorm"
+
+)
+
+type ProductService struct {
+
+DB *gorm.DB
+
+}
+
+type PaginatedResult struct {
+
+Data  interface{} `json:"data"`
+
+Total int64       `json:"total"`
+
+Page  int         `json:"page"`
+
+Pages int         `json:"pages"`
+
+}
+
+func (s *ProductService) List(page, pageSize int, search string) (*PaginatedResult, error) { ... }
+
+func (s *ProductService) ListAll() ([]models.Product, error) { ... }
+
+func (s *ProductService) GetByID(id uint) (*models.Product, error) { ... }
+
+func (s *ProductService) Create(input models.ProductInput) (*models.Product, error) { ... }
+
+func (s *ProductService) Update(id uint, input models.ProductInput) (*models.Product, error) { ... }
+
+func (s *ProductService) Delete(id uint) error { ... }
+
+7DataTable (List Page)
+
+Every generated resource gets a list page with a full-featured DataTable. Here is what it includes out of the box:
+
+Search BarDebounced text input that filters records. Searches across the primary text field.
+
+Paginated TableData table with configurable page size. Shows total records, page numbers, and navigation.
+
+Sortable ColumnsClick column headers to sort ascending/descending. Columns are generated per field.
+
+Edit ButtonNavigates to the form page with the record ID — pre-fills all fields for editing.
+
+Delete ButtonShows a confirmation dialog. On confirm, calls the Go delete method via Wails binding.
+
+PDF ExportExports all records to a styled PDF document. Calls ExportProductsPDF() Go method.
+
+Excel ExportExports all records to an .xlsx spreadsheet. Calls ExportProductsExcel() Go method.
+
+New ButtonNavigates to the form page in create mode (no ID). Form fields are empty.
+
+Customizing Columns
+
+Columns are defined in the list page index.tsx. You can reorder, rename, add custom formatting, or add computed columns:
+
+frontend/src/routes/_layout/products.index.tsx (column definition)
+Copy to clipboard
+
+const columns = [
+
+{ accessorKey: "name", header: "Product Name" },
+
+{
+
+accessorKey: "price",
+
+header: "Price",
+
+cell: ({ row }: any) => "$" + Number(row.getValue("price")).toFixed(2),
+
+},
+
+{ accessorKey: "stock", header: "Stock" },
+
+{
+
+accessorKey: "published",
+
+header: "Status",
+
+cell: ({ row }: any) =>
+
+row.getValue("published") ? "Published" : "Draft",
+
+},
+
+];
+
+8FormBuilder (Form Page)
+
+Every generated resource gets a form page that handles both creating and editing records. The form fields are determined by the field types declared during generation.
+
+Field Type to Form Input Mapping
+
+Field TypeForm InputBehavior
+
+stringText input (<input type="text">)Standard text field with label
+
+text / richtextTextarea (<textarea>)Multi-line text area, resizable
+
+int / uint / floatNumber input (<input type="number">)Numeric input with step control
+
+boolToggle switchOn/off toggle, defaults to false
+
+dateDate pickerCalendar date selector
+
+datetimeDateTime pickerCalendar + time selector
+
+slug(Excluded from form)Auto-generated in Go service from source field
+
+belongs_toRelationship picker (searchable select)Searchable select that loads related rows; resolves the FK
+
+file / filesNative upload (FileDropzone)Uploads to the embedded /api/uploads, stored as FileRef(s)
+
+Create vs Edit Mode
+
+Create ModeURL has no ID parameter. Form fields are empty. On submit, calls the Go Create method via Wails binding. Shows success toast and navigates to list page.
+
+Edit ModeURL includes the record ID. On load, calls the Go Get method to fetch the record and pre-fill all fields. On submit, calls the Go Update method. Shows success toast and navigates back.
+
+Form validation happens on the Go side. If a GORM not null constraint fails or a service returns an error, the React form displays a toast notification with the error message.
+
+9Wails Bound Methods
+
+Go methods on the App struct are automatically available in React. Wails generates TypeScript bindings during wails dev and wails build. React calls them as async functions.
+
+7 Methods Generated Per Resource
+
+app.go — methods generated for Product resource
+Copy to clipboard
+
+// List with pagination and search
+
+func (a *App) GetProducts(page, pageSize int, search string) (*service.PaginatedResult, error)
+
+// Get single record by ID
+
+func (a *App) GetProduct(id uint) (*models.Product, error)
+
+// Create new record
+
+func (a *App) CreateProduct(input models.ProductInput) (*models.Product, error)
+
+// Update existing record
+
+func (a *App) UpdateProduct(id uint, input models.ProductInput) (*models.Product, error)
+
+// Delete record (soft delete)
+
+func (a *App) DeleteProduct(id uint) error
+
+// Export all records as PDF (returns raw bytes)
+
+func (a *App) ExportProductsPDF() ([]byte, error)
+
+// Export all records as Excel (returns raw bytes)
+
+func (a *App) ExportProductsExcel() ([]byte, error)
+
+Calling from React
+
+Wails generates TypeScript bindings in frontend/wailsjs/. Import and call them as async functions:
+
+frontend/src/routes/_layout/products.index.tsx (calling Go from React)
+Copy to clipboard
+
+import { GetProducts, DeleteProduct, ExportProductsPDF, ExportProductsExcel } from "../../wailsjs/go/main/App";
+
+// In a component:
+
+const result = await GetProducts(page, pageSize, searchQuery);
+
+// result = { data: Product[], total: number, page: number, pages: number }
+
+await DeleteProduct(productId);
+
+const pdfBytes = await ExportProductsPDF();
+
+// Save pdfBytes as a file using browser APIs
+
+const excelBytes = await ExportProductsExcel();
+
+// Save excelBytes as .xlsx file
+
+The React frontend calls GetProducts(...) — NOT fetch("/api/products"). CRUD involves no HTTP — the call goes directly from JavaScript to Go through the Wails bridge. (File uploads are the exception: they POST to the embedded REST API on 127.0.0.1:34999.)
+
+10Building into Executable
+
+Compile the entire application — Go runtime, React UI, static assets, and SQLite — into a single native binary.
+
+Terminal
+Copy to clipboard
+
+$grit compile
+
+This runs wails build under the hood. The React frontend is embedded via //go:embed all:frontend/dist — no separate files need to be distributed.
+
+To ship a distributable Windows installer, run grit package — it builds an NSIS installer (.exe), auto-detecting makensis on your PATH (use --no-installer for the raw binary only).
+
+Build Output
+
+PlatformOutput PathSize
+
+Windowsbuild/bin/myapp.exe~10-15MB
+
+macOSbuild/bin/myapp.app~10-15MB
+
+Linuxbuild/bin/myapp~10-15MB
+
+Cross-Platform Builds
+
+Terminal
+Copy to clipboard
+
+# Windows
+
+$wails build -platform windows/amd64
+
+# macOS (Intel)
+
+$wails build -platform darwin/amd64
+
+# macOS (Apple Silicon)
+
+$wails build -platform darwin/arm64
+
+# Linux
+
+$wails build -platform linux/amd64
+
+Windows Installer (NSIS)
+
+Create a Windows installer with Start Menu shortcuts and uninstallation support. Requires NSIS installed:
+
+Terminal
+Copy to clipboard
+
+$wails build -nsis
+
+What Gets Embedded
+
+--Go runtime and compiled backend code
+
+--All Wails bindings
+
+--Complete React frontend (Vite build output)
+
+--All static assets (CSS, fonts, images)
+
+--SQLite driver (database file created at runtime)
+
+11Desktop vs Web — Full Comparison
+
+Both modes share Grit conventions (GORM models, code generation, Studio), but the runtime, communication model, and distribution are fundamentally different.
+
+AspectWeb (grit new)Desktop (grit new-desktop)
+
+BackendGin HTTP serverWails bindings (CRUD) + embedded Gin API :34999 (uploads/health)
+
+FrontendNext.js (App Router)Vite + React + TanStack Router
+
+DatabasePostgreSQLSQLite (default, local)
+
+CommunicationHTTP/REST + React Query + fetchDirect Go calls (CRUD) + embedded REST for uploads/health
+
+State managementReact Query + fetchReact Query + Wails bindings
+
+Auth storageJWT + HTTP cookiesJWT + local storage
+
+Project structureTurborepo monorepo (apps/api, apps/web, apps/admin)Single directory (root Go + frontend/)
+
+DistributionDeploy to cloud / VPSDistribute .exe / .app / binary
+
+File sizeN/A (web-hosted)~10-15MB single binary
+
+Offline supportRequires serverFully offline — all data local
+
+Code generation markersGRIT:MODELS, GRIT:ROUTES, etc.grit:models, grit:methods, grit:nav, etc.
+
+Admin panelFull admin panel (Next.js app)None — uses in-app pages directly
+
+File storageS3 / R2 / MinIO (presigned uploads)Local filesystem (no S3)
+
+Background jobsasynq + RedisNone — desktop apps use goroutines if needed
+
+12Code Markers — NEVER Delete
+
+These comments are injection points for the CLI. Removing them permanently breaks grit generate and grit remove. Never remove, rename, or move them.
+
+Desktop projects use 13 grit: markers across 6 files. The CLI injects code at these locations during grit generate resource and removes it during grit remove resource.
+
+FileMarkerTypePurpose
+
+db.go// grit:modelsline-beforeAdd model to AutoMigrate list
+
+main.go// grit:service-initline-beforeInitialize service with DB connection
+
+main.go/* grit:app-args */inlinePass service to NewApp constructor
+
+app.go// grit:importsline-beforeImport service package
+
+app.go// grit:fieldsline-beforeAdd service field to App struct
+
+app.go/* grit:constructor-params */inlineAdd constructor parameter
+
+app.go/* grit:constructor-assign */inlineAssign service to App field
+
+app.go// grit:methodsline-beforeAdd 7 bound methods (CRUD + export)
+
+types.go// grit:input-typesline-beforeAdd Input struct for resource
+
+cmd/studio/main.go// grit:studio-modelsline-beforeRegister model in GORM Studio
+
+sidebar.tsx// grit:nav-icons + // grit:navline-beforeAdd navigation icon import + sidebar link
+
+What line-before vs inline Means
+
+line-beforeNew code is inserted on the line BEFORE the marker comment. The marker stays on its own line. Used for models, fields, methods, imports, routes.
+
+inlineNew code is inserted immediately before the /* grit:marker */ comment on the SAME line. Used for constructor parameters and assignment expressions.
+
+Example: What Injection Looks Like
+
+app.go — before and after generating Product
+Copy to clipboard
+
+// BEFORE generation:
+
+type App struct {
+
+ctx         context.Context
+
+authService *service.AuthService
+
+// grit:fields
+
+}
+
+// AFTER generation:
+
+type App struct {
+
+ctx            context.Context
+
+authService    *service.AuthService
+
+productService *service.ProductService
+
+// grit:fields
+
+}
+
+13All 12 Injection Points — What Gets Injected
+
+For a resource named Product, here is exactly what the CLI injects at each marker:
+
+internal/db/db.go — // grit:models
+Copy to clipboard
+
+&models.Product{},
+
+// grit:models
+
+main.go — // grit:service-init
+Copy to clipboard
+
+productService := &service.ProductService{DB: database}
+
+// grit:service-init
+
+main.go — /* grit:app-args */
+Copy to clipboard
+
+app := NewApp(authService, productService, /* grit:app-args */)
+
+app.go — struct fields and constructor
+Copy to clipboard
+
+type App struct {
+
+ctx            context.Context
+
+authService    *service.AuthService
+
+productService *service.ProductService
+
+// grit:fields
+
+}
+
+func NewApp(authService *service.AuthService, productService *service.ProductService, /* grit:constructor-params */) *App {
+
+return &App{authService: authService, productService: productService, /* grit:constructor-assign */}
+
+}
+
+frontend/src/routes/_layout/products.index.tsx — route file
+Copy to clipboard
+
+import { createFileRoute } from "@tanstack/react-router";
+
+// ... component imports
+
+export const Route = createFileRoute("/_layout/products/")({
+
+component: ProductsListPage,
+
+});
+
+function ProductsListPage() {
+
+// ... list page with DataTable
+
+}
+
+frontend/src/components/sidebar.tsx — navigation
+Copy to clipboard
+
+import { Package } from "lucide-react";
+
+// grit:nav-icons
+
+{ name: "Products", href: "/products", icon: Package },
+
+// grit:nav
+
+14LLM Examples — Copy and Adapt
+
+Concrete examples an AI assistant can learn from. These cover the most common workflows.
+
+Example 1: Scaffold and Generate Multiple Resources
+
+Create an inventory management desktop app with products and suppliers.
+
+# Create the project
+
+grit new-desktop inventory
+
+# Navigate into project
+
+cd inventory
+
+# Generate resources
+
+grit generate resource Product --fields "name:string,sku:string,price:money,stock:int,reorder_level:int,active:bool"
+
+grit generate resource Supplier --fields "name:string,email:string,phone:string,address:text,notes:text"
+
+# Start development
+
+grit start
+
+Copy to clipboard
+
+Example 2: Add a Custom Service Method
+
+Add a GetBySKU method to the product service for barcode-based lookup.
+
+internal/service/product.go — add this method
+Copy to clipboard
+
+func (s *ProductService) GetBySKU(sku string) (*models.Product, error) {
+
+var product models.Product
+
+if err := s.DB.Where("sku = ?", sku).First(&product).Error; err != nil {
+
+return nil, fmt.Errorf("product not found with SKU %s: %w", sku, err)
+
+}
+
+return &product, nil
+
+}
+
+Example 3: Expose a Custom Method via Wails
+
+Make the custom method available in React by adding it to the App struct. Then call from React.
+
+app.go — add method to App struct (below grit:methods marker)
+Copy to clipboard
+
+// Custom method — add ABOVE the // grit:methods marker (not between generated code)
+
+func (a *App) GetProductBySKU(sku string) (*models.Product, error) {
+
+return a.productService.GetBySKU(sku)
+
+}
+
+frontend/src/routes/_layout/products.lookup.tsx — call from React
+Copy to clipboard
+
+import { GetProductBySKU } from "../../wailsjs/go/main/App";
+
+export default function ProductLookup() {
+
+const [sku, setSku] = useState("");
+
+const [product, setProduct] = useState(null);
+
+const handleLookup = async () => {
+
+try {
+
+const result = await GetProductBySKU(sku);
+
+setProduct(result);
+
+} catch (err) {
+
+toast.error("Product not found");
+
+}
+
+};
+
+return (
+
+<div>
+
+<input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="Scan barcode..." />
+
+<button onClick={handleLookup}>Lookup</button>
+
+{product && <div>{product.name} — {product.price}</div>}
+
+</div>
+
+);
+
+}
+
+After adding a new Go method, restart wails dev so Wails regenerates the TypeScript bindings. Then import the new function from wailsjs/go/main/App.
+
+Example 4: Generate with Slug Field
+
+Generate an Article resource with an auto-generated slug from the title field.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Article --fields "title:string,slug:slug:source=title,content:richtext,published:bool"
+
+The slug field is excluded from the form — it is auto-generated in the Go model's BeforeCreate hook. The model gets a uniqueIndex on the slug column.
+
+Example 5: Build for Distribution
+
+# Build for current platform
+
+grit compile
+
+# Output:
+
+#   Windows: build/bin/inventory.exe
+
+#   macOS:   build/bin/inventory.app
+
+#   Linux:   build/bin/inventory
+
+# Cross-compile for a specific platform:
+
+wails build -platform windows/amd64
+
+wails build -platform darwin/arm64
+
+# Create a Windows installer:
+
+wails build -nsis
+
+Copy to clipboard
+
+Example 6: Remove a Resource
+
+Cleanly remove a resource — deletes all generated files and reverses all 10 injections. Markers stay intact for future generation.
+
+Terminal
+Copy to clipboard
+
+$grit remove resource Supplier
+
+# Deletes:
+
+#   internal/models/supplier.go
+
+#   internal/service/supplier.go
+
+#   frontend/src/routes/_layout/suppliers.index.tsx
+
+#   frontend/src/routes/_layout/suppliers.new.tsx
+
+#   frontend/src/routes/_layout/suppliers.$id.edit.tsx
+
+#
+
+# Removes injected code from:
+
+#   db.go, main.go, app.go, types.go, studio/main.go, sidebar.tsx
+
+15Golden Rules for AI Assistants — Never Break These
+
+Non-negotiable. Violating them causes silent failures, broken code generation, or corrupted project state.
+
+1
+
+Always use grit generate resource for new resources
+
+Never create model, service, or page files manually. The CLI handles 5 file creations + 10 injections in one atomic operation. Manual creation will miss injection points and break future generation/removal.
+
+2
+
+Never modify grit: markers
+
+The comments // grit:models, // grit:fields, // grit:methods, // grit:nav, etc. are permanent injection points. Do not remove, rename, reformat, or move them. They must stay exactly as scaffolded.
+
+3
+
+Use grit remove resource to undo — never delete files manually
+
+Manual deletion leaves injected code orphaned in app.go, main.go, db.go, and sidebar.tsx. Always use grit remove resource <Name> which cleans up all 10 injection points.
+
+4
+
+Desktop uses SQLite, not PostgreSQL
+
+Never suggest PostgreSQL-specific features (arrays, JSONB, full-text search) for desktop projects. SQLite is the default and only supported database. No Docker needed.
+
+5
+
+Methods must be on the App struct to be exposed to React
+
+Only exported methods on the App struct (in app.go) are available as Wails bindings. Methods on other structs or in other files are not accessible from the frontend.
+
+6
+
+The frontend calls Go functions directly for CRUD — the embedded REST API is only for uploads/health/external clients
+
+For generated resource CRUD, React calls Go via GetProducts(), CreateProduct(), etc. — the generated Wails TypeScript bindings — never fetch()/Axios. The scaffold does run an embedded Gin API on 127.0.0.1:34999 (internal/api), but it exists only for native file uploads (POST /api/uploads → FileRef), a health check, and any external clients.
+
+7
+
+Restart wails dev after Go file changes
+
+Wails auto-detects Go changes and rebuilds, but new methods require a full restart so TypeScript bindings are regenerated. If a new method is not available in React, restart wails dev.
+
+8
+
+Add custom methods ABOVE the grit:methods marker, not below
+
+Code injected by grit generate goes directly above the // grit:methods marker. Place custom methods above the generated block to avoid them being accidentally removed by grit remove.
+
+9
+
+Do not create per-resource handlers or routes files for desktop CRUD
+
+Generated CRUD does not use handlers/, routes/, or middleware/ directories — it runs through methods on the App struct. The only HTTP surface is the scaffold's embedded internal/api (uploads + health); if a user asks for a resource API endpoint, use Wails bindings instead.
+
+10
+
+Generate parent models before child models (belongs_to)
+
+When using belongs_to relationships, generate the parent resource first so the referenced model exists. For example, generate Category before generating Product with a category_id:belongs_to field.
+
+16Quick Build Reference
+
+Copy-paste recipes for the most common desktop workflows.
+
+Scaffold a new desktop project
+Copy to clipboard
+
+grit new-desktop myapp
+
+cd myapp
+
+grit start
+
+Generate resources
+Copy to clipboard
+
+grit generate resource Product --fields "name:string,price:money,stock:int,active:bool"
+
+grit generate resource Category --fields "name:string,description:text"
+
+grit generate resource Order --fields "customer_name:string,total:money,status:string,notes:text,completed:bool"
+
+Remove a resource
+Copy to clipboard
+
+grit remove resource Order
+
+Open GORM Studio
+Copy to clipboard
+
+grit studio
+
+# Opens browser at http://localhost:8080/studio
+
+Build for production
+Copy to clipboard
+
+grit compile
+
+# Binary at: build/bin/myapp.exe (Windows) or build/bin/myapp (macOS/Linux)
+
+Cross-compile + installer
+Copy to clipboard
+
+wails build -platform windows/amd64
+
+wails build -platform darwin/arm64
+
+wails build -nsis  # Windows installer
+
+17Common Mistakes LLMs Make with Desktop Projects
+
+These are the most frequent errors AI assistants make when helping with Grit Desktop. Avoid all of them.
+
+WrongCorrect
+
+Suggesting fetch("/api/products") in ReactUse GetProducts() from Wails bindings
+
+Creating a handlers/ or routes/ directoryAdd methods to the App struct in app.go
+
+Suggesting Docker or PostgreSQL setupSQLite works out of the box — no Docker needed
+
+Running grit start server + grit start clientUse grit start or wails dev (single command)
+
+Manually creating model/service/page filesUse grit generate resource for everything
+
+Deleting generated files to remove a resourceUse grit remove resource <Name>
+
+Suggesting middleware for authenticationAuth is handled in Go methods — check JWT in service layer
+
+Adding icon + nav item to sidebar.tsxAdd imports ABOVE the marker — inject goes before
+
+Using pnpm dev or turbo dev for desktopUse grit start — no Turborepo in desktop projects
+
+Creating apps/ or packages/ directoriesDesktop is a single directory — no monorepo structure
+
+Download Desktop Handbook (PDF)Complete offline reference for Grit Desktop development
+
+Build a POS App

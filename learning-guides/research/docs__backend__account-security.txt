@@ -1,0 +1,77 @@
+Backend
+Account Security
+
+One screen for everything that protects a login: two-factor, passkeys, recovery contacts and active sessions. Plus the recovery flow behind it, which is the part with the interesting security properties.
+
+The page
+
+/account/security in the admin, reachable from the user menu. It gathers what was previously scattered: two-factor and active sessions used to sit on a page called "profile", beside a bio and an avatar, which is a page somebody opens to change their job title.
+
+Deliberately not /system/security. That page is the operator's threat dashboard: blocked addresses, recent attacks, the state of the perimeter. It is about other people. This one is about you, and merging them would put a password box next to a list of intrusion attempts.
+
+Recovery contacts
+
+A verified second address that can get somebody back in when the primary is gone. Password reset alone does not cover this: it sends a link to the address you have already lost.
+
+GET    /api/v1/auth/security               what is on, and what this deployment can offer
+
+POST   /api/v1/auth/recovery/email         set, and send a code
+
+POST   /api/v1/auth/recovery/email/verify  confirm it
+
+DELETE /api/v1/auth/recovery/email         remove it
+
+Copy to clipboard
+
+Every write takes the account password
+
+This is the whole security model, and it is worth stating plainly. A recovery address is a second way into the account. Somebody holding a live session, from a borrowed laptop or a stolen token, could otherwise quietly attach their own address and keep the account from then on. The password is the thing they do not have, and it is required to add and to remove.
+
+The address is masked, even to you
+
+The overview returns b****p@example.com, never the full address. Same reasoning: whoever is reading that screen might be the problem, and the full address tells them where to go next.
+
+The code
+
+Six digits from crypto/rand, not math/rand. A predictable recovery code is a way into every account at once.
+
+Only the hash is stored, so leaking the table does not let anyone confirm a contact they do not control.
+
+Fifteen minutes, single use, and requesting a new one burns the old one. Two live codes means an intercepted first message still works after the user re-requests.
+
+Five guesses. A million possibilities with unlimited attempts is a formality, not a secret.
+
+Two addresses that are refused
+
+Your own sign-in address, because if you have lost access to it, sending the code there helps nobody. And an address already used by another account, because that would let them reset into yours.
+
+Phone recovery is a seam, not a provider
+
+internal/sms defines the interface and registers nothing. The right provider depends on where your users are: Twilio is not the sensible choice in Kampala and Africa's Talking is not the sensible choice in Berlin, and baking one in would make everybody carry a dependency most cannot use.
+
+apps/api/cmd/server/main.go
+Copy to clipboard
+
+sms.Register(sms.SenderFunc(func(ctx context.Context, to, body string) error {
+
+// call your provider here
+
+return nil
+
+}))
+
+The security overview reports whether one is configured, and the admin leaves the phone card out entirely when none is. A disabled control with no explanation is worse than no control.
+
+Contacts live in their own table
+
+Not as columns on User, and that was a correction rather than a preference. As user columns, an upgraded project got the handler that reads them and a model without them, which does not compile: grit upgrade does not rewrite the User model. A half-delivered feature is worse than an undelivered one, and a table of its own arrives complete through AutoMigrate.
+
+What else is on the page
+
+Two-factor, with backup codes and trusted devices. See Authentication.
+
+Passkeys, which are the thing that makes the password matter less.
+
+Active sessions, one row per device, each revocable, with changing the password signing out everything else.
+
+PasskeysRBAC & Roles

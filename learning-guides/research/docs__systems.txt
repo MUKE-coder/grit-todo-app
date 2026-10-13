@@ -1,0 +1,154 @@
+System Design
+Systems
+
+Grit is not one system. It is around thirty of them sharing a process: the thing that decides who you are, the thing that decides what you may touch, the thing that holds a queue, the thing that keeps a cache honest.
+
+The rest of the documentation explains how to use each one. These pages explain how each one is built and why, in the order a system design question asks: the problem, the requirements, the numbers, the architecture, the data, the API, the types, the scaling, and what breaks first.
+
+Every page describes what is actually built, at the version you are reading. Where a number is an estimate it says what it was estimated from, so you can change an assumption and redo the sum for your own traffic.
+
+Identity
+
+Who the caller is, and how they prove it.
+
+Authentication
+
+Proving who the caller is, on every request, without asking them for a password more than once.
+
+Session Management
+
+Turning a stateless token into something you can revoke, list by device, and expire two different ways.
+
+Multi-Factor Authentication
+
+A second factor that survives a leaked password, without locking out the user who loses their phone.
+
+Passkeys
+
+A credential that cannot be phished, cannot be reused across sites, and leaves nothing worth stealing in the database.
+
+Access
+
+What that caller is allowed to touch, and what stops them touching the rest.
+
+Authorization
+
+Deciding what a known caller may do, in a way that fails closed and can be listed route by route.
+
+Data Isolation
+
+Making "your invoices" mean yours, in the query rather than in the handler, so a forgotten check is not a breach.
+
+Multitenancy
+
+One deployment serving many organisations, where a missing predicate is a data breach rather than a bug.
+
+Rate Limiting and Abuse Control
+
+Keeping one caller from consuming the capacity of all of them, and making a password-guessing attack cost something.
+
+Data
+
+Where the application state lives, how it changes, and how it stays correct.
+
+Caching
+
+Serving a repeated answer without asking again, while keeping a cache failure a slowdown rather than an outage.
+
+Concurrency Control
+
+Two people editing the same record, and the second one finding out rather than silently winning.
+
+Schema Migrations
+
+Changing the shape of a live database, and being able to undo a run in a framework that has no migration files.
+
+Pagination and Search
+
+Returning a slice of a large table with a total, a sort, a filter and a search box, without the query getting slower as the table grows.
+
+Field Encryption at Rest
+
+Making a column unreadable without the key, while the handler and the model carry on treating it as a string.
+
+Delivery
+
+Getting work out of the request path and getting results back to the client.
+
+Background Jobs
+
+Getting slow work out of the request path, and having it survive a retry, a duplicate and a deploy.
+
+Scheduled Tasks
+
+Running something every night, exactly once, across however many replicas happen to be up.
+
+Transactional Outbox
+
+Saving a row and telling the world about it as one atomic act, when the database and the message broker cannot share a transaction.
+
+Realtime Updates
+
+Pushing a change to the browsers that care about it, across replicas, with a fallback for the proxies that eat WebSockets.
+
+Webhooks
+
+Receiving a call from someone else’s system and believing it, and making one to theirs that survives their outage.
+
+Transactional Email
+
+Getting a password reset into an inbox, through whichever provider is configured, without the request waiting for it.
+
+Operations
+
+Knowing what the system did, and being able to say so afterwards.
+
+Observability
+
+Being able to answer what happened, where the time went, and whether the thing is actually working, from outside the process.
+
+Audit Logging
+
+Recording who did what, in a form that can be shown afterwards not to have been edited.
+
+File Storage
+
+Accepting an upload, keeping it somewhere that survives a redeploy, and serving it back to the people allowed to see it.
+
+Import and Export
+
+Taking a spreadsheet somebody has and turning it into rows, and giving them a file back, without either one taking the application down.
+
+Platform
+
+The parts that generate, migrate and run everything above.
+
+Code Generation
+
+Turning one field list into a model, a service, a handler, routes, a schema, types, hooks and an admin page, and being able to take all of it back out.
+
+API Contract
+
+One response envelope, one table of error codes, and the reason a client written against one endpoint works against all of them.
+
+Feature Flags
+
+Turning a feature on for ten per cent of users without a deploy, and having the same user stay in the same group.
+
+Embedded
+
+Separate libraries, versioned and released on their own, that mount into the generated API with one call.
+
+GORM Studio
+
+A database browser that ships inside the binary, reads the schema from both the database and the models, and cannot be talked into dropping a table.
+
+Pulse
+
+Request tracing, query profiling, runtime metrics and alerting that run inside the process, with no collector, no Redis and no second deployment.
+
+Sentinel
+
+A web application firewall, threat intelligence and audit layer that mounts in one call, and the accuracy numbers to say how often it is wrong.
+
+29 systems documented.

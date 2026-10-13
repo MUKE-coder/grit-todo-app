@@ -1,0 +1,73 @@
+Deployment
+Deployment
+Environment variables
+
+Which ones the app refuses to start without, which depend on what you have switched on, and the category that fails silently.
+
+Build-time vs runtime: read this one first
+
+Anything the frontend reads while it compiles is baked into the output. Set it only at runtime and it is not missing — it is the empty string, compiled in, with nothing logged and nothing failing. The page renders, the API calls go to the wrong host, and the deploy looks green.
+
+On every platform with a separate “build arguments” field, that is where NEXT_PUBLIC_* and anything read during prerender belongs. Secrets go in runtime environment, never build args — build logs are a wider audience than a container.
+
+Always required
+
+VariableNotes
+
+DATABASE_URLPostgres connection string. Also accepts sqlite:./app.db for small single-binary deploys.
+
+JWT_SECRETSigns access tokens. 32+ random bytes. Changing it logs everyone out.
+
+FIELD_ENCRYPTION_KEYEncrypts two-factor secrets and encrypted columns. 32 bytes in base64, written to .env by grit new. Keep it in the secret store and back it up separately from the database: losing or changing it locks out every two-factor user. See the go-live checklist.
+
+APP_ENVSet to production. Controls error verbosity, cookie flags and whether debug routes mount.
+
+APP_PORTDefaults to 8080. Platforms that assign a port (Railway, Render, Heroku) inject their own — map it.
+
+CORS_ORIGINSComma-separated exact origins. Never a wildcard in production with credentials on.
+
+Required only if you use it
+
+Each optional module can also be switched off entirely with MODULE_<NAME>=false, which is cleaner than supplying dummy credentials to satisfy a check.
+
+VariableNeeded when
+
+REDIS_URLBackground jobs, caching, or rate limiting are on
+
+RESEND_API_KEYThe app sends email
+
+S3_* / R2_*File uploads are enabled
+
+OAUTH_GOOGLE_* / OAUTH_GITHUB_*Social login is enabled
+
+AI_GATEWAY_API_KEYThe AI module is on
+
+Generating secrets
+
+Do not reuse the development values. The .env.example in a fresh project contains placeholders that are identical in every Grit project ever generated.
+
+# 32 random bytes, base64. One per environment.
+
+openssl rand -base64 32
+
+# Or without openssl:
+
+head -c 32 /dev/urandom | base64
+
+Copy to clipboard
+
+Checking before you ship
+
+The API validates its configuration at startup and refuses to boot on a missing required value rather than failing later on the first request that needed it.
+
+# Same validation the server runs, without starting it.
+
+grit doctor
+
+# And confirm what the running app actually received:
+
+curl -s https://your-domain.com/api/health
+
+Copy to clipboard
+
+DeploymentTest the build locally

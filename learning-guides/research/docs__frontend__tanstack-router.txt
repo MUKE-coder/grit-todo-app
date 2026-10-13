@@ -1,0 +1,214 @@
+Frontend
+
+TanStack Router (Vite)
+
+When you choose TanStack Router as your frontend framework, Grit scaffolds a Vite-powered React SPA with file-based routing, React Query, and Tailwind CSS. Fast builds, small bundles, no Node.js server needed.
+
+Type-safe routingGo APIStatic hosting
+A static SPA — served from any CDN, talking to your Go API over REST
+
+Why TanStack Router?
+
+Instant HMR
+
+Vite provides sub-50ms hot module replacement. Changes appear instantly in the browser.
+
+Small bundles
+
+No server runtime overhead. The production output is static HTML + JS that any CDN can serve.
+
+Type-safe routing
+
+TanStack Router provides fully type-safe route params, search params, and loaders.
+
+File-based routes
+
+Routes auto-discovered by @tanstack/router-vite-plugin. No manual route registry needed.
+
+Project structure
+
+TanStack Router apps use src/routes/ for file-based routing instead of Next.js's app/ directory.
+
+apps/web/ (TanStack Router)
+Copy to clipboard
+
+apps/web/
+
+├── src/
+
+│   ├── routes/
+
+│   │   ├── __root.tsx       # Root layout (Navbar + Footer)
+
+│   │   ├── index.tsx        # Home page (/)
+
+│   │   └── blog/
+
+│   │       ├── index.tsx    # Blog list (/blog)
+
+│   │       └── $slug.tsx    # Blog detail (/blog/:slug)
+
+│   ├── components/
+
+│   │   ├── navbar.tsx
+
+│   │   └── footer.tsx
+
+│   ├── hooks/
+
+│   │   └── use-blogs.ts
+
+│   ├── lib/
+
+│   │   ├── api.ts           # Axios client
+
+│   │   └── utils.ts
+
+│   ├── main.tsx             # Entry point
+
+│   └── globals.css
+
+├── index.html
+
+├── vite.config.ts           # TanStack Router plugin + API proxy
+
+├── tailwind.config.ts
+
+└── package.json
+
+Key differences from Next.js
+
+AspectNext.jsTanStack Router
+
+Routingapp/ directory conventionsrc/routes/ via Vite plugin
+
+Layoutslayout.tsx__root.tsx + _layout.tsx
+
+Build toolNext.js (webpack/turbopack)Vite
+
+SSRBuilt-inSPA only (no SSR)
+
+"use client"Required for client componentsNot needed (everything is client)
+
+Dev servernext dev (:3000)vite dev (:3000)
+
+Output.next/dist/
+
+ParamsuseParams() from next/navigationRoute.useParams()
+
+Navigation<Link> from next/link<Link> from @tanstack/react-router
+
+Route examples
+
+src/routes/__root.tsx
+Copy to clipboard
+
+import { createRootRoute, Outlet } from '@tanstack/react-router'
+
+import { Navbar } from '@/components/navbar'
+
+import { Footer } from '@/components/footer'
+
+export const Route = createRootRoute({
+
+component: () => (
+
+<div className="min-h-screen bg-background isolate flex flex-col">
+
+<Navbar />
+
+<main className="flex-1">
+
+<Outlet />
+
+</main>
+
+<Footer />
+
+</div>
+
+),
+
+})
+
+src/routes/blog/$slug.tsx
+Copy to clipboard
+
+import { createFileRoute, Link } from '@tanstack/react-router'
+
+import { useQuery } from '@tanstack/react-query'
+
+import { api } from '@/lib/api'
+
+export const Route = createFileRoute('/blog/$slug')({
+
+component: BlogDetailPage,
+
+})
+
+function BlogDetailPage() {
+
+const { slug } = Route.useParams()
+
+const { data: blog } = useQuery({
+
+queryKey: ['blog', slug],
+
+queryFn: () => api.get('/api/blogs/' + slug).then(r => r.data.data),
+
+})
+
+return <h1>{blog?.title}</h1>
+
+}
+
+Admin panel with TanStack Router
+
+When you choose TanStack Router, the admin panel also uses it. Auth and dashboard are handled via layout routes with beforeLoad guards. It renders the same pages as the Next.js admin — resources, widgets, and the System group — against the same theme tokens, so switching frontends does not change what the admin looks like or what it can do.
+
+The Vite admin is on Tailwind v4Unlike the web app, the admin is styled by the @tailwindcss/vite plugin with @import "tailwindcss" and @theme in globals.css. There is no tailwind.config.ts or postcss.config in apps/admin — customise the palette in the @theme block instead. The web app shown above is still on Tailwind v3 and keeps its config files.
+
+src/routes/_dashboard.tsx
+Copy to clipboard
+
+import { createFileRoute, Outlet, redirect } from '@tanstack/react-router'
+
+import { AdminLayout } from '@/components/layout/admin-layout'
+
+import { apiClient } from '@/lib/api-client'
+
+// Auth tokens live in HttpOnly cookies, so the JS guard cannot read them.
+
+// We ask the API instead: /api/auth/me succeeds when the cookie is valid,
+
+// fails (401) when it isn't. TanStack caches the resolved value per nav.
+
+export const Route = createFileRoute('/_dashboard')({
+
+beforeLoad: async () => {
+
+try {
+
+await apiClient.get('/api/auth/me')   // sends grit_access cookie automatically
+
+} catch {
+
+throw redirect({ to: '/login' })
+
+}
+
+},
+
+component: () => (
+
+<AdminLayout>
+
+<Outlet />
+
+</AdminLayout>
+
+),
+
+})
+
+Web AppReact Query Hooks

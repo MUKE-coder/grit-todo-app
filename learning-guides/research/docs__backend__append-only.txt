@@ -1,0 +1,117 @@
+Backend
+Append-only records
+
+Some records must never change once written: journal entries, audit events, consent receipts. --append-only makes a resource that is created and read, and refused every way it could otherwise be changed or deleted.
+
+Generate one
+
+Terminal
+Copy to clipboard
+
+$grit generate resource JournalEntry \
+
+$  --fields "reference:string,memo:text" \
+
+$  --items "JournalLine:account:belongs_to:Account,debit:money,credit:money" \
+
+$  --append-only
+
+$grit migrate
+
+grit migrate is part of the command, not an afterthought: it is what puts the trigger on the table.
+
+What you get
+
+PieceWhat it does
+
+RoutesList, export, get, PDF and create. No PUT, PATCH, DELETE, bulk or CSV import, and the API reference does not document any of them.
+
+GORM guardEvery update or delete through GORM is refused with a respond.Rule, so the caller gets 422 and the reason. That covers your handlers, the CSV importer, the offline sync endpoint and GORM Studio's row editor, which all share the connection.
+
+Database triggerInstalled by grit migrate. Refuses UPDATE and DELETE from anything, GORM or not, and TRUNCATE on Postgres.
+
+AdminThe table offers create and view, bulk export only, and the detail page shows no Edit or Delete button.
+
+Line itemsAn --items child is append-only too. An entry that cannot change, holding lines that can, is not append-only.
+
+Why there are two layers
+
+The GORM guard alone was tried first, on a real double-entry ledger. It stopped the API, the importer and Studio's row editor. Then one statement typed into the Studio SQL editor went straight through, because that editor sends what it is given to db.Exec, and a raw statement never passes a GORM callback:
+
+UPDATE journal_lines SET debit_amount = 1;  -- 200 OK, and the books no longer balanced
+
+Copy to clipboard
+
+A trigger lives in the database, so nothing that talks to the database can go around it. This is what the same attacks do against a table generated with the flag, run against Postgres:
+
+AttemptResult
+
+PUT or DELETE on the API404: there is no such route
+
+Studio row editorRefused by the GORM guard, with the reason
+
+Studio SQL editorRefused by the trigger: journal_lines is append-only: UPDATE refused
+
+psql directlyRefused by the trigger
+
+The guard is still worth having: it is what turns a refusal into a 422 with a sentence rather than a database error.
+
+Corrections
+
+A mistake is fixed with a new row that reverses the old one, which is how an accountant expects it and how an auditor can follow it. The original stays, and so does the fact that it was wrong.
+
+apps/api/internal/services/journal_entry.go
+Copy to clipboard
+
+// Reverse posts the mirror image of an entry: every debit becomes a credit.
+
+func (s *JournalEntryService) Reverse(original models.JournalEntry, reason string) (*models.JournalEntry, error) {
+
+reversal := models.JournalEntry{
+
+Reference: original.Reference + "-REV",
+
+Memo:      "Reverses " + original.Reference + ": " + reason,
+
+}
+
+for _, line := range original.Items {
+
+reversal.Items = append(reversal.Items, models.JournalLine{
+
+AccountID: line.AccountID,
+
+Debit:     line.Credit,
+
+Credit:    line.Debit,
+
+})
+
+}
+
+return &reversal, s.DB.Create(&reversal).Error
+
+}
+
+GORM Studio's write switches
+
+Studio can also be told not to write at all, which protects every table rather than the registered ones:
+
+.env
+Copy to clipboard
+
+GORM_STUDIO_READ_ONLY=false     # true refuses every write from Studio
+
+GORM_STUDIO_DISABLE_SQL=false   # true turns the raw SQL editor off
+
+The production environment template sets GORM_STUDIO_DISABLE_SQL=true.
+
+Existing projects
+
+The guard needs two calls, one when the API connects and one when it migrates. New projects have both. On an older project, grit upgrade adds them, and so does the generator the first time you pass the flag. If it cannot find where they go, because the file has been reshaped, it stops and names the call to add rather than generating a resource that looks protected and is not.
+
+The CSV import is routed, because importing only inserts: CreateInBatches with OnConflict DoNothing, never an update. That matters for the resources this flag is for, whose history arrives as a file of rows that already happened (v3.240.0).
+
+Limits--append-only cannot be combined with --tree: moving a node rewrites its path, which is an update. The handler still contains its update and delete methods, unrouted, so allowing corrections in place later is a route rather than a regenerate; the table refuses them regardless while the model registers itself. The triggers have been run against Postgres, SQLite and MySQL 8.4. On MySQL with binary logging on, which is the default and the norm on RDS, a user without SUPER cannot create a trigger at all: grit migrate then logs what is missing and carries on, so the API still refuses a change but raw SQL does not. Set log_bin_trust_function_creators (in the RDS parameter group, or with SET GLOBAL) and migrate again to add the database guard (v3.240.1).
+
+Invoices & Line ItemsProduct Variants

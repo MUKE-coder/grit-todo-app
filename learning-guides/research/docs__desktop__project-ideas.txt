@@ -1,0 +1,305 @@
+Desktop (Wails)
+20 Desktop Project Ideas
+
+Ready-to-build desktop application ideas with Grit. Each project includes suggested resources, field definitions, and a grit generate command to get started immediately.
+
+How to Start Any Project
+
+Every project follows the same three-step pattern:
+
+1.Scaffold the project with grit new-desktop myapp
+
+2.Generate resources with grit generate resource Name --fields "..."
+
+3.Start development with wails dev
+
+BeginnerIntermediateAdvanced
+
+1
+Inventory Management System
+
+BusinessIntermediate
+
+Track products, stock levels, suppliers, and purchase orders. Manage warehouse locations, set reorder thresholds, and generate low-stock alerts. Export inventory reports to PDF and Excel.
+
+Resources:
+ProductSupplierPurchaseOrderStockMovementWarehouse
+
+Example command:grit generate resource Product --fields "name:string,sku:string,price:float,cost:float,stock:int,category:string,barcode:string,reorder_level:int"
+
+2
+Point of Sale (POS) System
+
+BusinessAdvanced
+
+Ring up sales with barcode scanning, process multiple payment methods, print receipts, and track daily revenue. Perfect for retail shops, cafes, and restaurants.
+
+Resources:
+ProductCustomerSaleSaleItemExpense
+
+Example command:grit generate resource Sale --fields "customer_id:uint,total:float,tax:float,payment_method:string,status:string,notes:text"
+
+3
+Personal Finance Tracker
+
+PersonalBeginner
+
+Record income and expenses, categorize transactions, set monthly budgets, and view spending trends with charts. All data stays local on your machine.
+
+Resources:
+TransactionCategoryBudgetAccount
+
+Example command:grit generate resource Transaction --fields "amount:float,description:string,category_id:uint,account_id:uint,type:string,date:date"
+
+4
+Employee Payroll System
+
+BusinessAdvanced
+
+Manage employee records, calculate salaries with deductions and bonuses, track attendance, and generate payslips as PDF. Handles tax calculations and overtime.
+
+Resources:
+EmployeePayrollDeductionAttendanceDepartment
+
+Example command:grit generate resource Employee --fields "name:string,email:string,phone:string,department_id:uint,position:string,salary:float,hire_date:date"
+
+5
+Clinic / Hospital Management
+
+HealthcareAdvanced
+
+Schedule appointments, manage patient records, track prescriptions, and generate billing invoices. Supports multiple doctors and departments.
+
+Resources:
+PatientDoctorAppointmentPrescriptionInvoice
+
+Example command:grit generate resource Patient --fields "name:string,email:string,phone:string,date_of_birth:date,blood_group:string,address:text,notes:text"
+
+6
+Library Management System
+
+EducationIntermediate
+
+Catalog books, manage members, track checkouts and returns, calculate overdue fines, and generate availability reports. Barcode scanning support for quick lookups.
+
+Resources:
+BookMemberCheckoutFineCategory
+
+Example command:grit generate resource Book --fields "title:string,author:string,isbn:string,category_id:uint,copies:int,available:int,publisher:string"
+
+7
+Student Management System
+
+EducationIntermediate
+
+Register students, track attendance, record grades, generate report cards, and manage class schedules. Export academic records to PDF for printing.
+
+Resources:
+StudentCourseEnrollmentGradeAttendance
+
+Example command:grit generate resource Student --fields "name:string,email:string,phone:string,enrollment_date:date,grade_level:string,parent_name:string,address:text"
+
+8
+Hotel Booking System
+
+HospitalityIntermediate
+
+Manage room inventory, handle reservations, process check-in and check-out, and generate invoices. Track room availability with a calendar view.
+
+Resources:
+RoomBookingGuestPaymentRoomType
+
+Example command:grit generate resource Booking --fields "guest_id:uint,room_id:uint,check_in:date,check_out:date,status:string,total:float,notes:text"
+
+9
+Restaurant Order Manager
+
+HospitalityIntermediate
+
+Take table orders, send tickets to the kitchen, track order status, calculate bills with tips and tax, and print receipts. Supports dine-in and takeaway.
+
+Resources:
+MenuItemOrderOrderItemTableCategory
+
+Example command:grit generate resource Order --fields "table_id:uint,status:string,subtotal:float,tax:float,tip:float,total:float,payment_method:string"
+
+10
+Real Estate Property Manager
+
+BusinessIntermediate
+
+List properties, manage tenants, track rent payments, schedule maintenance, and generate financial reports. Perfect for landlords managing multiple units.
+
+Resources:
+PropertyTenantLeasePaymentMaintenanceRequest
+
+Example command:grit generate resource Property --fields "name:string,address:text,type:string,bedrooms:int,rent:float,status:string,description:text"
+
+11
+Project & Task Manager
+
+ProductivityBeginner
+
+Create projects, assign tasks with priorities and due dates, track progress, and generate productivity reports. Kanban-style board for visual task management.
+
+Resources:
+ProjectTaskLabelComment
+
+Example command:grit generate resource Task --fields "title:string,description:text,project_id:uint,priority:string,status:string,due_date:date,completed:bool"
+
+12
+Invoice & Billing System
+
+BusinessIntermediate
+
+Create professional invoices, track payments, manage clients, and generate financial summaries. Export invoices as PDFs for email or print.
+
+Resources:
+ClientInvoiceInvoiceItemPayment
+
+Example command:grit generate resource Invoice --fields "client_id:uint,invoice_number:string,due_date:date,subtotal:float,tax:float,total:float,status:string,notes:text"
+
+13
+Gym / Fitness Center Manager
+
+BusinessIntermediate
+
+Register members, manage subscriptions, schedule classes, track attendance, and handle payments. Generate membership expiry alerts and revenue reports.
+
+Resources:
+MemberSubscriptionClassAttendancePayment
+
+Example command:grit generate resource Member --fields "name:string,email:string,phone:string,join_date:date,expiry_date:date,plan:string,status:string"
+
+14
+Warehouse & Shipping Tracker
+
+LogisticsAdvanced
+
+Manage inbound shipments, track outbound deliveries, scan packages, and monitor warehouse zones. Generate shipping labels and delivery reports.
+
+Resources:
+ShipmentPackageCarrierZoneShipmentItem
+
+Example command:grit generate resource Shipment --fields "tracking_number:string,carrier_id:uint,origin:string,destination:text,status:string,shipped_at:datetime,delivered_at:datetime"
+
+15
+Customer Relationship Manager (CRM)
+
+BusinessAdvanced
+
+Track leads, manage contacts, log interactions, schedule follow-ups, and visualize your sales pipeline. Export contact lists and activity reports.
+
+Resources:
+ContactCompanyDealActivityPipeline
+
+Example command:grit generate resource Deal --fields "title:string,company_id:uint,contact_id:uint,value:float,stage:string,probability:int,expected_close:date,notes:text"
+
+16
+Recipe & Meal Planner
+
+PersonalBeginner
+
+Store recipes with ingredients and instructions, plan weekly meals, generate shopping lists, and track nutritional information. Perfect for families and meal preppers.
+
+Resources:
+RecipeIngredientMealPlanShoppingItem
+
+Example command:grit generate resource Recipe --fields "title:string,description:text,prep_time:int,cook_time:int,servings:int,category:string,instructions:text"
+
+17
+Fleet & Vehicle Manager
+
+LogisticsIntermediate
+
+Track vehicles, schedule maintenance, log fuel expenses, manage driver assignments, and monitor insurance renewals. Generate vehicle cost reports.
+
+Resources:
+VehicleDriverMaintenanceLogFuelLogInsurance
+
+Example command:grit generate resource Vehicle --fields "make:string,model:string,year:int,plate_number:string,vin:string,mileage:int,status:string,assigned_driver_id:uint"
+
+18
+Appointment Scheduler
+
+BusinessBeginner
+
+Book appointments with time slots, send reminders, manage client profiles, and view schedules in a calendar. Ideal for salons, consultants, and freelancers.
+
+Resources:
+ClientAppointmentServiceSchedule
+
+Example command:grit generate resource Appointment --fields "client_id:uint,service_id:uint,date:date,start_time:string,end_time:string,status:string,notes:text"
+
+19
+School Fee Management
+
+EducationIntermediate
+
+Track student fee payments, generate receipts, manage fee structures per class, and send payment reminders. Handles partial payments and scholarships.
+
+Resources:
+StudentFeeStructurePaymentReceiptScholarship
+
+Example command:grit generate resource Payment --fields "student_id:uint,fee_structure_id:uint,amount:float,method:string,date:date,status:string,reference:string"
+
+20
+Event & Ticket Manager
+
+BusinessAdvanced
+
+Create events, sell tickets, manage attendee lists, scan QR codes at entry, and generate event revenue reports. Supports multiple ticket tiers and pricing.
+
+Resources:
+EventTicketAttendeeVenueTicketTier
+
+Example command:grit generate resource Event --fields "title:string,description:text,venue_id:uint,date:date,start_time:string,end_time:string,capacity:int,status:string"
+
+Why Build These as Desktop Apps?
+
+All 20 projects share traits that make them ideal for native desktop apps built with Grit and Wails:
+
+Offline-first — SQLite stores everything locally. No cloud database, no internet dependency, no server costs.
+
+Single binary — Distribute a single .exe or .app file. Users double-click to run. No installation wizard, no runtime dependencies.
+
+Data privacy — Sensitive data (medical records, financial transactions, employee payroll) never leaves the user's machine.
+
+Fast generation — Each resource takes one CLI command. A 5-resource project like the POS system is fully scaffolded in under a minute.
+
+Quick Example: Invoice System
+
+Here is how you would scaffold project #12 (Invoice & Billing System) from scratch:
+
+Terminal
+Copy to clipboard
+
+# Scaffold the project
+
+$grit new-desktop invoice-app
+
+$cd invoice-app
+
+# Generate all resources
+
+$grit generate resource Client --fields "name:string,email:string,phone:string,company:string,address:text"
+
+$grit generate resource Invoice --fields "client_id:uint,invoice_number:string,due_date:date,subtotal:float,tax:float,total:float,status:string,notes:text"
+
+$grit generate resource InvoiceItem --fields "invoice_id:uint,description:string,quantity:int,unit_price:float,subtotal:float"
+
+$grit generate resource Payment --fields "invoice_id:uint,amount:float,method:string,date:date,reference:string,notes:text"
+
+# Start development
+
+$wails dev
+
+That is 4 resources, 20 new files, 40 code injections, and a complete CRUD app — all from six CLI commands. Add custom business logic (invoice numbering, payment tracking, PDF generation) on top of the generated scaffolding.
+
+Related Pages
+
+Getting StartedPrerequisites and project setupYour First Desktop AppStep-by-step Task Manager tutorialBuild a POS AppAdvanced POS tutorial with custom logicResource GenerationAll field types and injection markers
+
+Download Desktop Handbook (PDF)Complete offline reference for Grit Desktop development
+
+Building & DistributionLLM Reference

@@ -1,0 +1,121 @@
+Demo
+Demo Application
+
+A live, working full-stack Grit app — kitchen-sink edition. Built with grit new --single --vite then extended into a real motorcycle dealership management system with POS, loans, inventory, multi-tenant RBAC, and live Security + Observability dashboards. Source code lives next to the framework so you can copy the patterns straight into your own project.
+
+Open live demo Source on GitHub Self-host
+
+The login form is pre-filled. Credentials:
+
+admin@grit.demo / password123
+
+The database is reset every midnight (local time). Please be respectful when editing data. Outbound email is disabled while in DEMO_MODE=true.
+
+What the demo shows
+
+Inertia's demo is a CRM kitchen sink. Ours is a motorcycle dealership + loan-financing app — a richer domain that exercises more Grit primitives in their natural habitat: server-side pagination, optimistic mutations, file uploads, role gating, audit logging, async cron, webhook receivers, and the new in-app Security & Observability summary pages.
+
+Full POS + sales
+
+Cart, discount + tax math, multi-payment-method (cash / mobile money / credit), printable receipt, returns. Real business logic — not a todo list.
+/pos 
+
+Loans + repayments
+
+Loan products, borrower profiles, payment schedules, overdue flagging cron, mobile-money collection via DGateway. The kind of domain logic Grit is built for.
+/loans/new 
+
+Motorcycle inventory + Daily Boda
+
+Track motorcycles by chassis number, assign to riders, capture daily earnings. Shows off image uploads, presigned URLs, list filtering.
+/motorcycles 
+
+Multi-tenant + RBAC
+
+Workspaces (Loans · Spares), per-business roles, invitation flow, audit log on every mutation. The auth + tenancy primitives every SaaS rebuilds.
+/staff 
+
+In-app Security dashboard
+
+Sentinel summary inside the admin: security score, recent threats with CVSS, AuthShield state, CSP violations. Source visible — copy the pattern into your own app.
+/system/security 
+
+In-app Operations dashboard
+
+Pulse inside the admin: latency and throughput over the session, the slowest routes with their percentiles, Go runtime, N+1 detections, the error feed and the scaling readiness report.
+/system/performance 
+
+Grit features wired in the demo
+
+Each of these maps to a real file in demo/ so you can read the source after seeing the behaviour in the live app:
+
+Auth + JWT + RBAC — internal/handlers/auth.go, role gates in internal/middleware/auth.go
+
+Multi-tenant business switcher — internal/middleware/business_scope.go + the workspace switcher in frontend/src/components/layout/AppSidebar.tsx
+
+File uploads — presigned S3/R2 in internal/handlers/uploads.go, used by motorcycle photos
+
+Background cron — overdue-installment flagger + (in demo mode) nightly DB reset in internal/cron/cron.go
+
+Audit log — every mutation streams into activities via internal/services/audit.go
+
+Webhook receiver — DGateway mobile-money callbacks (HMAC verify + dedup) in internal/handlers/dgateway.go
+
+Sentinel v2.0 + Pulse v1.0 — mounted at /sentinel and /pulse in internal/routes/routes.go
+
+In-app Security + Observability — internal/handlers/security.go + observability.go, the SecObsBridge for loopback API calls, and SecObsPoller turning findings into bell notifications
+
+Run it locally / self-host
+
+The demo is just a Grit project — clone, set env, run.
+
+Terminal
+Copy to clipboard
+
+# Clone
+
+git clone https://github.com/MUKE-coder/grit.git
+
+cd grit/demo
+
+# Configure (DEMO_MODE=true ships in .env.example)
+
+cp .env.example .env
+
+# Edit DATABASE_URL — point at your Postgres (Neon, Supabase, local).
+
+# Set JWT_SECRET to anything long + random.
+
+# Frontend bundle
+
+cd frontend && pnpm install && pnpm build && cd ..
+
+# Run
+
+go run .
+
+The seeder runs on every boot — first run creates admin@grit.demo / password123 plus a Grit Motorsbusiness and a default branch. On subsequent boots it's a no-op unless something is missing.
+
+What DEMO_MODE=true changes
+
+Resend mailer is not constructed. Invitation + low-stock alert emails are silently skipped (the call sites are already nil-guarded).
+
+Nightly reset cron registers. At 00:00 local time, WipeMutableData truncates sales / loans / payments / activities / notifications, then Seed() re-runs to restore the canonical admin + business + branch.
+
+Auth credentials are pre-filled. The login form ships with admin@grit.demo + password123 in frontend/src/routes/_auth/login.tsx so visitors can hit Enter.
+
+A demo banner sits at the top of the login form explaining the reset cadence.
+
+Security & Observability pages
+
+Two of the most interesting things to study in this demo are /system/security and /system/performance — the same pattern every Grit project gets when scaffolded. They use a small SecObsBridge that logs in to the locally-mounted Sentinel / Pulse APIs over loopback, caches the JWT, and proxies the dashboard summary endpoints into one envelope. The React pages render KPI scorecards, live threat / SLO tables, and Brendan-Gregg USE-method grids — and a deep link out to the full /sentinel/ui or /pulse/uifor when you want to dig further. A SecObsPoller runs once a minute and writes high-severity findings into the in-app notification feed, so the bell icon at the top of the admin lights up when something firing.
+
+What this demo isn't
+
+Not the only way to use Grit. It's a single-app (--single --vite) deployment; Grit also scaffolds triple-app monorepos, mobile (--mobile), and offline-first desktop (--desktop).
+
+Not a starter template. If you're building a motorcycle dealership, copy from here. If you're building anything else, run grit new and pull selectively.
+
+Not production-grade billing. The DGateway integration is real but the demo's sandbox keys make it safe to click through.
+
+TestingChangelog

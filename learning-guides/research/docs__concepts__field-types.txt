@@ -1,0 +1,227 @@
+Core Concepts · Reference
+Field Types
+
+The complete set of field types you can pass to grit generate resource --fields. Each one drives the Go struct field, the shared TypeScript type, the Zod schema, and the default admin form control and table column — from one declaration.
+
+Field syntax
+
+A field is name:type, with optional extra segments. Separate multiple fields with commas inside --fields.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Product --fields "name:string,price:money,category:belongs_to:Category,gallery:files:image"
+
+Modifiersname:string:unique — append :unique, :required, or :optional. String fields default to required; everything else defaults to optional.
+
+Auto-numbernumber:string:auto:INV (string only) — the server fills it from an atomic, gap-free counter (INV-202607-0001) in BeforeCreate. Optional and hidden from the form; the prefix is optional. Shorthand for grit generate sequence; use that command directly for yearly/never resets or a custom width.
+
+Encryptednotes:text:encrypted (string, text and richtext only). Stored with AES-256-GCM at rest, plaintext in code and over the API; needs FIELD_ENCRYPTION_KEY. Cannot be :unique, and is left out of search, sorting and filters, because ciphertext changes on every write.
+
+Optionsstatus:select:draft=Draft|sent=Sent (select / radio / check) — pipe-separated choices. Labels are OPTIONAL: status:select:draft|sent|paid generates the labels by capitalizing each value (in_progress → In Progress). Use value=Label only when the label differs from the stored value.
+
+Slug sourceslug:slug:title — the 3rd segment is the field to slugify. Slugs are auto-unique and generated on save.
+
+belongs_tocategory:belongs_to (model inferred → Category) or author:belongs_to:User (explicit). Creates a <name>_id UUID foreign-key column.
+
+many_to_manytags:many_to_many:Tag — the related model is required. GORM builds the join table.
+
+File acceptsimage:file:image, doc:file:all, or att:file:[pdf,doc,image,video]. Aliases: image, video, audio, pdf, doc, all — or a bracketed list.
+
+Moneyprice:money — stores an integer count of minor units plus an ISO 4217 currency code, in two columns (price_amount, price_currency). Use it for anything you will add up. See the money page.
+
+tel optionphone:tel:UG sets the country the picker starts on and a local number is read in. Without it the picker starts on the browser's country. Modifiers follow the option: phone:tel:UG:unique.
+
+country optioncountry:country:UG makes UG the value a new record starts with.
+
+rating optionscore:rating:10 gives the field 10 stars, from 2 to 10. The default is 5.
+
+Type mapping
+
+How each field type resolves across the stack. Source of truth: internal/generate/field.go.
+
+DeclarationGoTypeScriptAdmin UI
+Declare a field once — Grit resolves it into Go, TypeScript, Zod, and the admin UI
+
+TypeExampleGoTypeScriptZod
+
+stringname:stringstringstringz.string()
+
+textbio:textstringstringz.string()
+
+richtextbody:richtextstringstringz.string()
+
+intqty:intintnumberz.number().int()
+
+uintstock:uintuintnumberz.number().int().nonnegative()
+
+floatweight:floatfloat64numberz.number()
+
+moneyprice:moneymoney.MoneyMoneyMoneySchema
+
+boolactive:boolboolbooleanz.boolean()
+
+toggleactive:toggleboolbooleanz.boolean()
+
+selectstatus:select:draft=Draft|paid=Paidstring"draft" | "paid"z.enum([...])
+
+radioplan:radio:free=Free|pro=Prostring"free" | "pro"z.enum([...])
+
+checktags:check:news=News|ops=Opsdatatypes.JSONSlice[string]("news" | "ops")[]z.array(z.enum([...]))
+
+datetimepublished_at:datetime*time.Timestring | nullz.string().nullable()
+
+datedue:date*time.Timestring | nullz.string().nullable()
+
+slugslug:slug:titlestringstringz.string()
+
+belongs_tocategory:belongs_tostring (FK)stringz.string().uuid()
+
+many_to_manytags:many_to_many:Tag[]stringstring[]z.array(z.string().uuid())
+
+string_arraysizes:string_arraydatatypes.JSONSlice[string]string[]z.array(z.string())
+
+fileimage:file:image*files.FileRefFileRef | nullFileRefSchema.nullable()
+
+filesgallery:files:imagefiles.FileRefsFileRef[]z.array(FileRefSchema)
+
+emailemail:email:uniquestring (size 254)stringEmailSchema
+
+urlwebsite:urlstring (size 2048)stringUrlSchema
+
+domainhost:domainstring (size 253)stringDomainSchema
+
+telphone:tel:UGstring (size 32, E.164)stringPhoneSchema
+
+countrycountry:country:UGstring (size 2)stringCountrySchema
+
+colorbrand:colorstring (size 7)stringColorSchema
+
+percentdiscount:percentfloat64 (decimal 5,2)numberPercentSchema
+
+ratingscore:rating:10intnumberratingSchema(10)
+
+timeopens_at:timestring (HH:MM)stringTimeSchema
+
+jsonsettings:jsondatatypes.JSONunknownJsonValueSchema
+
+Primary keys are always UUID string (never uint); a belongs_to FK column is a matching UUID string.
+
+Default admin rendering
+
+Each type also picks a default form control and DataTable column format in the generated admin resource. You can override either in the resource definition.
+
+TypeForm controlTable format
+
+stringText inputtext
+
+textTextareatext
+
+richtextRich-text editor (Tiptap)richtext
+
+int / uint / floatNumber inputtext
+
+moneyAmount input + currency pickermoney
+
+boolSwitchboolean
+
+toggleSwitchboolean
+
+selectSearchable dropdown (value=Label options)text
+
+radioRadio-button group (single choice)text
+
+checkCheckbox group (multi)—
+
+datetime / dateDate / time pickerrelative
+
+slugAuto-filled (read-only)text
+
+belongs_toRelationship select (searchable)text (dotted key)
+
+many_to_manyMulti-select—
+
+string_arrayTag / chips inputtext
+
+fileDropzone (single)file
+
+filesDropzone (multiple)files
+
+emailEmail input, lowercased on bluremail (mailto: link)
+
+urlURL inputlink (opens in a new tab)
+
+domainDomain input that strips a pasted scheme and pathdomain (link to https://)
+
+telSearchable country picker with flags and dial codes, number formatted as you typetel (formatted, tel: link)
+
+countrySearchable country pickercountry (flag and name)
+
+colorColour picker plus hex boxcolor (swatch and hex)
+
+percentNumber input with a % suffixpercent (12.5%)
+
+ratingStars (a keyboard radio group)rating (stars)
+
+timeTime inputtime (2:30 PM in the viewer's clock)
+
+jsonJSON editor that checks as you typejson (collapsible)
+
+Formatted types
+
+email, url, domain, tel, country, color, percent, rating, time and json are stored as plain columns with a known shape. The API checks and normalises them on every write that goes through a model: create, update, PATCH, bulk edit, CSV import and sync push. The check lives in internal/fieldtypes, which reads the format tag on the model field.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Company --fields "name:string,email:email:unique,website:url,host:domain,phone:tel:UG,country:country,brand:color,discount:percent,score:rating:10,opens_at:time,settings:json" --seed --faker
+
+TypeStored asRefused
+
+emailLowercased and trimmed: ada@example.comAnything that is not a bare address, including "Ada <ada@example.com>"
+
+urlAs givenAny scheme but http and https, or no host
+
+domainA bare host in lowercase punycode: a pasted https://www.Example.co.ug/about becomes www.example.co.ug, and münchen.de becomes xn--mnchen-3ya.deA name DNS could not resolve, such as one without a dot
+
+telE.164: 0772 123456 in Uganda becomes +256772123456A number that is not valid for its country, by libphonenumber's metadata
+
+countryISO 3166-1 alpha-2 in upper case: UGA code ISO has not assigned
+
+color#rrggbb in lower case: #ABC becomes #aabbccAnything that is not a hex colour
+
+percentRounded to two decimalsBelow 0 or above 100
+
+ratingWhole stars; 0 means not ratedA fraction, or more stars than the field has
+
+timeHH:MM on a 24-hour clock; seconds are droppedA time that does not exist, such as 25:00
+
+jsonjsonb on Postgres, JSON on MySQL, text on SQLiteText that does not parse as JSON
+
+A refused value is a 422 in the usual error shape, with the field named in details. The admin form checks the same rules before it sends, and shows the API's message if one gets through:
+
+{
+
+"error": {
+
+"code": "VALIDATION_ERROR",
+
+"message": "Phone is not a valid phone number for UG",
+
+"details": { "phone": "Phone is not a valid phone number for UG" }
+
+}
+
+}
+
+Copy to clipboard
+
+Phone numbers are validated with libphonenumber's metadata on both sides: github.com/nyaruka/phonenumbers in the API and libphonenumber-js in the browser, so the form and the API agree about which numbers are valid. The Go module is added to a project the first time it generates a tel field, not before. The country picker, shared by tel and country, is a Base UI combobox: type a country's name, its code (UG) or its calling code (256), move with the arrow keys and press Enter.
+
+With --faker, every formatted field seeds values its own rule accepts, with the row number mixed in so a unique column seeds thousands of rows without a collision: valid mobile numbers from twenty countries, addresses such as ada.lovelace.12@example.com, ratings weighted towards four and five stars, and times in business hours.
+
+grit g field adds any of them to an existing resource except json, which needs gorm.io/datatypes in the model: regenerate the resource for that one. The Expo form uses the phone keyboard and checks E.164 for tel, and the matching keyboard for email, url and domain; the desktop forms use the browser's own email, url, tel, time and colour inputs.
+
+Escape hatchThe generated types are a starting point. Edit the Go struct tags, tune the Zod rules in packages/shared/schemas, or override the form/table rendering in the admin resource definition — then run grit sync to keep TypeScript in step with Go. Grit generates opinions, not a cage.
+
+Type SystemGenerated File Map

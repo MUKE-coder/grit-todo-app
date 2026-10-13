@@ -1,0 +1,1360 @@
+[
+  {
+    "url": "https://gritframework.dev/blog/build-a-crm-with-grit",
+    "status": 200,
+    "title": "Build a CRM with Grit: phone numbers from every country, a million contacts, and who else is looking · The Daily Grit | Grit",
+    "file": "blog__build-a-crm-with-grit.txt",
+    "words": 2774
+  },
+  {
+    "url": "https://gritframework.dev/blog/build-a-storefront-with-grit",
+    "status": 200,
+    "title": "Build a storefront with Grit · The Daily Grit | Grit",
+    "file": "blog__build-a-storefront-with-grit.txt",
+    "words": 16942
+  },
+  {
+    "url": "https://gritframework.dev/blog/build-an-invoice-app-with-grit",
+    "status": 200,
+    "title": "Build an invoice app with Grit in ten minutes · The Daily Grit | Grit",
+    "file": "blog__build-an-invoice-app-with-grit.txt",
+    "words": 2402
+  },
+  {
+    "url": "https://gritframework.dev/blog/build-desktop-app-with-grit",
+    "status": 200,
+    "title": "Build a full offline-first POS with Grit: products, stock, clients, purchases &amp; a real checkout · The Daily Grit | Grit",
+    "file": "blog__build-desktop-app-with-grit.txt",
+    "words": 3337
+  },
+  {
+    "url": "https://gritframework.dev/blog/build-mobile-app-with-grit",
+    "status": 200,
+    "title": "Build a mobile store with Grit: generate resource → shoppable app · The Daily Grit | Grit",
+    "file": "blog__build-mobile-app-with-grit.txt",
+    "words": 2178
+  },
+  {
+    "url": "https://gritframework.dev/blog/build-your-first-grit-app",
+    "status": 200,
+    "title": "Build your first Grit app: a full-stack store · The Daily Grit | Grit",
+    "file": "blog__build-your-first-grit-app.txt",
+    "words": 942
+  },
+  {
+    "url": "https://gritframework.dev/blog/everything-new-in-grit",
+    "status": 200,
+    "title": "Everything new in Grit, on a contacts app you build in four commands · The Daily Grit | Grit",
+    "file": "blog__everything-new-in-grit.txt",
+    "words": 3618
+  },
+  {
+    "url": "https://gritframework.dev/blog/gdpr-and-access-reviews",
+    "status": 200,
+    "title": "Compliance you didn&#x27;t have to build: GDPR erasure and access reviews · The Daily Grit | Grit",
+    "file": "blog__gdpr-and-access-reviews.txt",
+    "words": 1129
+  },
+  {
+    "url": "https://gritframework.dev/blog/grit-plugins-what-they-are-and-how-to-build-one",
+    "status": 200,
+    "title": "Grit plugins: what they are, the default ones, and how to build your own · The Daily Grit | Grit",
+    "file": "blog__grit-plugins-what-they-are-and-how-to-build-one.txt",
+    "words": 1295
+  },
+  {
+    "url": "https://gritframework.dev/blog/roles-permissions-and-automatic-backups",
+    "status": 200,
+    "title": "Grit ships roles, permissions, and automatic database backups, by default · The Daily Grit | Grit",
+    "file": "blog__roles-permissions-and-automatic-backups.txt",
+    "words": 945
+  },
+  {
+    "url": "https://gritframework.dev/blog/where-a-grit-app-starts-scaling",
+    "status": 200,
+    "title": "Your app is already at stage four: what a framework can and cannot do about scaling · The Daily Grit | Grit",
+    "file": "blog__where-a-grit-app-starts-scaling.txt",
+    "words": 2595
+  },
+  {
+    "url": "https://gritframework.dev/blog/why-i-built-grit",
+    "status": 200,
+    "title": "Why I built Grit · The Daily Grit | Grit",
+    "file": "blog__why-i-built-grit.txt",
+    "words": 744
+  },
+  {
+    "url": "https://gritframework.dev/blog/your-table-our-machinery",
+    "status": 200,
+    "title": "Your table, our machinery · The Daily Grit | Grit",
+    "file": "blog__your-table-our-machinery.txt",
+    "words": 7034
+  },
+  {
+    "url": "https://gritframework.dev/docs",
+    "status": 200,
+    "title": "Introduction | Grit",
+    "file": "docs.txt",
+    "words": 1725
+  },
+  {
+    "url": "https://gritframework.dev/docs/admin/custom-pages",
+    "status": 200,
+    "title": "Custom Pages &amp; Tables | Grit",
+    "file": "docs__admin__custom-pages.txt",
+    "words": 2753
+  },
+  {
+    "url": "https://gritframework.dev/docs/admin/datatable",
+    "status": 200,
+    "title": "DataTable | Grit",
+    "file": "docs__admin__datatable.txt",
+    "words": 2918
+  },
+  {
+    "url": "https://gritframework.dev/docs/admin/forms",
+    "status": 200,
+    "title": "Forms | Grit",
+    "file": "docs__admin__forms.txt",
+    "words": 3761
+  },
+  {
+    "url": "https://gritframework.dev/docs/admin/multi-step-forms",
+    "status": 200,
+    "title": "Multi-Step Forms | Grit",
+    "file": "docs__admin__multi-step-forms.txt",
+    "words": 1595
+  },
+  {
+    "url": "https://gritframework.dev/docs/admin/overview",
+    "status": 200,
+    "title": "Admin Panel Overview | Grit",
+    "file": "docs__admin__overview.txt",
+    "words": 1213
+  },
+  {
+    "url": "https://gritframework.dev/docs/admin/relationships",
+    "status": 200,
+    "title": "Relationships &amp; Trees | Grit",
+    "file": "docs__admin__relationships.txt",
+    "words": 2810
+  },
+  {
+    "url": "https://gritframework.dev/docs/admin/resources",
+    "status": 200,
+    "title": "Resources | Grit",
+    "file": "docs__admin__resources.txt",
+    "words": 1852
+  },
+  {
+    "url": "https://gritframework.dev/docs/admin/roles",
+    "status": 200,
+    "title": "Roles &amp; Permissions UI | Grit",
+    "file": "docs__admin__roles.txt",
+    "words": 539
+  },
+  {
+    "url": "https://gritframework.dev/docs/admin/standalone-usage",
+    "status": 200,
+    "title": "Standalone Usage | Grit",
+    "file": "docs__admin__standalone-usage.txt",
+    "words": 1535
+  },
+  {
+    "url": "https://gritframework.dev/docs/admin/trash",
+    "status": 200,
+    "title": "Trash &amp; Deleted Accounts | Grit",
+    "file": "docs__admin__trash.txt",
+    "words": 718
+  },
+  {
+    "url": "https://gritframework.dev/docs/admin/widgets",
+    "status": 200,
+    "title": "Dashboard Widgets | Grit",
+    "file": "docs__admin__widgets.txt",
+    "words": 1668
+  },
+  {
+    "url": "https://gritframework.dev/docs/ai-integration",
+    "status": 200,
+    "title": "AI Integration: Generate a Grit Prompt for Your AI Agent | Grit",
+    "file": "docs__ai-integration.txt",
+    "words": 255
+  },
+  {
+    "url": "https://gritframework.dev/docs/ai-skill",
+    "status": 200,
+    "title": "AI Skill | Grit",
+    "file": "docs__ai-skill.txt",
+    "words": 1268
+  },
+  {
+    "url": "https://gritframework.dev/docs/ai-skill/llm-guide",
+    "status": 200,
+    "title": "Complete LLM Reference | Grit",
+    "file": "docs__ai-skill__llm-guide.txt",
+    "words": 5446
+  },
+  {
+    "url": "https://gritframework.dev/docs/ai-workflows/antigravity",
+    "status": 200,
+    "title": "Using Grit with Antigravity | Grit",
+    "file": "docs__ai-workflows__antigravity.txt",
+    "words": 2032
+  },
+  {
+    "url": "https://gritframework.dev/docs/ai-workflows/claude",
+    "status": 200,
+    "title": "Using Grit with Claude | Grit",
+    "file": "docs__ai-workflows__claude.txt",
+    "words": 2835
+  },
+  {
+    "url": "https://gritframework.dev/docs/ai-workflows/llms-txt",
+    "status": 200,
+    "title": "llms.txt | Grit",
+    "file": "docs__ai-workflows__llms-txt.txt",
+    "words": 478
+  },
+  {
+    "url": "https://gritframework.dev/docs/ai-workflows/mcp",
+    "status": 200,
+    "title": "MCP Server | Grit",
+    "file": "docs__ai-workflows__mcp.txt",
+    "words": 1012
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/account-security",
+    "status": 200,
+    "title": "Account Security | Grit",
+    "file": "docs__backend__account-security.txt",
+    "words": 634
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/api-docs",
+    "status": 200,
+    "title": "API Documentation | Grit",
+    "file": "docs__backend__api-docs.txt",
+    "words": 673
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/append-only",
+    "status": 200,
+    "title": "Append-only records | Grit",
+    "file": "docs__backend__append-only.txt",
+    "words": 777
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/authentication",
+    "status": 200,
+    "title": "Authentication | Grit",
+    "file": "docs__backend__authentication.txt",
+    "words": 4662
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/errors",
+    "status": 200,
+    "title": "Error codes | Grit",
+    "file": "docs__backend__errors.txt",
+    "words": 3727
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/feature-flags",
+    "status": 200,
+    "title": "Feature Flags &amp; A/B Testing | Grit",
+    "file": "docs__backend__feature-flags.txt",
+    "words": 1280
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/handlers",
+    "status": 200,
+    "title": "Handlers | Grit",
+    "file": "docs__backend__handlers.txt",
+    "words": 1474
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/health",
+    "status": 200,
+    "title": "Health checks | Grit",
+    "file": "docs__backend__health.txt",
+    "words": 812
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/invoices",
+    "status": 200,
+    "title": "Invoices &amp; Line Items | Grit",
+    "file": "docs__backend__invoices.txt",
+    "words": 1576
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/middleware",
+    "status": 200,
+    "title": "Middleware | Grit",
+    "file": "docs__backend__middleware.txt",
+    "words": 1709
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/migrations",
+    "status": 200,
+    "title": "Migrations | Grit",
+    "file": "docs__backend__migrations.txt",
+    "words": 1753
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/models",
+    "status": 200,
+    "title": "Models | Grit",
+    "file": "docs__backend__models.txt",
+    "words": 1756
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/oauth",
+    "status": 200,
+    "title": "Social Login (OAuth2) | Grit",
+    "file": "docs__backend__oauth.txt",
+    "words": 1337
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/outbox",
+    "status": 200,
+    "title": "The transactional outbox | Grit",
+    "file": "docs__backend__outbox.txt",
+    "words": 628
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/passkeys",
+    "status": 200,
+    "title": "Passkeys | Grit",
+    "file": "docs__backend__passkeys.txt",
+    "words": 875
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/public-api",
+    "status": 200,
+    "title": "The public surface | Grit",
+    "file": "docs__backend__public-api.txt",
+    "words": 801
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/pulse",
+    "status": 200,
+    "title": "Pulse (Observability) | Grit",
+    "file": "docs__backend__pulse.txt",
+    "words": 788
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/rbac",
+    "status": 200,
+    "title": "RBAC | Grit",
+    "file": "docs__backend__rbac.txt",
+    "words": 893
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/realtime",
+    "status": 200,
+    "title": "Realtime (WebSockets) | Grit",
+    "file": "docs__backend__realtime.txt",
+    "words": 2752
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/request-lifecycle",
+    "status": 200,
+    "title": "The Request Lifecycle: What Runs, In What Order | Grit",
+    "file": "docs__backend__request-lifecycle.txt",
+    "words": 1076
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/response-format",
+    "status": 200,
+    "title": "API Response Format | Grit",
+    "file": "docs__backend__response-format.txt",
+    "words": 1474
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/sagas",
+    "status": 200,
+    "title": "Sagas | Grit",
+    "file": "docs__backend__sagas.txt",
+    "words": 926
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/seeders",
+    "status": 200,
+    "title": "Seeders | Grit",
+    "file": "docs__backend__seeders.txt",
+    "words": 1062
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/services",
+    "status": 200,
+    "title": "Services | Grit",
+    "file": "docs__backend__services.txt",
+    "words": 1338
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/variants",
+    "status": 200,
+    "title": "Product Variants | Grit",
+    "file": "docs__backend__variants.txt",
+    "words": 2300
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/webhooks",
+    "status": 200,
+    "title": "Webhooks | Grit",
+    "file": "docs__backend__webhooks.txt",
+    "words": 907
+  },
+  {
+    "url": "https://gritframework.dev/docs/backend/workflows",
+    "status": 200,
+    "title": "Workflows (State Machines) | Grit",
+    "file": "docs__backend__workflows.txt",
+    "words": 1463
+  },
+  {
+    "url": "https://gritframework.dev/docs/batteries",
+    "status": 200,
+    "title": "Batteries Included | Grit",
+    "file": "docs__batteries.txt",
+    "words": 813
+  },
+  {
+    "url": "https://gritframework.dev/docs/batteries/ai",
+    "status": 200,
+    "title": "AI Integration | Grit",
+    "file": "docs__batteries__ai.txt",
+    "words": 1066
+  },
+  {
+    "url": "https://gritframework.dev/docs/batteries/backups",
+    "status": 200,
+    "title": "Data &amp; Backup — Grit | Grit",
+    "file": "docs__batteries__backups.txt",
+    "words": 648
+  },
+  {
+    "url": "https://gritframework.dev/docs/batteries/caching",
+    "status": 200,
+    "title": "Caching | Grit",
+    "file": "docs__batteries__caching.txt",
+    "words": 966
+  },
+  {
+    "url": "https://gritframework.dev/docs/batteries/cron",
+    "status": 200,
+    "title": "Cron Jobs | Grit",
+    "file": "docs__batteries__cron.txt",
+    "words": 1021
+  },
+  {
+    "url": "https://gritframework.dev/docs/batteries/email",
+    "status": 200,
+    "title": "Email | Grit",
+    "file": "docs__batteries__email.txt",
+    "words": 1009
+  },
+  {
+    "url": "https://gritframework.dev/docs/batteries/jobs",
+    "status": 200,
+    "title": "Background Jobs | Grit",
+    "file": "docs__batteries__jobs.txt",
+    "words": 1242
+  },
+  {
+    "url": "https://gritframework.dev/docs/batteries/media",
+    "status": 200,
+    "title": "Image Optimisation | Grit",
+    "file": "docs__batteries__media.txt",
+    "words": 2823
+  },
+  {
+    "url": "https://gritframework.dev/docs/batteries/modules",
+    "status": 200,
+    "title": "Turning modules off — Grit | Grit",
+    "file": "docs__batteries__modules.txt",
+    "words": 342
+  },
+  {
+    "url": "https://gritframework.dev/docs/batteries/security",
+    "status": 200,
+    "title": "Security | Grit",
+    "file": "docs__batteries__security.txt",
+    "words": 1800
+  },
+  {
+    "url": "https://gritframework.dev/docs/batteries/storage",
+    "status": 200,
+    "title": "File Storage | Grit",
+    "file": "docs__batteries__storage.txt",
+    "words": 1741
+  },
+  {
+    "url": "https://gritframework.dev/docs/benchmarks",
+    "status": 200,
+    "title": "Benchmarks: Grit vs Laravel, Django, Next.js, Express, Bun and Encore.ts | Grit",
+    "file": "docs__benchmarks.txt",
+    "words": 2285
+  },
+  {
+    "url": "https://gritframework.dev/docs/changelog",
+    "status": 200,
+    "title": "Changelog | Grit",
+    "file": "docs__changelog.txt",
+    "words": 158225
+  },
+  {
+    "url": "https://gritframework.dev/docs/cli",
+    "status": 200,
+    "title": "Command Explorer | Grit",
+    "file": "docs__cli.txt",
+    "words": 803
+  },
+  {
+    "url": "https://gritframework.dev/docs/concepts/architecture",
+    "status": 200,
+    "title": "Architecture | Grit",
+    "file": "docs__concepts__architecture.txt",
+    "words": 1566
+  },
+  {
+    "url": "https://gritframework.dev/docs/concepts/architecture-modes",
+    "status": 200,
+    "title": "Architecture Modes | Grit",
+    "file": "docs__concepts__architecture-modes.txt",
+    "words": 696
+  },
+  {
+    "url": "https://gritframework.dev/docs/concepts/architecture-modes/api-only",
+    "status": 200,
+    "title": "API Only Architecture: Headless Go Backend | Grit",
+    "file": "docs__concepts__architecture-modes__api-only.txt",
+    "words": 908
+  },
+  {
+    "url": "https://gritframework.dev/docs/concepts/architecture-modes/double",
+    "status": 200,
+    "title": "Double Architecture: Web + API | Grit",
+    "file": "docs__concepts__architecture-modes__double.txt",
+    "words": 2130
+  },
+  {
+    "url": "https://gritframework.dev/docs/concepts/architecture-modes/mobile",
+    "status": 200,
+    "title": "Mobile Architecture: API + Expo React Native | Grit",
+    "file": "docs__concepts__architecture-modes__mobile.txt",
+    "words": 1557
+  },
+  {
+    "url": "https://gritframework.dev/docs/concepts/architecture-modes/multi-client",
+    "status": 200,
+    "title": "Multi-Client: API + Mobile + Desktop | Grit",
+    "file": "docs__concepts__architecture-modes__multi-client.txt",
+    "words": 1593
+  },
+  {
+    "url": "https://gritframework.dev/docs/concepts/architecture-modes/single",
+    "status": 200,
+    "title": "Single Architecture: One Binary | Grit",
+    "file": "docs__concepts__architecture-modes__single.txt",
+    "words": 1752
+  },
+  {
+    "url": "https://gritframework.dev/docs/concepts/architecture-modes/triple",
+    "status": 200,
+    "title": "Triple Architecture: Web + Admin + API | Grit",
+    "file": "docs__concepts__architecture-modes__triple.txt",
+    "words": 2310
+  },
+  {
+    "url": "https://gritframework.dev/docs/concepts/cli",
+    "status": 200,
+    "title": "CLI Commands | Grit",
+    "file": "docs__concepts__cli.txt",
+    "words": 2196
+  },
+  {
+    "url": "https://gritframework.dev/docs/concepts/code-generation",
+    "status": 200,
+    "title": "Code Generation | Grit",
+    "file": "docs__concepts__code-generation.txt",
+    "words": 1717
+  },
+  {
+    "url": "https://gritframework.dev/docs/concepts/field-types",
+    "status": 200,
+    "title": "Field Types Reference | Grit",
+    "file": "docs__concepts__field-types.txt",
+    "words": 1163
+  },
+  {
+    "url": "https://gritframework.dev/docs/concepts/generated-files",
+    "status": 200,
+    "title": "Generated File Map | Grit",
+    "file": "docs__concepts__generated-files.txt",
+    "words": 738
+  },
+  {
+    "url": "https://gritframework.dev/docs/concepts/money",
+    "status": 200,
+    "title": "Money | Grit",
+    "file": "docs__concepts__money.txt",
+    "words": 1366
+  },
+  {
+    "url": "https://gritframework.dev/docs/concepts/naming-conventions",
+    "status": 200,
+    "title": "Naming Conventions | Grit",
+    "file": "docs__concepts__naming-conventions.txt",
+    "words": 842
+  },
+  {
+    "url": "https://gritframework.dev/docs/concepts/offline-sync",
+    "status": 200,
+    "title": "Offline Sync | Grit",
+    "file": "docs__concepts__offline-sync.txt",
+    "words": 1426
+  },
+  {
+    "url": "https://gritframework.dev/docs/concepts/performance",
+    "status": 200,
+    "title": "Performance | Grit",
+    "file": "docs__concepts__performance.txt",
+    "words": 1689
+  },
+  {
+    "url": "https://gritframework.dev/docs/concepts/styles",
+    "status": 200,
+    "title": "Style Variants | Grit",
+    "file": "docs__concepts__styles.txt",
+    "words": 1007
+  },
+  {
+    "url": "https://gritframework.dev/docs/concepts/type-system",
+    "status": 200,
+    "title": "Type System | Grit",
+    "file": "docs__concepts__type-system.txt",
+    "words": 1153
+  },
+  {
+    "url": "https://gritframework.dev/docs/demo",
+    "status": 200,
+    "title": "Demo Application: Grit Motors | Grit",
+    "file": "docs__demo.txt",
+    "words": 833
+  },
+  {
+    "url": "https://gritframework.dev/docs/deployment",
+    "status": 200,
+    "title": "Deployment | Grit",
+    "file": "docs__deployment.txt",
+    "words": 846
+  },
+  {
+    "url": "https://gritframework.dev/docs/deployment/build-locally",
+    "status": 200,
+    "title": "Test the production build locally | Grit",
+    "file": "docs__deployment__build-locally.txt",
+    "words": 372
+  },
+  {
+    "url": "https://gritframework.dev/docs/deployment/checklist",
+    "status": 200,
+    "title": "Go-live checklist | Grit",
+    "file": "docs__deployment__checklist.txt",
+    "words": 868
+  },
+  {
+    "url": "https://gritframework.dev/docs/deployment/deploy-command",
+    "status": 200,
+    "title": "Grit: Full-stack Go apps from one command",
+    "file": "docs__deployment__deploy-command.txt",
+    "words": 210
+  },
+  {
+    "url": "https://gritframework.dev/docs/deployment/docker-networks",
+    "status": 200,
+    "title": "Docker address pools: &quot;all predefined address pools have been fully subnetted&quot; | Grit",
+    "file": "docs__deployment__docker-networks.txt",
+    "words": 618
+  },
+  {
+    "url": "https://gritframework.dev/docs/deployment/dokploy",
+    "status": 200,
+    "title": "Deploy Grit to Dokploy | Grit",
+    "file": "docs__deployment__dokploy.txt",
+    "words": 1504
+  },
+  {
+    "url": "https://gritframework.dev/docs/deployment/environment",
+    "status": 200,
+    "title": "Environment variables | Grit",
+    "file": "docs__deployment__environment.txt",
+    "words": 400
+  },
+  {
+    "url": "https://gritframework.dev/docs/deployment/from-github",
+    "status": 200,
+    "title": "Deploy from GitHub | Grit",
+    "file": "docs__deployment__from-github.txt",
+    "words": 827
+  },
+  {
+    "url": "https://gritframework.dev/docs/deployment/multiple-instances",
+    "status": 200,
+    "title": "Running More Than One Instance: Replicas Behind a Load Balancer | Grit",
+    "file": "docs__deployment__multiple-instances.txt",
+    "words": 755
+  },
+  {
+    "url": "https://gritframework.dev/docs/deployment/railway",
+    "status": 200,
+    "title": "Deploy to Railway | Grit",
+    "file": "docs__deployment__railway.txt",
+    "words": 649
+  },
+  {
+    "url": "https://gritframework.dev/docs/deployment/vps",
+    "status": 200,
+    "title": "Deployment | Grit",
+    "file": "docs__deployment__vps.txt",
+    "words": 2041
+  },
+  {
+    "url": "https://gritframework.dev/docs/design/theme",
+    "status": 200,
+    "title": "Theme | Grit",
+    "file": "docs__design__theme.txt",
+    "words": 831
+  },
+  {
+    "url": "https://gritframework.dev/docs/desktop",
+    "status": 200,
+    "title": "Desktop App Development | Grit",
+    "file": "docs__desktop.txt",
+    "words": 942
+  },
+  {
+    "url": "https://gritframework.dev/docs/desktop/auto-update",
+    "status": 200,
+    "title": "Desktop Auto-Update + Installers: Binary Swap, NSIS Full + Slim | Grit",
+    "file": "docs__desktop__auto-update.txt",
+    "words": 1132
+  },
+  {
+    "url": "https://gritframework.dev/docs/desktop/building",
+    "status": 200,
+    "title": "Building &amp; Distribution | Grit",
+    "file": "docs__desktop__building.txt",
+    "words": 380
+  },
+  {
+    "url": "https://gritframework.dev/docs/desktop/first-app",
+    "status": 200,
+    "title": "Your First Desktop App | Grit",
+    "file": "docs__desktop__first-app.txt",
+    "words": 1691
+  },
+  {
+    "url": "https://gritframework.dev/docs/desktop/getting-started",
+    "status": 200,
+    "title": "Getting Started with Desktop | Grit",
+    "file": "docs__desktop__getting-started.txt",
+    "words": 874
+  },
+  {
+    "url": "https://gritframework.dev/docs/desktop/llm-reference",
+    "status": 200,
+    "title": "Desktop LLM Reference | Grit",
+    "file": "docs__desktop__llm-reference.txt",
+    "words": 4188
+  },
+  {
+    "url": "https://gritframework.dev/docs/desktop/offline",
+    "status": 200,
+    "title": "Building an Offline-First Desktop App | Grit",
+    "file": "docs__desktop__offline.txt",
+    "words": 1520
+  },
+  {
+    "url": "https://gritframework.dev/docs/desktop/pos-app",
+    "status": 200,
+    "title": "Build a POS App | Grit",
+    "file": "docs__desktop__pos-app.txt",
+    "words": 3668
+  },
+  {
+    "url": "https://gritframework.dev/docs/desktop/project-ideas",
+    "status": 200,
+    "title": "20 Desktop Project Ideas | Grit",
+    "file": "docs__desktop__project-ideas.txt",
+    "words": 1004
+  },
+  {
+    "url": "https://gritframework.dev/docs/desktop/resource-generation",
+    "status": 200,
+    "title": "Desktop Resource Generation | Grit",
+    "file": "docs__desktop__resource-generation.txt",
+    "words": 611
+  },
+  {
+    "url": "https://gritframework.dev/docs/frontend/hooks",
+    "status": 200,
+    "title": "React Hooks | Grit",
+    "file": "docs__frontend__hooks.txt",
+    "words": 1145
+  },
+  {
+    "url": "https://gritframework.dev/docs/frontend/i18n",
+    "status": 200,
+    "title": "Internationalisation: One Cookie for the API, Web App and Admin | Grit",
+    "file": "docs__frontend__i18n.txt",
+    "words": 658
+  },
+  {
+    "url": "https://gritframework.dev/docs/frontend/shared-package",
+    "status": 200,
+    "title": "Shared Package | Grit",
+    "file": "docs__frontend__shared-package.txt",
+    "words": 1160
+  },
+  {
+    "url": "https://gritframework.dev/docs/frontend/tanstack-router",
+    "status": 200,
+    "title": "Grit: Full-stack Go apps from one command",
+    "file": "docs__frontend__tanstack-router.txt",
+    "words": 624
+  },
+  {
+    "url": "https://gritframework.dev/docs/frontend/ui-components",
+    "status": 200,
+    "title": "UI Components | Grit",
+    "file": "docs__frontend__ui-components.txt",
+    "words": 438
+  },
+  {
+    "url": "https://gritframework.dev/docs/frontend/web-app",
+    "status": 200,
+    "title": "Web App | Grit",
+    "file": "docs__frontend__web-app.txt",
+    "words": 1617
+  },
+  {
+    "url": "https://gritframework.dev/docs/getting-started/cli-cheatsheet",
+    "status": 200,
+    "title": "CLI Cheatsheet | Grit",
+    "file": "docs__getting-started__cli-cheatsheet.txt",
+    "words": 3321
+  },
+  {
+    "url": "https://gritframework.dev/docs/getting-started/coming-from",
+    "status": 200,
+    "title": "Coming from Laravel, Django, or Next.js | Grit",
+    "file": "docs__getting-started__coming-from.txt",
+    "words": 1288
+  },
+  {
+    "url": "https://gritframework.dev/docs/getting-started/configuration",
+    "status": 200,
+    "title": "Configuration | Grit",
+    "file": "docs__getting-started__configuration.txt",
+    "words": 3011
+  },
+  {
+    "url": "https://gritframework.dev/docs/getting-started/create-a-project",
+    "status": 200,
+    "title": "Create a project | Grit",
+    "file": "docs__getting-started__create-a-project.txt",
+    "words": 612
+  },
+  {
+    "url": "https://gritframework.dev/docs/getting-started/existing-projects",
+    "status": 200,
+    "title": "Using Grit with an existing project | Grit",
+    "file": "docs__getting-started__existing-projects.txt",
+    "words": 690
+  },
+  {
+    "url": "https://gritframework.dev/docs/getting-started/installation",
+    "status": 200,
+    "title": "Installation | Grit",
+    "file": "docs__getting-started__installation.txt",
+    "words": 637
+  },
+  {
+    "url": "https://gritframework.dev/docs/getting-started/performance",
+    "status": 200,
+    "title": "Performance &amp; Benchmarks | Grit",
+    "file": "docs__getting-started__performance.txt",
+    "words": 1155
+  },
+  {
+    "url": "https://gritframework.dev/docs/getting-started/philosophy",
+    "status": 200,
+    "title": "Philosophy | Grit",
+    "file": "docs__getting-started__philosophy.txt",
+    "words": 1628
+  },
+  {
+    "url": "https://gritframework.dev/docs/getting-started/prerequisites",
+    "status": 200,
+    "title": "Prerequisites | Grit",
+    "file": "docs__getting-started__prerequisites.txt",
+    "words": 230
+  },
+  {
+    "url": "https://gritframework.dev/docs/getting-started/project-structure",
+    "status": 200,
+    "title": "Project Structure | Grit",
+    "file": "docs__getting-started__project-structure.txt",
+    "words": 1149
+  },
+  {
+    "url": "https://gritframework.dev/docs/getting-started/quick-start",
+    "status": 200,
+    "title": "Quick Start | Grit",
+    "file": "docs__getting-started__quick-start.txt",
+    "words": 1105
+  },
+  {
+    "url": "https://gritframework.dev/docs/getting-started/troubleshooting",
+    "status": 200,
+    "title": "Troubleshooting | Grit",
+    "file": "docs__getting-started__troubleshooting.txt",
+    "words": 1117
+  },
+  {
+    "url": "https://gritframework.dev/docs/governance",
+    "status": 200,
+    "title": "Governance &amp; risk | Grit",
+    "file": "docs__governance.txt",
+    "words": 700
+  },
+  {
+    "url": "https://gritframework.dev/docs/infrastructure/database",
+    "status": 200,
+    "title": "Database | Grit",
+    "file": "docs__infrastructure__database.txt",
+    "words": 1750
+  },
+  {
+    "url": "https://gritframework.dev/docs/infrastructure/docker",
+    "status": 200,
+    "title": "Docker | Grit",
+    "file": "docs__infrastructure__docker.txt",
+    "words": 1341
+  },
+  {
+    "url": "https://gritframework.dev/docs/infrastructure/docker-cheatsheet",
+    "status": 200,
+    "title": "Docker Cheatsheet | Grit",
+    "file": "docs__infrastructure__docker-cheatsheet.txt",
+    "words": 751
+  },
+  {
+    "url": "https://gritframework.dev/docs/learnings",
+    "status": 200,
+    "title": "Learnings: Engineering Journal | Grit",
+    "file": "docs__learnings.txt",
+    "words": 114
+  },
+  {
+    "url": "https://gritframework.dev/docs/learnings/stateless-service-load-test",
+    "status": 200,
+    "title": "Stateless Service + k6 Load Test: Recording p50 / p95 / p99 | Grit",
+    "file": "docs__learnings__stateless-service-load-test.txt",
+    "words": 2604
+  },
+  {
+    "url": "https://gritframework.dev/docs/mobile/building",
+    "status": 200,
+    "title": "Building &amp; Publishing | Grit",
+    "file": "docs__mobile__building.txt",
+    "words": 719
+  },
+  {
+    "url": "https://gritframework.dev/docs/mobile/first-app",
+    "status": 200,
+    "title": "Your First Mobile App | Grit",
+    "file": "docs__mobile__first-app.txt",
+    "words": 733
+  },
+  {
+    "url": "https://gritframework.dev/docs/mobile/getting-started",
+    "status": 200,
+    "title": "Getting Started with Mobile | Grit",
+    "file": "docs__mobile__getting-started.txt",
+    "words": 1127
+  },
+  {
+    "url": "https://gritframework.dev/docs/mobile/offline",
+    "status": 200,
+    "title": "Offline &amp; Caching | Grit",
+    "file": "docs__mobile__offline.txt",
+    "words": 724
+  },
+  {
+    "url": "https://gritframework.dev/docs/mobile/resource-generation",
+    "status": 200,
+    "title": "Mobile Resource Generation | Grit",
+    "file": "docs__mobile__resource-generation.txt",
+    "words": 830
+  },
+  {
+    "url": "https://gritframework.dev/docs/plugins",
+    "status": 200,
+    "title": "Plugins | Grit",
+    "file": "docs__plugins.txt",
+    "words": 1073
+  },
+  {
+    "url": "https://gritframework.dev/docs/plugins/authoring",
+    "status": 200,
+    "title": "Plugins — Grit | Grit",
+    "file": "docs__plugins__authoring.txt",
+    "words": 969
+  },
+  {
+    "url": "https://gritframework.dev/docs/plugins/command-palette",
+    "status": 200,
+    "title": "Command palette plugin — Grit | Grit",
+    "file": "docs__plugins__command-palette.txt",
+    "words": 576
+  },
+  {
+    "url": "https://gritframework.dev/docs/plugins/device-pairing",
+    "status": 200,
+    "title": "Device pairing plugin — Grit | Grit",
+    "file": "docs__plugins__device-pairing.txt",
+    "words": 677
+  },
+  {
+    "url": "https://gritframework.dev/docs/plugins/impersonate",
+    "status": 200,
+    "title": "Impersonate plugin — Grit | Grit",
+    "file": "docs__plugins__impersonate.txt",
+    "words": 590
+  },
+  {
+    "url": "https://gritframework.dev/docs/plugins/multitenant",
+    "status": 200,
+    "title": "Multi-tenancy plugin — Grit | Grit",
+    "file": "docs__plugins__multitenant.txt",
+    "words": 795
+  },
+  {
+    "url": "https://gritframework.dev/docs/plugins/overview",
+    "status": 200,
+    "title": "Plugins — Grit | Grit",
+    "file": "docs__plugins__overview.txt",
+    "words": 997
+  },
+  {
+    "url": "https://gritframework.dev/docs/plugins/push",
+    "status": 200,
+    "title": "Push notifications plugin | Grit | Grit",
+    "file": "docs__plugins__push.txt",
+    "words": 447
+  },
+  {
+    "url": "https://gritframework.dev/docs/plugins/saved-views",
+    "status": 200,
+    "title": "Saved views plugin — Grit | Grit",
+    "file": "docs__plugins__saved-views.txt",
+    "words": 587
+  },
+  {
+    "url": "https://gritframework.dev/docs/plugins/stripe",
+    "status": 200,
+    "title": "Stripe plugin | Grit | Grit",
+    "file": "docs__plugins__stripe.txt",
+    "words": 1341
+  },
+  {
+    "url": "https://gritframework.dev/docs/plugins/video",
+    "status": 200,
+    "title": "Video plugin | Grit | Grit",
+    "file": "docs__plugins__video.txt",
+    "words": 590
+  },
+  {
+    "url": "https://gritframework.dev/docs/prerequisites/docker",
+    "status": 200,
+    "title": "Docker for Grit Developers | Grit",
+    "file": "docs__prerequisites__docker.txt",
+    "words": 2243
+  },
+  {
+    "url": "https://gritframework.dev/docs/prerequisites/golang",
+    "status": 200,
+    "title": "Go for Grit Developers | Grit",
+    "file": "docs__prerequisites__golang.txt",
+    "words": 16621
+  },
+  {
+    "url": "https://gritframework.dev/docs/prerequisites/nextjs",
+    "status": 200,
+    "title": "Next.js for Grit Developers | Grit",
+    "file": "docs__prerequisites__nextjs.txt",
+    "words": 2957
+  },
+  {
+    "url": "https://gritframework.dev/docs/scaling",
+    "status": 200,
+    "title": "Scaling a Grit app, one break at a time | Grit",
+    "file": "docs__scaling.txt",
+    "words": 1672
+  },
+  {
+    "url": "https://gritframework.dev/docs/security",
+    "status": 200,
+    "title": "Security Guide: OWASP Top 10:2025 defences | Grit",
+    "file": "docs__security.txt",
+    "words": 3212
+  },
+  {
+    "url": "https://gritframework.dev/docs/security/audit-log",
+    "status": 200,
+    "title": "The audit log: a record you can prove was not edited | Grit",
+    "file": "docs__security__audit-log.txt",
+    "words": 1165
+  },
+  {
+    "url": "https://gritframework.dev/docs/security/authorization",
+    "status": 200,
+    "title": "Roles &amp; Permissions — Grit | Grit",
+    "file": "docs__security__authorization.txt",
+    "words": 884
+  },
+  {
+    "url": "https://gritframework.dev/docs/security/compliance",
+    "status": 200,
+    "title": "Privacy &amp; Compliance: GDPR Toolkit + Access Reviews | Grit",
+    "file": "docs__security__compliance.txt",
+    "words": 1581
+  },
+  {
+    "url": "https://gritframework.dev/docs/security/defenders-handbook",
+    "status": 200,
+    "title": "Defender&#x27;s Handbook ↔ Grit: Attack-by-Attack Defence Map | Grit",
+    "file": "docs__security__defenders-handbook.txt",
+    "words": 3712
+  },
+  {
+    "url": "https://gritframework.dev/docs/security/doctor",
+    "status": 200,
+    "title": "Project audit: grit doctor | Grit",
+    "file": "docs__security__doctor.txt",
+    "words": 997
+  },
+  {
+    "url": "https://gritframework.dev/docs/security/sso",
+    "status": 200,
+    "title": "Enterprise SSO: OpenID Connect Single Sign-On | Grit",
+    "file": "docs__security__sso.txt",
+    "words": 1210
+  },
+  {
+    "url": "https://gritframework.dev/docs/stability",
+    "status": 200,
+    "title": "Stability and hardening matrix | Grit",
+    "file": "docs__stability.txt",
+    "words": 3244
+  },
+  {
+    "url": "https://gritframework.dev/docs/stack-selector",
+    "status": 200,
+    "title": "Stack Selector: Pick the Right Grit Combo | Grit",
+    "file": "docs__stack-selector.txt",
+    "words": 2074
+  },
+  {
+    "url": "https://gritframework.dev/docs/start",
+    "status": 200,
+    "title": "Start here | Grit",
+    "file": "docs__start.txt",
+    "words": 987
+  },
+  {
+    "url": "https://gritframework.dev/docs/systems",
+    "status": 200,
+    "title": "Systems: How Grit Is Built | Grit",
+    "file": "docs__systems.txt",
+    "words": 882
+  },
+  {
+    "url": "https://gritframework.dev/docs/tech-kits",
+    "status": 200,
+    "title": "Tech Kits: Starter Kits | Grit",
+    "file": "docs__tech-kits.txt",
+    "words": 324
+  },
+  {
+    "url": "https://gritframework.dev/docs/tech-kits/api",
+    "status": 200,
+    "title": "API Tech Kit: Go backend only | Grit",
+    "file": "docs__tech-kits__api.txt",
+    "words": 1342
+  },
+  {
+    "url": "https://gritframework.dev/docs/tech-kits/desktop",
+    "status": 200,
+    "title": "Desktop Tech Kit: Wails + GORM | Grit",
+    "file": "docs__tech-kits__desktop.txt",
+    "words": 1330
+  },
+  {
+    "url": "https://gritframework.dev/docs/tech-kits/double",
+    "status": 200,
+    "title": "Double Tech Kit: Web + API monorepo | Grit",
+    "file": "docs__tech-kits__double.txt",
+    "words": 1307
+  },
+  {
+    "url": "https://gritframework.dev/docs/tech-kits/mobile",
+    "status": 200,
+    "title": "Mobile Tech Kit: Expo + API | Grit",
+    "file": "docs__tech-kits__mobile.txt",
+    "words": 1301
+  },
+  {
+    "url": "https://gritframework.dev/docs/tech-kits/single",
+    "status": 200,
+    "title": "Single Tech Kit: Go + embedded SPA | Grit",
+    "file": "docs__tech-kits__single.txt",
+    "words": 1317
+  },
+  {
+    "url": "https://gritframework.dev/docs/tech-kits/single-vite",
+    "status": 200,
+    "title": "Single + Vite Tech Kit: TanStack Router SPA | Grit",
+    "file": "docs__tech-kits__single-vite.txt",
+    "words": 1304
+  },
+  {
+    "url": "https://gritframework.dev/docs/tech-kits/triple",
+    "status": 200,
+    "title": "Triple Tech Kit: Web + Admin + API | Grit",
+    "file": "docs__tech-kits__triple.txt",
+    "words": 1343
+  },
+  {
+    "url": "https://gritframework.dev/docs/testing",
+    "status": 200,
+    "title": "Performance &amp; Security Testing | Grit",
+    "file": "docs__testing.txt",
+    "words": 2224
+  },
+  {
+    "url": "https://gritframework.dev/docs/tutorials",
+    "status": 200,
+    "title": "Tutorials | Grit",
+    "file": "docs__tutorials.txt",
+    "words": 629
+  },
+  {
+    "url": "https://gritframework.dev/docs/tutorials/blog",
+    "status": 200,
+    "title": "Build a Blog Tutorial | Grit",
+    "file": "docs__tutorials__blog.txt",
+    "words": 2174
+  },
+  {
+    "url": "https://gritframework.dev/docs/tutorials/contact-app",
+    "status": 200,
+    "title": "Your First App | Grit",
+    "file": "docs__tutorials__contact-app.txt",
+    "words": 1532
+  },
+  {
+    "url": "https://gritframework.dev/docs/tutorials/contacts/api",
+    "status": 200,
+    "title": "Contacts: API only | Grit",
+    "file": "docs__tutorials__contacts__api.txt",
+    "words": 605
+  },
+  {
+    "url": "https://gritframework.dev/docs/tutorials/contacts/desktop",
+    "status": 200,
+    "title": "Contacts: desktop app | Grit",
+    "file": "docs__tutorials__contacts__desktop.txt",
+    "words": 946
+  },
+  {
+    "url": "https://gritframework.dev/docs/tutorials/contacts/full",
+    "status": 200,
+    "title": "Contacts: everything | Grit",
+    "file": "docs__tutorials__contacts__full.txt",
+    "words": 924
+  },
+  {
+    "url": "https://gritframework.dev/docs/tutorials/contacts/mobile",
+    "status": 200,
+    "title": "Contacts: mobile app | Grit",
+    "file": "docs__tutorials__contacts__mobile.txt",
+    "words": 909
+  },
+  {
+    "url": "https://gritframework.dev/docs/tutorials/contacts/single",
+    "status": 200,
+    "title": "Contacts: one binary | Grit",
+    "file": "docs__tutorials__contacts__single.txt",
+    "words": 1006
+  },
+  {
+    "url": "https://gritframework.dev/docs/tutorials/contacts/web",
+    "status": 200,
+    "title": "Contacts: web app | Grit",
+    "file": "docs__tutorials__contacts__web.txt",
+    "words": 910
+  },
+  {
+    "url": "https://gritframework.dev/docs/tutorials/custom-endpoints",
+    "status": 200,
+    "title": "Custom API Endpoints | Grit",
+    "file": "docs__tutorials__custom-endpoints.txt",
+    "words": 6320
+  },
+  {
+    "url": "https://gritframework.dev/docs/tutorials/ecommerce",
+    "status": 200,
+    "title": "Build an E-Commerce App | Grit",
+    "file": "docs__tutorials__ecommerce.txt",
+    "words": 3341
+  },
+  {
+    "url": "https://gritframework.dev/docs/tutorials/learn",
+    "status": 200,
+    "title": "Learn Grit Step by Step | Grit",
+    "file": "docs__tutorials__learn.txt",
+    "words": 3339
+  },
+  {
+    "url": "https://gritframework.dev/docs/tutorials/product-catalog",
+    "status": 200,
+    "title": "Build a Product Catalog | Grit",
+    "file": "docs__tutorials__product-catalog.txt",
+    "words": 2312
+  },
+  {
+    "url": "https://gritframework.dev/docs/tutorials/saas",
+    "status": 200,
+    "title": "Build a SaaS App | Grit",
+    "file": "docs__tutorials__saas.txt",
+    "words": 2655
+  },
+  {
+    "url": "https://gritframework.dev/docs/upgrades",
+    "status": 200,
+    "title": "Upgrading a project | Grit",
+    "file": "docs__upgrades.txt",
+    "words": 1094
+  },
+  {
+    "url": "https://gritframework.dev/docs/versioning",
+    "status": 200,
+    "title": "Versioning &amp; breaking changes | Grit",
+    "file": "docs__versioning.txt",
+    "words": 678
+  }
+]

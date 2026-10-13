@@ -1,0 +1,641 @@
+Frontend
+Web App
+
+Grit scaffolds a full Next.js 16 frontend with App Router, Tailwind CSS, shadcn/ui, React Query, and a pre-built authentication flow -- all wired to your Go API out of the box.
+
+App Router (RSC)React QueryGo API
+A full Next.js 16 app — App Router, Tailwind, shadcn/ui, React Query — wired to your Go API
+
+Architecture Overview
+
+The web app lives at apps/web/ inside the monorepo. It uses Next.js App Router for file-based routing, Tailwind CSS with shadcn/ui for the design system, and React Query for all data fetching. The dark theme is enabled by default, matching the premium aesthetic across the entire Grit stack.
+
+apps/web/
+Copy to clipboard
+
+apps/web/
+
+├── app/
+
+│   ├── layout.tsx              # Root layout with providers
+
+│   ├── page.tsx                # Landing / home page
+
+│   ├── globals.css             # Tailwind + dark theme variables
+
+│   ├── (auth)/                 # Auth route group (public)
+
+│   │   ├── login/page.tsx
+
+│   │   ├── register/page.tsx
+
+│   │   └── forgot-password/page.tsx
+
+│   ├── (dashboard)/            # Protected route group
+
+│   │   ├── layout.tsx          # Sidebar + auth guard
+
+│   │   └── dashboard/page.tsx  # Main dashboard
+
+│   └── blog/                   # Public blog pages
+
+│       ├── page.tsx            # Blog listing page
+
+│       └── [slug]/page.tsx     # Blog detail page
+
+├── components/
+
+│   ├── ui/                     # shadcn/ui primitives
+
+│   ├── navbar.tsx              # Site navigation bar
+
+│   ├── footer.tsx              # Site footer
+
+│   ├── providers.tsx           # QueryClient + theme providers
+
+│   └── shared/
+
+│       └── providers.tsx       # QueryClient + theme providers
+
+├── hooks/
+
+│   ├── use-auth.ts             # Auth hooks (login, register, etc.)
+
+│   ├── use-users.ts            # Generated CRUD hooks
+
+│   └── use-blogs.ts            # Blog data fetching hooks
+
+├── lib/
+
+│   ├── api.ts                  # API helper functions
+
+│   ├── api-client.ts           # Axios instance (HttpOnly cookies + CSRF)
+
+│   ├── query-client.ts         # React Query client config
+
+│   └── utils.ts                # Utility functions (cn, etc.)
+
+├── next.config.ts
+
+├── tailwind.config.ts
+
+├── tsconfig.json
+
+└── package.json
+
+App Router Structure
+
+Grit uses Next.js route groups to separate public and protected routes. The (auth) group holds login, register, and forgot-password pages. The (dashboard) group wraps all authenticated pages with a sidebar layout and auth guard.
+
+Root Layout
+
+The root layout wraps the entire app with the Providers component, which sets up React Query and the theme. The Onest font is loaded via Google Fonts and JetBrains Mono is used for code elements.
+
+apps/web/app/layout.tsx
+Copy to clipboard
+
+import type { Metadata } from "next";
+
+import { Providers } from "@/components/shared/providers";
+
+import "./globals.css";
+
+export const metadata: Metadata = {
+
+title: "My App",
+
+description: "Built with Grit",
+
+};
+
+export default function RootLayout({
+
+children,
+
+}: {
+
+children: React.ReactNode;
+
+}) {
+
+return (
+
+<html lang="en" className="dark">
+
+<body>
+
+<Providers>{children}</Providers>
+
+</body>
+
+</html>
+
+);
+
+}
+
+Providers Component
+
+The Providers component initializes React Query with a shared QueryClient instance and wraps children with the QueryClientProvider. Toast notifications use Sonner.
+
+apps/web/components/shared/providers.tsx
+Copy to clipboard
+
+"use client";
+
+import { QueryClientProvider } from "@tanstack/react-query";
+
+import { Toaster } from "sonner";
+
+import { queryClient } from "@/lib/query-client";
+
+export function Providers({ children }: { children: React.ReactNode }) {
+
+return (
+
+<QueryClientProvider client={queryClient}>
+
+{children}
+
+<Toaster theme="dark" position="top-right" />
+
+</QueryClientProvider>
+
+);
+
+}
+
+Authentication Pages
+
+Grit ships three pre-built auth pages with the dark theme, form validation via Zod schemas from the shared package, and API integration via the auth hooks. All pages are fully responsive.
+
+RoutePageDescription
+
+/loginLoginEmail + password, JWT token storage
+
+/registerRegisterName + email + password + confirm
+
+/forgot-passwordForgot PasswordEmail input, triggers reset email
+
+Here is the login page pattern. It uses the useLogin() hook from hooks/use-auth.ts and validates with the LoginSchema from the shared package.
+
+apps/web/app/(auth)/login/page.tsx
+Copy to clipboard
+
+"use client";
+
+import { useState } from "react";
+
+import { useRouter } from "next/navigation";
+
+import Link from "next/link";
+
+import { LoginSchema, type LoginInput } from "@myapp/shared/schemas";
+
+import { useLogin } from "@/hooks/use-auth";
+
+export default function LoginPage() {
+
+const router = useRouter();
+
+const login = useLogin();
+
+const [form, setForm] = useState<LoginInput>({
+
+email: "", password: "",
+
+});
+
+const [errors, setErrors] = useState<Record<string, string>>({});
+
+const handleSubmit = async (e: React.FormEvent) => {
+
+e.preventDefault();
+
+setErrors({});
+
+const result = LoginSchema.safeParse(form);
+
+if (!result.success) {
+
+const fieldErrors: Record<string, string> = {};
+
+result.error.issues.forEach((issue) => {
+
+fieldErrors[issue.path[0] as string] = issue.message;
+
+});
+
+setErrors(fieldErrors);
+
+return;
+
+}
+
+login.mutate(form, {
+
+onSuccess: () => router.push("/dashboard"),
+
+onError: (err) => setErrors({ form: "Invalid credentials" }),
+
+});
+
+};
+
+return (
+
+<div className="min-h-screen flex items-center justify-center">
+
+<form onSubmit={handleSubmit} className="w-full max-w-sm space-y-4">
+
+<h1 className="text-2xl font-bold">Sign In</h1>
+
+{/* Email and password inputs with error display */}
+
+{/* Submit button with loading state */}
+
+<p className="text-sm text-text-muted">
+
+Don&apos;t have an account?{" "}
+
+<Link href="/register" className="text-accent">Register</Link>
+
+</p>
+
+</form>
+
+</div>
+
+);
+
+}
+
+Protected Dashboard Layout
+
+The (dashboard) route group wraps all authenticated pages. Its layout component checks for a valid JWT token and redirects unauthenticated users to the login page. It renders a sidebar for navigation and a top navbar with the user avatar and logout button.
+
+apps/web/app/(dashboard)/layout.tsx
+Copy to clipboard
+
+"use client";
+
+import { useEffect } from "react";
+
+import { useRouter } from "next/navigation";
+
+import { useMe } from "@/hooks/use-auth";
+
+export default function DashboardLayout({
+
+children,
+
+}: {
+
+children: React.ReactNode;
+
+}) {
+
+const router = useRouter();
+
+// Auth lives in HttpOnly cookies (grit_access / grit_refresh) that JS
+
+// can't read, so we don't check a token client-side. Instead useMe()
+
+// calls GET /api/auth/me — if the cookie is missing or expired the API
+
+// returns 401 and we redirect to login.
+
+const { data: user, isLoading, isError } = useMe();
+
+useEffect(() => {
+
+if (isError) {
+
+router.replace("/login");
+
+}
+
+}, [isError, router]);
+
+if (isLoading) {
+
+return <div className="min-h-screen bg-background isolate" />;
+
+}
+
+return (
+
+<div className="min-h-screen bg-background isolate flex">
+
+{/* Sidebar navigation */}
+
+<aside className="hidden lg:flex w-64 flex-col border-r border-border">
+
+{/* Logo, nav links, user section */}
+
+</aside>
+
+{/* Main content */}
+
+<main className="flex-1">
+
+{/* Top navbar with user avatar */}
+
+<div className="p-6">{children}</div>
+
+</main>
+
+</div>
+
+);
+
+}
+
+The dashboard page itself shows a welcome message, stats cards (total users, active sessions, etc.), and a recent activity feed. Stats are fetched from the Go API using React Query.
+
+apps/web/app/(dashboard)/dashboard/page.tsx
+Copy to clipboard
+
+"use client";
+
+import { useMe } from "@/hooks/use-auth";
+
+export default function DashboardPage() {
+
+const { data: user } = useMe();
+
+return (
+
+<div>
+
+<h1 className="text-2xl font-bold mb-6">
+
+Welcome back, {user?.name}
+
+</h1>
+
+{/* Stats cards grid */}
+
+<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+
+<StatsCard label="Total Users" value="1,234" />
+
+<StatsCard label="Active Sessions" value="56" />
+
+<StatsCard label="Revenue" value="$12,345" />
+
+<StatsCard label="Growth" value="+12.3%" />
+
+</div>
+
+{/* Recent activity */}
+
+<div className="rounded-xl border border-border bg-bg-secondary p-6">
+
+<h2 className="text-lg font-semibold mb-4">Recent Activity</h2>
+
+{/* Activity list */}
+
+</div>
+
+</div>
+
+);
+
+}
+
+API Client Setup
+
+The API client is an Axios instance pointed at the Go backend. Auth is cookie-based: /api/auth/login sets HttpOnly grit_access / grit_refresh cookies, and withCredentials: true tells the browser to send them on every request (including cross-origin in dev, where the API is on :8080 and the web app on :3000). There is no Authorization: Bearer header and no token in JavaScript — that's the point: HttpOnly cookies can't be read by scripts, so they're immune to token-stealing XSS.
+
+apps/web/lib/api-client.ts
+Copy to clipboard
+
+import axios from "axios";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+
+export const api = axios.create({
+
+baseURL: API_URL,
+
+headers: { "Content-Type": "application/json" },
+
+// Send the HttpOnly grit_access / grit_refresh cookies automatically.
+
+// Without this, axios drops them on cross-origin requests in dev and the
+
+// server treats every call as anonymous.
+
+withCredentials: true,
+
+});
+
+// Double-submit CSRF: echo the (non-HttpOnly) grit_csrf cookie into a header
+
+// on state-changing requests. Also stamp an Idempotency-Key so any mutation
+
+// gets safe-retry semantics for free.
+
+api.interceptors.request.use((config) => {
+
+if (typeof document !== "undefined") {
+
+const m = document.cookie.match(/(?:^|; )grit_csrf=([^;]+)/);
+
+if (m && config.headers) {
+
+config.headers["X-CSRF-Token"] = decodeURIComponent(m[1]);
+
+}
+
+}
+
+const method = (config.method || "get").toUpperCase();
+
+const unsafe = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+
+if (unsafe && config.headers && !config.headers["Idempotency-Key"]) {
+
+config.headers["Idempotency-Key"] = crypto.randomUUID();
+
+}
+
+return config;
+
+});
+
+// Alias kept so generated React Query hooks importing { apiClient } resolve.
+
+export const apiClient = api;
+
+React Query Setup
+
+The React Query client is configured with sensible defaults: no automatic refetching on window focus in development, stale time of 30 seconds, and retry of 1 attempt on failure.
+
+apps/web/lib/query-client.ts
+Copy to clipboard
+
+import { QueryClient } from "@tanstack/react-query";
+
+export const queryClient = new QueryClient({
+
+defaultOptions: {
+
+queries: {
+
+staleTime: 30 * 1000,         // 30 seconds
+
+retry: 1,
+
+refetchOnWindowFocus: false,
+
+},
+
+mutations: {
+
+retry: 0,
+
+},
+
+},
+
+});
+
+Tailwind CSS + shadcn/ui
+
+The web app uses Tailwind CSS with a custom dark theme and shadcn/ui components. All CSS variables are defined in globals.css and mapped to Tailwind utility classes in tailwind.config.ts.
+
+apps/web/app/globals.css
+Copy to clipboard
+
+:root {
+
+--bg-primary:    #0a0a0f;
+
+--bg-secondary:  #111118;
+
+--bg-tertiary:   #1a1a24;
+
+--bg-elevated:   #22222e;
+
+--bg-hover:      #2a2a38;
+
+--border:        #2a2a3a;
+
+--text-primary:  #e8e8f0;
+
+--text-secondary:#9090a8;
+
+--text-muted:    #606078;
+
+--accent:        #6c5ce7;
+
+--accent-hover:  #7c6cf7;
+
+--success:       #00b894;
+
+--danger:        #ff6b6b;
+
+--warning:       #fdcb6e;
+
+--info:          #74b9ff;
+
+}
+
+apps/web/tailwind.config.ts
+Copy to clipboard
+
+import type { Config } from "tailwindcss";
+
+const config: Config = {
+
+darkMode: "class",
+
+content: [
+
+"./app/**/*.{ts,tsx}",
+
+"./components/**/*.{ts,tsx}",
+
+],
+
+theme: {
+
+extend: {
+
+colors: {
+
+background: "var(--bg-primary)",
+
+"bg-secondary": "var(--bg-secondary)",
+
+"bg-tertiary": "var(--bg-tertiary)",
+
+border: "var(--border)",
+
+foreground: "var(--text-primary)",
+
+accent: {
+
+DEFAULT: "var(--accent)",
+
+hover: "var(--accent-hover)",
+
+},
+
+success: "var(--success)",
+
+danger: "var(--danger)",
+
+},
+
+fontFamily: {
+
+sans: ["Onest", "system-ui", "sans-serif"],
+
+mono: ["JetBrains Mono", "monospace"],
+
+},
+
+},
+
+},
+
+plugins: [require("tailwindcss-animate")],
+
+};
+
+export default config;
+
+Dark Theme by Default
+
+Grit uses a dark-first design philosophy. The dark class is applied to the root <html> element in the root layout. The color palette is inspired by premium tools like Linear, Vercel Dashboard, and Raycast.
+
+TokenValueUsage
+
+--bg-primary#0a0a0fPage background
+
+--bg-secondary#111118Cards, sidebar
+
+--accent#6c5ce7Buttons, links, highlights
+
+--text-primary#e8e8f0Headings, body text
+
+--danger#ff6b6bError states, delete actions
+
+Running the Web App
+
+Start the web app in development mode. Make sure the Go API is running first.
+
+terminal
+
+$ grit start web
+
+Or use Turborepo to start all apps at once from the project root:
+
+terminal
+
+$ grit start
+
+Dashboard & WidgetsReact Query Hooks

@@ -1,0 +1,357 @@
+Backend
+RBAC & Roles
+
+Grit includes a role-based access control (RBAC) system with three built-in roles. Routes can be restricted to specific roles using middleware, and the admin panel adapts its UI based on the authenticated user's role.
+
+Roles now carry permissions.
+Since v3.66.0 a role is a bag of permissions, and routes can be guarded by permission instead of role name — so adding a role no longer means editing every route. Everything on this page still works and needs no changes, but Roles & Permissions is the model to build on.
+
+Overview
+
+Every user has a role field stored as an uppercase string. Grit ships with three roles:
+
+RoleValueDescription
+
+ADMIN"ADMIN"Full access. Can manage all resources, users, and system settings.
+
+EDITOR"EDITOR"Can manage content resources. Sees the full admin panel but cannot delete users or access system pages.
+
+USER"USER"Standard user. Sees only their profile page in the admin panel.
+
+Guard middlewareRoute groups
+Public routes skip the guard; protected & admin routes pass through RequireRole
+
+Role Constants
+
+Roles are defined as Go constants in the User model and as TypeScript types in the shared package:
+
+Go (Backend)
+
+apps/api/internal/models/user.go
+Copy to clipboard
+
+const (
+
+RoleAdmin  = "ADMIN"
+
+RoleEditor = "EDITOR"
+
+RoleUser   = "USER"
+
+)
+
+type User struct {
+
+ID        string `gorm:"type:varchar(36);primaryKey" json:"id"`
+
+FirstName string `gorm:"size:100;not null" json:"first_name"`
+
+LastName  string `gorm:"size:100;not null" json:"last_name"`
+
+Email     string `gorm:"uniqueIndex;size:255;not null" json:"email"`
+
+Password  string `gorm:"size:255;not null" json:"-"`
+
+Role      string `gorm:"size:20;default:USER" json:"role"`
+
+// ...
+
+}
+
+TypeScript (Frontend)
+
+packages/shared/types/user.ts
+Copy to clipboard
+
+export interface User {
+
+id: string;
+
+first_name: string;
+
+last_name: string;
+
+email: string;
+
+role: "ADMIN" | "EDITOR" | "USER";
+
+avatar: string;
+
+job_title: string;
+
+bio: string;
+
+active: boolean;
+
+// ...
+
+}
+
+packages/shared/constants/index.ts
+Copy to clipboard
+
+export const ROLES = {
+
+ADMIN: "ADMIN",
+
+EDITOR: "EDITOR",
+
+USER: "USER",
+
+} as const;
+
+localhost:3001/system/roles
+
+Permissions are grouped by module and expand to a create / view / edit / delete matrix per resource. Granting a whole resource keeps any action added to it later, so generating a new resource never silently changes an existing role.
+
+RequireRole Middleware
+
+The RequireRole middleware checks the authenticated user's role against a list of allowed roles. It must be used after the Auth middleware.
+
+apps/api/internal/middleware/auth.go
+Copy to clipboard
+
+// RequireRole returns middleware that restricts access to specific roles.
+
+func RequireRole(roles ...string) gin.HandlerFunc {
+
+return func(c *gin.Context) {
+
+userRole, exists := c.Get("user_role")
+
+if !exists {
+
+c.JSON(http.StatusForbidden, gin.H{
+
+"error": gin.H{
+
+"code":    "FORBIDDEN",
+
+"message": "Access denied",
+
+},
+
+})
+
+c.Abort()
+
+return
+
+}
+
+role := userRole.(string)
+
+for _, allowed := range roles {
+
+if role == allowed {
+
+c.Next()
+
+return
+
+}
+
+}
+
+c.JSON(http.StatusForbidden, gin.H{
+
+"error": gin.H{
+
+"code":    "FORBIDDEN",
+
+"message": "Insufficient permissions",
+
+},
+
+})
+
+c.Abort()
+
+}
+
+}
+
+You can pass one or more roles:
+
+// Single role
+
+admin.Use(middleware.RequireRole("ADMIN"))
+
+// Multiple roles
+
+editors.Use(middleware.RequireRole("ADMIN", "EDITOR"))
+
+Copy to clipboard
+
+Default Route Groups
+
+Grit scaffolds three route groups in routes.go:
+
+GroupMarkerAccess
+
+Protected// grit:routes:protectedAny authenticated user
+
+Admin// grit:routes:adminADMIN only
+
+Custom// grit:routes:customRole-restricted (via --roles flag)
+
+By default, grit generate resource places CRUD routes in the protected group and DELETE in the admin group. When you use the --roles flag, all routes are placed in the custom group instead.
+
+apps/api/internal/routes/routes.go
+Copy to clipboard
+
+// Protected routes (any authenticated user)
+
+protected := r.Group("/api")
+
+protected.Use(middleware.Auth(db, authService))
+
+{
+
+// Profile routes (any authenticated user)
+
+profile := protected.Group("/profile")
+
+{
+
+profile.GET("", userHandler.GetProfile)
+
+profile.PUT("", userHandler.UpdateProfile)
+
+profile.DELETE("", userHandler.DeleteProfile)
+
+}
+
+// Default resource routes go here
+
+// grit:routes:protected
+
+// Admin routes (ADMIN only)
+
+admin := protected.Group("")
+
+admin.Use(middleware.RequireRole("ADMIN"))
+
+{
+
+// grit:routes:admin
+
+}
+
+// Custom role-restricted routes
+
+// grit:routes:custom
+
+}
+
+Using the --roles Flag
+
+When generating a resource, you can restrict all its routes to specific roles using the --roles flag:
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Post --fields "title:string,content:text,published:bool" --roles "ADMIN,EDITOR"
+
+This generates a self-contained route group with RequireRole middleware:
+
+Generated route group
+Copy to clipboard
+
+// Posts routes (restricted to ADMIN, EDITOR)
+
+postsGroup := protected.Group("/posts")
+
+postsGroup.Use(middleware.RequireRole("ADMIN", "EDITOR"))
+
+{
+
+postsGroup.GET("", postHandler.List)
+
+postsGroup.GET("/:id", postHandler.GetByID)
+
+postsGroup.POST("", postHandler.Create)
+
+postsGroup.PUT("/:id", postHandler.Update)
+
+postsGroup.DELETE("/:id", postHandler.Delete)
+
+}
+
+Without --roles: GET, GET/:id, POST, and PUT go in the protected group (any auth user), and DELETE goes in the admin group (ADMIN only).
+
+With --roles: All five CRUD routes are placed in a single group restricted to the specified roles.
+
+Profile Page
+
+Users with the USER role are redirected from the dashboard to a dedicated profile page at /profile. The profile page includes:
+
+Personal Information — Edit first name, last name, and email
+
+Professional Information — Job title and bio
+
+Change Password — Update account password
+
+Danger Zone — Delete account with confirmation dialog
+
+The sidebar adapts based on role:
+
+RoleSidebar Shows
+
+ADMIN / EDITORDashboard, Resources, System pages, Profile
+
+USERProfile only
+
+Backend Profile Endpoints
+
+Profile endpoints use the authenticated user's ID from the JWT context — no:id parameter needed:
+
+MethodEndpointDescription
+
+GET/api/profileGet current user's profile
+
+PUT/api/profileUpdate profile (name, email, password, job title, bio)
+
+DELETE/api/profileDelete account
+
+Adding New Roles
+
+Use the grit add role command to add a new role across all project files in one step:
+
+grit add role MODERATOR
+
+Copy to clipboard
+
+This automatically updates 7 locations:
+
+Go model constants (models/user.go)
+
+Zod schema enum (schemas/user.ts)
+
+TypeScript union type (types/user.ts)
+
+ROLES constants object (constants/index.ts)
+
+Admin badge configuration (resources/users.ts)
+
+Admin table filter options
+
+Admin form select options
+
+After adding a role, you can use it in route restrictions:
+
+moderators := protected.Group("/reports")
+
+moderators.Use(middleware.RequireRole("ADMIN", "MODERATOR"))
+
+{
+
+moderators.GET("", reportHandler.List)
+
+}
+
+Copy to clipboard
+
+You may also want to update the sidebar visibility logic in components/chrome/CollapsibleSidebar.tsx if the new role should have admin-level navigation access.
+
+SeedersAdmin Overview

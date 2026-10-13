@@ -1,0 +1,413 @@
+AI Workflows
+Using Grit with Antigravity
+
+Build full-stack applications using spec-driven development. Plan with Claude Web, build with Antigravity's AI-powered IDE — get visual editing, inline suggestions, and multi-file generation.
+
+PlanAntigravity IDE
+Plan with Claude Web, build in Antigravity's AI IDE driving Grit — visual, multi-file, fast
+
+The Workflow
+
+The spec-driven workflow is a 3-step process that separates planning from building. You use Claude Web (claude.ai) for high-level planning, then hand off a structured spec to Antigravity for implementation.
+
+1
+
+Plan
+
+Describe your project to Claude Web and get 3 spec files back.
+
+2
+
+Spec
+
+project-description.md, antigravity-prompt.md, project-phases.md
+
+3
+
+Build
+
+Feed the spec to Antigravity and let its AI composer build your app.
+
+Antigravity is a Cursor-like AI-powered IDE that provides inline code editing, a multi-file composer, and an integrated AI chat. It can run terminal commands, apply diffs across multiple files, and let you review every change visually before accepting it — making it an ideal companion for Grit's structured code generation workflow.
+
+Why spec-driven? AI assistants produce dramatically better code when given a complete plan upfront. Instead of going back and forth, you front-load the thinking in Claude Web and let Antigravity execute the plan methodically.
+
+Step 1: Planning with Claude Web
+
+Open claude.ai and describe the application you want to build. Be specific about models, relationships, user roles, and features. Claude will generate 3 structured files that Antigravity's AI can follow step by step.
+
+Here's an example using a Job Board application. Copy the prompt template below, replace the bracketed sections with your project details, and paste it into Claude Web:
+
+Prompt for Claude Web
+Copy to clipboard
+
+I want to build a [PROJECT NAME] using the Grit framework.
+
+Grit is a full-stack meta-framework that uses:
+
+- Go backend (Gin web framework + GORM ORM)
+
+- Next.js frontend (React + App Router + TypeScript)
+
+- Admin panel (resource-based, Filament-like)
+
+- Monorepo with shared types and validation (Zod)
+
+- Docker for infrastructure (PostgreSQL, Redis, MinIO)
+
+Here's what I want to build:
+
+[DESCRIBE YOUR PROJECT IN DETAIL]
+
+Please create these 3 files for me:
+
+1. project-description.md — Full project spec with all models,
+
+their fields (use Grit field types: string, text, richtext,
+
+int, uint, float, bool, datetime, date, slug, string_array,
+
+belongs_to, many_to_many, file, files), relationships,
+
+user roles, and features.
+
+2. antigravity-prompt.md — Step-by-step instructions that I'll
+
+give to Antigravity AI IDE. Include exact grit CLI commands
+
+to run in order. Use `grit generate resource <Name>
+
+--fields "..."` syntax.
+
+3. project-phases.md — A phased build plan with checkboxes.
+
+Phase 1: scaffold + core models.
+
+Phase 2: relationships + complex features.
+
+Phase 3: frontend customization + polish.
+
+Tip: The more detail you provide about your project, the better the spec files will be. Include specific field names, relationships between models, user roles, and any business logic requirements.
+
+The 3 Spec Files
+
+Claude Web will generate these 3 files. Save each one to your project folder before opening Antigravity.
+
+project-description.mdProject Description
+
+The complete project specification. Contains every model with its fields and types, all relationships between models, user roles and permissions, and a description of every feature. This is the source of truth for your application.
+
+antigravity-prompt.mdAntigravity Prompt
+
+Step-by-step instructions formatted for Antigravity's AI composer. Includes exact grit CLI commands in the correct order, file modifications to make after generation, and customization instructions. Feed this directly into Antigravity's AI chat.
+
+project-phases.mdProject Phases
+
+A phased build plan with checkboxes for tracking progress. Phase 1 covers scaffolding and core models. Phase 2 adds relationships and complex features. Phase 3 handles frontend customization and polish.
+
+Step 2: Setting Up Antigravity
+
+Before you start building, configure Antigravity so its AI understands Grit's conventions and can generate correct code from the start.
+
+1
+
+Open Antigravity IDE
+
+Launch Antigravity and either create a new project folder or open an existing one where you want to scaffold your Grit application.
+
+2
+
+Configure AI context
+
+Add the GRIT_SKILL.md file to Antigravity's AI context. You can do this by:
+
+✓Adding it as a rules file in Antigravity's AI settings (preferred — persists across sessions)
+
+✓Pinning it to the context window so the AI always has it available
+
+✓Placing it in the project root — Antigravity will index it as part of the workspace
+
+Tip: The GRIT_SKILL.md file teaches Antigravity's AI everything about Grit's conventions, CLI commands, project structure, and code patterns. Without it, the AI may generate code that doesn't follow Grit's standards.
+
+3
+
+Open the integrated terminal
+
+You'll need the terminal to run Grit CLI commands like grit new, grit generate resource, and docker compose up -d. Open Antigravity's integrated terminal so you can run these commands without leaving the IDE.
+
+Step 3: Building with Antigravity
+
+With your spec files ready and Antigravity configured, it's time to build. Here's the process:
+
+Scaffold the project
+
+Use the integrated terminal to scaffold a new Grit project and start the Docker infrastructure:
+
+Terminal
+Copy to clipboard
+
+grit new jobboard
+
+cd jobboard
+
+docker compose up -d
+
+Open the AI Composer
+
+Open Antigravity's AI Composer (the multi-file chat interface) and paste in the contents of your antigravity-prompt.md file. The AI will read through the step-by-step instructions and begin executing them.
+
+What Antigravity does
+
+With the prompt loaded, Antigravity's AI will:
+
+✓Run grit CLI commands in the integrated terminal to generate resources
+
+✓Edit generated files inline with visual diffs you can review
+
+✓Make multi-file changes across the Go backend, TypeScript types, and React frontend simultaneously
+
+✓Add custom business logic to handlers and services
+
+✓Customize admin panel pages, forms, and dashboards
+
+Review and iterate
+
+Use Antigravity's inline diff view to review every change before accepting it. If something doesn't look right, ask the AI to adjust it. You can also use the inline chat to make quick edits to individual files without opening the full composer.
+
+Tip: Work through the phases in your project-phases.md file one at a time. Complete Phase 1 (scaffold + core models) before moving to Phase 2 (relationships + complex features). This keeps the AI focused and reduces errors.
+
+The Grit Skill File
+
+The GRIT_SKILL.md file is a structured context document that teaches Antigravity's AI how Grit projects work. Every project scaffolded with grit new includes this file automatically. Add it to Antigravity's AI context so the AI understands your project's conventions from the start.
+
+Here is the full content of the skill file:
+
+GRIT_SKILL.md
+Copy to clipboard
+
+# Grit Framework — AI Skill Context
+
+> Give this file to any AI coding assistant to teach it
+
+> how to work with your Grit project.
+
+## What is Grit?
+
+Grit is a full-stack framework: Go (Gin + GORM) backend +
+
+Next.js (React + TypeScript) frontend in a monorepo.
+
+## CLI Commands
+
+grit new <name>                    # Scaffold full project
+
+grit new <name> --api              # API only
+
+grit generate resource <Name> --fields "field:type,..."
+
+# Full-stack CRUD
+
+# add --seed --faker --count 50 for data
+
+grit generate seeder <Resource>    # Seeder for an existing resource
+
+grit remove resource <Name>        # Remove a resource
+
+grit sync                          # Sync Go types → TypeScript
+
+grit migrate                       # Run GORM AutoMigrate
+
+grit seed                          # Run all seeders (idempotent)
+
+grit start server                  # Run the Go API
+
+grit start client                  # Run web + admin
+
+grit add role <ROLE>               # Add a new role
+
+## Field Types (exactly 15 — anything else fails validation)
+
+string, text, richtext, int, uint, float, bool, datetime,
+
+date, slug, string_array
+
+belongs_to (e.g., category:belongs_to or author:belongs_to:User)
+
+many_to_many (e.g., tags:many_to_many:Tag)
+
+file  (e.g., image:file:image, doc:file:all)
+
+files (e.g., gallery:files:image)
+
+## Models
+
+UUID string primary keys (NOT gorm.Model, NOT uint):
+
+ID string `gorm:"type:varchar(36);primaryKey"`
+
+belongs_to FK columns are string (varchar(36)).
+
+User has FirstName + LastName; roles are UPPERCASE:
+
+ADMIN, EDITOR, USER (default USER).
+
+## Project Structure
+
+project/
+
+├── apps/api/           # Go backend (Gin + GORM)
+
+│   ├── cmd/server/     # Entry point
+
+│   └── internal/       # models, handlers, services,
+
+│                       # middleware, routes
+
+├── apps/web/           # Next.js frontend
+
+├── apps/admin/         # Admin panel (resource-based)
+
+├── packages/shared/    # Zod schemas, TS types, constants
+
+└── docker-compose.yml  # PostgreSQL, Redis, MinIO, Mailhog
+
+## Conventions
+
+- Go models: PascalCase structs with gorm/json/binding tags
+
+- API responses:
+
+{ "data": ..., "meta": { "total", "page",
+
+"page_size", "pages" } }
+
+- Errors:
+
+{ "error": { "code": "...", "message": "..." } }
+
+- TS files: kebab-case (use-users.ts, api-client.ts)
+
+- Routes: plural, lowercase (/api/users, /api/posts)
+
+- Validation: Zod schemas in packages/shared/schemas/
+
+- Data fetching: React Query hooks (useQuery, useMutation)
+
+- Styling: Tailwind CSS + shadcn/ui, dark theme default
+
+- Admin: defineResource() API with DataTable, FormBuilder,
+
+widgets
+
+## Code Generation Markers (DO NOT REMOVE — lowercase, no END markers)
+
+// grit:models, // grit:routes:protected,
+
+// grit:routes:admin, // grit:routes:custom,
+
+// grit:schemas, // grit:resources, // grit:seeders
+
+## How to Build with Grit
+
+1. grit new myapp && cd myapp && docker compose up -d
+
+2. grit generate resource <Name> --fields "..."
+
+for each model (seed parents before children;
+
+add --seed --faker to generate sample data)
+
+3. grit migrate && grit seed
+
+4. Terminal 1: grit start server
+
+Terminal 2: grit start client
+
+5. Customize handlers, add business logic,
+
+build frontend pages
+
+Antigravity-Specific Tips
+
+Get the most out of Antigravity's AI features when building with Grit:
+
+Pin GRIT_SKILL.md as context
+
+Add GRIT_SKILL.md as a pinned context file in Antigravity's AI settings. This ensures the AI always has Grit's conventions loaded without you needing to paste the file into every conversation.
+
+Use the Composer for multi-file changes
+
+When adding a new feature that spans the model, handler, and frontend (e.g., adding a new field or creating a custom endpoint), use the Composer. It can apply changes across multiple files simultaneously and show you diffs for each one.
+
+Use inline chat for quick edits
+
+For small changes to a single file — like tweaking a handler's validation logic or adjusting a column in the admin DataTable — use the inline chat. Select the code, ask the AI to modify it, and accept the diff.
+
+Run grit CLI commands in the integrated terminal
+
+Always use Antigravity's integrated terminal for CLI commands like grit generate resource, grit migrate, and docker compose up. This keeps everything in one window and lets the AI see the terminal output if needed.
+
+Review diffs before accepting
+
+Antigravity shows a visual diff for every AI-generated change. Always review these before accepting — especially for generated Go code where incorrect struct tags or missing error handling can cause runtime issues.
+
+Install the Go extension
+
+When working with Go files, make sure the Go language extension is installed in Antigravity for proper type checking, auto-completion, and error detection. This helps catch issues the AI might miss before you even run the code.
+
+Example Prompt for Claude Web
+
+Copy this prompt template and paste it into claude.ai to generate your 3 spec files. Replace the bracketed sections with your project details.
+
+prompt-template.md
+Copy to clipboard
+
+I want to build a [PROJECT NAME] using the Grit framework.
+
+Grit is a full-stack meta-framework that uses:
+
+- Go backend (Gin web framework + GORM ORM)
+
+- Next.js frontend (React + App Router + TypeScript)
+
+- Admin panel (resource-based, Filament-like)
+
+- Monorepo with shared types and validation (Zod)
+
+- Docker for infrastructure (PostgreSQL, Redis, MinIO)
+
+Here's what I want to build:
+
+[DESCRIBE YOUR PROJECT IN DETAIL]
+
+Please create these 3 files for me:
+
+1. project-description.md — Full project spec with all
+
+models, their fields (use Grit field types: string,
+
+text, richtext, int, uint, float, bool, datetime, date,
+
+slug, string_array, belongs_to, many_to_many, file,
+
+files), relationships, user roles, and features.
+
+2. antigravity-prompt.md — Step-by-step instructions that
+
+I'll give to Antigravity AI IDE. Include exact grit CLI
+
+commands to run in order. Use `grit generate resource
+
+<Name> --fields "..."` syntax.
+
+3. project-phases.md — A phased build plan with checkboxes.
+
+Phase 1: scaffold + core models.
+
+Phase 2: relationships + complex features.
+
+Phase 3: frontend customization + polish.
+
+Tip: For a Job Board, you might describe it as: "A job board where companies can post job listings and candidates can apply. Models include Company, Job, Application, and Category. Companies have a name, logo, website, and description. Jobs belong to a company and a category, with fields for title, description, salary range, location, and type (full-time, part-time, contract). Applications belong to a job and track candidate name, email, resume URL, cover letter, and status."
+
+Using Grit with ClaudeLLM Skill Guide

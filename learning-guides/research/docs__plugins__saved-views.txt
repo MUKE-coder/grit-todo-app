@@ -1,0 +1,95 @@
+Plugin
+
+Saved views
+
+Capture a table's filters, sort, search, and date range as a named view — then switch between them in one click. Per user, per resource.
+
+grit plugin add saved-views
+
+cd apps/api && go run cmd/migrate/main.go
+
+Copy to clipboard
+
+The problem it solves
+
+You keep re-applying the same filters and sort every time you open a table — "active users sorted by signup", "unpaid invoices this month". It's a small friction that repeats dozens of times a day. Saved views let you capture that arrangement once and reapply it instantly.
+
+In some admin ecosystems this exact feature ships as a paid "advanced tables" add-on. In Grit it's a plugin you install when you want it.
+
+A saved view is just a saved query string
+
+Grit's resource tables already sync their entire state — filters, sort, search, date range — to the URL query string. So a saved view is nothing more than that query string, stored per user, per resource. Applying one is a navigation; the table restores itself from the URL. Nothing in the DataTable itself has to change.
+
+How it works
+
+Because the table's state already lives in the URL, the plugin only needs to store and replay a query string.
+
+Backend
+
+A SavedView model with fields id, user_id, resource (the resource slug), name, query (the raw URL query string), and created_at:
+
+type SavedView struct {
+
+ID        string
+
+UserID    string
+
+Resource  string // the resource slug, e.g. "invoices"
+
+Name      string
+
+Query     string // "status=published&sort=created_at&order=desc"
+
+CreatedAt time.Time
+
+}
+
+Copy to clipboard
+
+A handler exposes three endpoints:
+
+GET    /api/saved-views?resource=<slug>   list the caller's views
+
+POST   /api/saved-views                    create
+
+DELETE /api/saved-views/:id                delete
+
+Copy to clipboard
+
+Every query is scoped to the signed-in user's id, so a user only ever sees or deletes their own views — a crafted id can't touch someone else's.
+
+Frontend
+
+A SavedViews bar renders above every generic resource table, injected at a resource-page toolbar marker. It shows a chip per saved view plus a Save current view button. Saving captures the current URL query (minus transient params like an open create/edit drawer), prompts for a name, and POSTs it. Clicking a chip navigates to the resource with that saved query; each chip has a small × to delete it.
+
+Install
+
+The plugin works on the triple and full architectures — it needs an admin app to render the views bar. Because it adds a table, run migrations after installing:
+
+grit plugin add saved-views
+
+cd apps/api && go run cmd/migrate/main.go
+
+Copy to clipboard
+
+Using it
+
+Open a resource, set some filters, sort, or search, then click Save current view and give it a name. It appears as a chip. Click the chip anytime to reapply that exact view; click the × on a chip to remove it.
+
+Where the bar shows up
+
+The saved-views bar appears on generated resources, which use the generic resource page. Built-in resources with fully custom pages may not show it, since they don't render the toolbar marker the bar injects into.
+
+Use cases
+
+Any filter-and-sort combination you return to is worth saving:
+
+Active users — status filter plus a sort by signup date.
+
+Unpaid invoices this month — a status filter and a date range, captured together.
+
+Published posts by date — the segment you review every morning, one click away.
+
+Views are per user, so yours don't affect other admins, and each person builds the set of segments that matches how they work. They're ideal for quickly toggling between different slices of the same table.
+
+Command paletteWriting a plugin

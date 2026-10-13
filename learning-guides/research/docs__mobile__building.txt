@@ -1,0 +1,149 @@
+Mobile
+Building & Publishing
+
+Expo Go is for development. To ship to the App Store and Google Play you use EAS Build — Expo's cloud service that compiles native binaries. This page covers configuring EAS, building, submitting to the stores, and pushing JavaScript-only updates over the air.
+
+Cloud buildOver-the-air
+EAS compiles native binaries in the cloud; ship to the stores or push JS-only OTA updates
+
+Two ways to ship a change
+
+Understanding the split up front saves a lot of time. A change either needs a new native binary or it doesn't:
+
+ship decision
+Copy to clipboard
+
+Did you add/upgrade a native module, or change app.json native config?
+
+│
+
+├─ YES → EAS Build → submit to the stores (review required)
+
+│        (new SDK, new permission, new icon/splash, version bump)
+
+│
+
+└─ NO  → EAS Update (OTA) → users get it on next launch (no review)
+
+(JS/TS changes: bug fixes, UI tweaks, new screens)
+
+app.json — shipped in the scaffold
+
+Grit generates apps/expo/app.json for you. It holds the app name, slug, scheme, icons, splash, and version. This is the file you edit to rename the app, bump the version, or change the bundle identifier before a store build.
+
+apps/expo/app.json (shape)
+Copy to clipboard
+
+{
+
+"expo": {
+
+"name": "myapp",
+
+"slug": "myapp",
+
+"scheme": "myapp",
+
+"version": "1.0.0",
+
+"icon": "./assets/icon.png",
+
+"splash": { "image": "./assets/splash.png" },
+
+"ios": { "bundleIdentifier": "com.yourco.myapp" },
+
+"android": { "package": "com.yourco.myapp" }
+
+}
+
+}
+
+Note. app.json ships in the scaffold, but eas.json does not — it is created for you by eas build:configure (below). That keeps EAS opt-in: you only get build config once you decide to build.
+
+EAS Build
+
+Install the EAS CLI, log in to your Expo account, then configure and build. The first eas build:configure writes eas.json with the default build profiles (development, preview, production).
+
+Terminal
+Copy to clipboard
+
+# Install the EAS CLI and log in
+
+$npm install -g eas-cli
+
+$eas login
+
+# From the Expo app directory
+
+$cd apps/expo
+
+# Creates eas.json + links the project to your Expo account
+
+$eas build:configure
+
+# Build native binaries in the cloud
+
+$eas build --platform ios        # requires an Apple Developer account
+
+$eas build --platform android
+
+$eas build --platform all
+
+Builds run on Expo's servers, so you can produce an iOS build from Windows or Linux without a Mac. When a build finishes, EAS gives you a link to the .ipa / .aab (or an installable dev/preview build you can open on a device).
+
+Submit to the stores
+
+Once you have a production build, eas submit uploads it to App Store Connect or Google Play Console. You'll need the respective developer accounts and store listings set up first.
+
+Terminal
+Copy to clipboard
+
+$eas submit --platform ios
+
+$eas submit --platform android
+
+StoreYou need
+
+Apple App StoreApple Developer Program ($99/yr), a bundle identifier, an App Store Connect listing
+
+Google PlayGoogle Play Developer account ($25 one-time), a package name, a Play Console listing
+
+OTA updates with EAS Update
+
+For JavaScript-only changes — bug fixes, copy tweaks, new screens, restyled components — you can push directly to users without a store review. Configure updates once (this installs expo-updates and wires the runtime), then publish to a branch:
+
+Terminal
+Copy to clipboard
+
+# One-time: adds expo-updates + update config
+
+$eas update:configure
+
+# Publish a JS bundle to the production branch
+
+$eas update --branch production --message "Fix login screen layout"
+
+Installed apps pointed at that branch pick up the update on their next launch. OTA updates cannot change native code — anything that touches native modules or app.json native config still requires a fresh EAS Build and store submission. Keep the update's runtime version compatible with the installed binary.
+
+Deploy the API separately
+
+The mobile app is only half the story — it needs the Go API running somewhere public. The API deploys exactly like the API-only architecture: as a Docker container. Point the app at it with EXPO_PUBLIC_API_URL so release builds hit production instead of a LAN IP.
+
+Terminal
+Copy to clipboard
+
+# Build and push the API image
+
+$cd apps/api
+
+$docker build -t myapp-api .
+
+$docker push registry.example.com/myapp-api:latest
+
+# In the Expo build environment
+
+$EXPO_PUBLIC_API_URL=https://api.myapp.com
+
+Set EXPO_PUBLIC_API_URL as an environment variable / EAS secret for your production build profile. Grit's API client uses it verbatim (appending /api), so the shipped app never falls back to a development host.
+
+Resource GenerationOffline & Sync

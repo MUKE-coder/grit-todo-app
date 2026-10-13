@@ -1,0 +1,297 @@
+Backend (Go API)
+Services
+
+A service owns every database read and write for its resource. The one grit generate resource writes is complete: list, export, get, create, update, patch, delete and bulk, with the resource's whitelists, ownership rules and transactions. The handler calls it, and so can a job, a command or a test.
+
+Handler or Service?
+
+ConcernWhere
+
+Binding and validating the request bodyHandler
+
+Status codes, headers, rendering CSV or PDFHandler
+
+Any query, however simpleService
+
+Several writes that must land togetherService, in a transaction
+
+Who may see or change a rowService, from the caller on the context
+
+Business rules beyond binding tagsService, returning respond.Rule
+
+External calls: email, storage, AIA dedicated service
+
+CallersService (logic)Data & external
+Every caller gets the same rules, because the rules are in the service
+The Generated Service
+
+Services live in apps/api/internal/services/, one file per resource. The top of a generated one:
+
+apps/api/internal/services/post.go
+Copy to clipboard
+
+// PostService owns every database read and write for posts.
+
+type PostService struct {
+
+DB *gorm.DB
+
+}
+
+// postListConfig is what a client may search, sort and filter posts
+
+// by. Whitelisted, because each name ends up in SQL.
+
+var postListConfig = paginate.Config{
+
+Searchable: []string{"title", "body"},
+
+Sortable:   map[string]bool{"id": true, "created_at": true, "title": true, "published": true},
+
+Filterable: map[string]bool{"id": true, "title": true, "published": true},
+
+}
+
+// writablePost is every column Patch and Bulk may write. id, the
+
+// timestamps and the version are the framework's, and are dropped.
+
+var writablePost = map[string]bool{
+
+"title":     true,
+
+"body":      true,
+
+"published": true,
+
+}
+
+// db binds the database to ctx, so whatever a middleware put there reaches
+
+// GORM's callbacks: the multitenant plugin scopes by it.
+
+func (s *PostService) db(ctx context.Context) *gorm.DB {
+
+return s.DB.WithContext(ctx)
+
+}
+
+And the methods it comes with:
+
+services/post.go (methods)
+Copy to clipboard
+
+List(ctx, p paginate.Params, archived string) (paginate.Result[models.Post], error)
+
+Export(ctx, search string, each func(rows []models.Post) error) error
+
+GetByID(ctx, id string) (*models.Post, error)
+
+Create(ctx, item *models.Post) error
+
+Update(ctx, id string, updates map[string]interface{}, pre *concurrency.Precondition) (*models.Post, error)
+
+Patch(ctx, id string, body map[string]interface{}, pre *concurrency.Precondition) (*models.Post, map[string]interface{}, error)
+
+Delete(ctx, id string) (*models.Post, error)
+
+Bulk(ctx, action string, ids []string, patch map[string]interface{}) (PostBulkResult, error)
+
+grit generate field adds a new column to the whitelists as well as the model and the handler, so a field added later can be filtered and patched like one generated with the resource.
+
+The flags add their own queries, in the same place:
+
+--public adds ListPublic, GetPublic, RelatedPublic when the resource has a parent, and PublicSubtreeIDs and PublicTreeRows for a tree. What a caller may filter by stays in the public handler, where you edit it, and is handed to ListPublic.
+
+The CSV import lives in services/post_import.go: StartImport records the job, and ImportCSV reads the rows, resolves their relations and writes them in batches. It runs after the response, so the handler gives it context.WithoutCancel(h.ctx(c)): the caller and the organization, without the cancellation.
+
+--tree has its hierarchy on a PostTreeService in services/post_tree.go, whose methods take the context too. Move with a nil parent keeps the one the node has, which is how a reorder is sent.
+
+The Context Carries the Caller
+
+Every method takes a context.Context first. It carries who is asking, which an owned resource (--owned-by) scopes its rows by, as well as the organization the multitenant plugin resolved and the cancellation when a client goes away.
+
+three ways to call a service
+Copy to clipboard
+
+// In a handler. The generated ctx helper does exactly this.
+
+ctx := authz.WithActor(c.Request.Context(), authz.ActorOf(c))
+
+// In a job or a command, acting for the system: every row, like ADMIN.
+
+ctx := authz.AsSystem(context.Background())
+
+// Acting for one user, so owned rows are scoped to them.
+
+ctx := authz.WithActor(context.Background(), authz.Actor{UserID: userID})
+
+On an owned resource a context with no caller on it matches nothing. That is on purpose: a job that forgot to say who it acts for gets an empty list, not every user's rows. Somebody else's row comes back as gorm.ErrRecordNotFound, so a wrong guess at an id cannot be told from a right one.
+
+jobs/overdue.go
+Copy to clipboard
+
+svc := &services.InvoiceService{DB: db}
+
+ctx := authz.AsSystem(context.Background())
+
+// nil precondition: no version check. A job is not editing a copy it read earlier.
+
+if _, err := svc.Update(ctx, id, map[string]interface{}{"status": "overdue"}, nil); err != nil {
+
+return fmt.Errorf("marking invoice %s overdue: %w", id, err)
+
+}
+
+Writes and Versions
+
+Update and Patch take a *concurrency.Precondition. A handler builds it from the request's If-Match header with concurrency.FromRequest(c); with one, the write lands only if the row is still at that version, and otherwise the method returns a *concurrency.ErrConflict naming the version it is at. nil means no check.
+
+Update writes the columns in the map it is given. The generated handler builds that map from its typed request; if you call it yourself, use column names. Patch takes a raw body and keeps only the writable columns.
+
+Adding Your Own Methods
+
+Put them in a file of your own in the same package, such as services/invoice_billing.go. It is the same type, so your methods can use s.db(ctx) and the owner-checked s.load, and regenerating the resource never touches your file.
+
+services/invoice_billing.go
+Copy to clipboard
+
+// MarkPaid records a payment. The rule lives here, so the route, the
+
+// nightly reconciliation job and a test all get the same answer.
+
+func (s *InvoiceService) MarkPaid(ctx context.Context, id string) (*models.Invoice, error) {
+
+item, err := s.load(ctx, id) // not found if the caller may not see it
+
+if err != nil {
+
+return nil, err
+
+}
+
+if item.PaidAt != nil {
+
+return nil, respond.Rule("invoice %s is already paid", item.Number) // 422
+
+}
+
+now := time.Now()
+
+if err := s.db(ctx).Model(item).Update("paid_at", now).Error; err != nil {
+
+return nil, fmt.Errorf("marking invoice paid: %w", err)
+
+}
+
+item.PaidAt = &now
+
+return item, nil
+
+}
+
+The handler for it is four lines of HTTP:
+
+handlers/invoice_billing.go
+Copy to clipboard
+
+func (h *InvoiceHandler) MarkPaid(c *gin.Context) {
+
+item, err := h.service().MarkPaid(h.ctx(c), c.Param("id"))
+
+if err != nil {
+
+h.fail(c, err, "Failed to mark invoice paid")
+
+return
+
+}
+
+c.JSON(http.StatusOK, gin.H{"data": item, "message": "Invoice marked paid"})
+
+}
+
+Transactions
+
+When a method makes several writes that must succeed or fail together, run them in a GORM transaction. The generated service does this wherever a write has more than one statement: a row and its many-to-many links, a row and its line items, a bulk action.
+
+services/order.go (CreateOrder)
+Copy to clipboard
+
+// CreateOrder creates an order and decrements product stock atomically.
+
+func (s *OrderService) CreateOrder(ctx context.Context, order *models.Order, items []models.OrderItem) error {
+
+return s.db(ctx).Transaction(func(tx *gorm.DB) error {
+
+if err := tx.Create(order).Error; err != nil {
+
+return fmt.Errorf("creating order: %w", err)
+
+}
+
+for i := range items {
+
+items[i].OrderID = order.ID
+
+if err := tx.Create(&items[i]).Error; err != nil {
+
+return fmt.Errorf("creating order item: %w", err)
+
+}
+
+result := tx.Model(&models.Product{}).
+
+Where("id = ? AND stock >= ?", items[i].ProductID, items[i].Quantity).
+
+Update("stock", gorm.Expr("stock - ?", items[i].Quantity))
+
+if result.Error != nil {
+
+return fmt.Errorf("updating stock: %w", result.Error)
+
+}
+
+if result.RowsAffected == 0 {
+
+return respond.Rule("not enough stock for product %s", items[i].ProductID)
+
+}
+
+}
+
+return nil // commit
+
+})
+
+}
+
+Use tx for every query inside the callback, not s.DB.
+
+Returning nil commits; returning an error rolls everything back.
+
+A panic inside the callback is recovered and rolled back.
+
+Start from s.db(ctx), so the transaction carries the request's context.
+
+Errors
+
+Return Go errors, never HTTP codes; the handler's fail picks the status. Three have a meaning of their own:
+
+gorm.ErrRecordNotFound becomes a 404.
+
+*concurrency.ErrConflict becomes a 409 naming the current version.
+
+respond.Rule("...") becomes a 422 carrying your message: use it for a rule the caller broke. Anything else is logged and answered with a plain 500, so wrap it with fmt.Errorf("context: %w", err) for the log.
+
+Best Practices
+
+One service per resource, each in its own file, with your additions in files of your own beside it.
+
+Context first, always. Query through s.db(ctx); a query on s.DB directly cannot see the caller, the organization or a cancelled request.
+
+Say who a job acts for. authz.AsSystem or authz.WithActor; a bare context.Background() sees nothing of an owned resource.
+
+Keep services independent. When two need to collaborate, the caller orchestrates them.
+
+HandlersMiddleware

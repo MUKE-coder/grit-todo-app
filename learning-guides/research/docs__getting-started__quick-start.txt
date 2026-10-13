@@ -1,0 +1,241 @@
+Getting Started
+Quick Start
+
+Get a full-stack Grit project running in 5 minutes. This guide assumes you have Go, Node.js, pnpm, and Docker already installed. If not, see the Installation guide first.
+
+Prerequisites
+
+Make sure the following tools are installed on your machine before proceeding:
+
+Go1.24+
+go version
+
+Node.js22+
+node --version
+
+pnpm9+
+pnpm --version
+
+DockerLatest
+docker --version
+
+Install the Grit CLI
+
+One line, works on every platform. The script detects an existing install and runs grit update; otherwise it downloads the matching release binary for your OS / arch.
+
+Terminal
+Copy to clipboard
+
+# macOS / Linux
+
+$curl -fsSL https://gritframework.dev/install.sh | sh
+
+# Windows (PowerShell)
+
+$iwr -useb https://gritframework.dev/install.ps1 | iex
+
+Verify the installation by running grit --help. You should see the Grit ASCII art logo and a list of available commands.
+
+Update to the latest version
+
+Already have Grit installed? Update the CLI to the latest version with a single command. It checks for a newer release and, if there is one, swaps in the new binary:
+
+Terminal
+Copy to clipboard
+
+$grit update
+
+Run grit version afterwards to confirm you're on the latest release.
+
+Create a New Project
+
+Scaffold a complete full-stack project with one command. This creates the entire monorepo: Go API, Next.js web app, admin panel, shared types, Docker setup, and all the batteries.
+
+Terminal
+Copy to clipboard
+
+$grit new myapp
+
+The interactive CLI walks you through selecting an architecture mode and frontend option. Grit supports 5 architecture modes: single (API only), double (API + web), triple (API + web + admin), api (headless API), and mobile (API + Expo). It also supports 2 frontend options: Next.js and TanStack Router (Vite).
+
+The project name must be lowercase, alphanumeric, and hyphens only (e.g., my-saas-app). It must start with a letter and cannot end with a hyphen.
+
+Flag shortcuts (skip prompts)
+
+Use flags to skip the interactive prompts and scaffold instantly:
+
+Terminal
+Copy to clipboard
+
+$grit new myapp --triple --vite
+
+Available flags: --single, --double, --triple, --api, --mobile for architecture, --vite, --next for frontend, and --desktop to add a Wails desktop client (multi-client pattern).
+
+In-place scaffolding
+
+Scaffold directly into the current directory instead of creating a new folder:
+
+Terminal
+Copy to clipboard
+
+$grit new . --triple --vite
+
+Use --force to scaffold into a non-empty directory.
+
+Start Infrastructure Services
+
+Navigate into the project and start the Docker services. This launches PostgreSQL, Redis, MinIO (S3-compatible storage), and Mailhog (email testing).
+
+Terminal
+Copy to clipboard
+
+$cd myapp
+
+$docker compose up -d
+
+This starts the following services in the background:
+
+PostgreSQL 16 on port 5434 -- your primary database
+
+Redis 7 on port 6380 -- caching and job queues
+
+MinIO on port 9002 (console: 9003) -- local S3-compatible file storage
+
+Mailhog on port 8025 -- catch-all email testing UI
+Do not have Docker? See the Installation guide for a cloud-only setup using Neon (Postgres) and Upstash (Redis) instead.
+
+Install Deps & Set Up the Database
+
+Install the frontend dependencies once, then create your database tables and load some sample data — all from the project root. You never cd into a sub-folder or touch go by hand.
+
+Terminal
+Copy to clipboard
+
+$pnpm install      # install frontend deps (one-time)
+
+$grit migrate      # create database tables from your models
+
+$grit seed         # (optional) add a demo admin + sample rows
+
+grit migrate runs GORM AutoMigrate for every registered model and prints a created / altered / unchanged summary. grit seed fills the tables with starter data, including a demo admin you can log in with.
+Migrations are an explicit command, not something that runs on server start — so you always control when your schema changes. Run grit migrate again any time you add or change a model.
+
+Run Your App
+
+One command starts the whole stack — the Go API, the web app, and the admin panel — from the project root. No juggling terminals, no cd-ing into folders. Press Ctrl+C to stop everything.
+
+Terminal
+Copy to clipboard
+
+$grit start
+
+Need just one app? Use a subcommand: grit start server (Go API only), grit start web, grit start admin, grit start expo, or grit start desktop.
+
+Once started, you can access:
+
+Go API
+http://localhost:8080Backend + GORM Studio at /studio
+
+Web App
+http://localhost:3000Next.js frontend with auth pages
+
+Admin Panel
+http://localhost:3001Resource-based admin dashboard
+
+API Docs
+http://localhost:8080/docsInteractive Scalar API reference
+
+Mailhog
+http://localhost:8025Email testing inbox
+
+Try registering a user at http://localhost:3000/register, then log in and explore the dashboard. Open http://localhost:3001 to see the admin panel. Visit http://localhost:8080/studio to browse your database visually with GORM Studio.
+
+Generate a Resource
+
+Now for the magic. Generate a complete full-stack resource with a single command. This creates the Go model, CRUD handler, service layer, React Query hooks, Zod schemas, TypeScript types, and an admin page -- all wired together.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Post --fields "title:string,content:text,published:bool"
+
+This generates the following files:
+
+apps/api/internal/models/post.go -- GORM model with struct tags
+
+apps/api/internal/handlers/post.go -- Full CRUD handler with pagination
+
+apps/api/internal/services/post.go -- Business logic layer
+
+packages/shared/schemas/post.ts -- Zod validation schemas
+
+packages/shared/types/post.ts -- TypeScript types
+
+apps/api/internal/handlers/post_import.go -- CSV/Excel bulk-import handler
+
+apps/web/hooks/use-posts.ts -- React Query hooks
+
+apps/admin/app/(dashboard)/resources/posts/page.tsx -- Admin page with data table
+
+It also registers the routes in routes.go, adds the model to the migration registry, and injects the resource into the admin sidebar. To finish, create the new table and refresh:
+
+Terminal
+Copy to clipboard
+
+$grit migrate
+
+Then reload the admin panel — your Posts resource is there with a working data table and create form. (Full breakdown of every generated file: Generated File Map.)
+
+Upgrading?v3.55.0
+
+If you have an existing Grit project and want to update the framework components (admin panel, configs, web app) to the latest version, run:
+
+Terminal
+Copy to clipboard
+
+$grit upgrade
+
+This preserves your resource definitions and API code while updating all framework-generated files. Use grit upgrade --force to overwrite without prompting.
+
+What's Next?
+
+Add Authentication
+
+Register, login, JWT, OAuth & 2FA — built in
+
+Seed Sample Data
+
+grit seed, faker, and per-resource seeders
+
+Build a Real App
+
+Step-by-step: your first Grit app end to end
+
+CLI Commands
+
+Every command the Grit CLI offers
+
+Code Generation
+
+Deep dive into resource generation
+
+Project Structure
+
+The monorepo layout and where things live
+
+Found a bug or something doesn't work? Please open an issue at https://github.com/MUKE-coder/grit/issues — your feedback helps us improve Grit for everyone.
+
+Example Projects
+
+See the same Job Portal app built with every architecture — full source code, setup guide, and deployment config.
+Browse all 6 examples on GitHub →
+
+Community
+
+Build alongside other Grit developers
+
+Join the WhatsApp community for questions, tutorials, and guidance from people shipping Grit apps, and from the person who builds it. No question is too small.
+
+Join the community
+
+PhilosophyInstallation

@@ -1,0 +1,5 @@
+[
+  {"number":1,"title":"Go & Next.js\nFoundations","subtitle":"Learn the languages and request flow behind your contact app, with practical lessons, exercises and worked answers.","short":"Book 1 · Go & Next.js Foundations","file":"01-foundations.md","output":"01-Go-and-Nextjs-Foundations.pdf"},
+  {"number":2,"title":"Learning Grit\nfrom the Ground Up","subtitle":"Build an admin and web application, understand the generated code, and navigate Grit’s wider capabilities.","short":"Book 2 · Learning Grit","file":"02-grit.md","output":"02-Learning-Grit.pdf"},
+  {"number":3,"title":"Build Your\nContact App","subtitle":"A sequential implementation workbook with exact file paths, companion source, debugging checkpoints and acceptance tests.","short":"Book 3 · Build Your Contact App","file":"03-build.md","output":"03-Build-Your-Contact-App.pdf"}
+]

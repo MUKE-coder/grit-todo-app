@@ -1,0 +1,8 @@
+﻿const fs=require('fs');const parse5=require('parse5');
+const root='learning-guides/research';
+const urls=[...fs.readFileSync(root+'/sitemap.txt','utf8').matchAll(/<loc>(.*?)<\/loc>/g)].map(m=>m[1]).filter(u=>u.includes('/docs')||u.includes('/blog/'));
+function walk(n){if(['script','style','nav','footer','header','svg'].includes(n.tagName))return '';if(n.nodeName==='#text')return n.value;let t=(n.childNodes||[]).map(walk).join('');return ['p','h1','h2','h3','h4','li','tr','pre','section','div','br'].includes(n.tagName)?'\n'+t+'\n':t;}
+function find(n,tag){if(n.tagName===tag)return n;for(const c of n.childNodes||[]){const a=find(c,tag);if(a)return a;}}
+let i=0;const manifest=[];
+async function worker(){while(i<urls.length){const url=urls[i++];try{const r=await fetch(url);const html=await r.text();const doc=parse5.parse(html);const title=(html.match(/<title>(.*?)<\/title>/)||[])[1];const txt=walk(find(doc,'main')||doc).replace(/\n[ \t]+/g,'\n').replace(/\n{3,}/g,'\n\n').trim();const filename=new URL(url).pathname.slice(1).replaceAll('/','__')+'.txt';fs.writeFileSync(root+'/'+filename,txt);manifest.push({url,status:r.status,title,file:filename,words:txt.split(/\s+/).length});}catch(e){manifest.push({url,error:e.message});}}}
+Promise.all(Array.from({length:6},worker)).then(()=>{manifest.sort((a,b)=>a.url.localeCompare(b.url));fs.writeFileSync(root+'/manifest.json',JSON.stringify(manifest,null,2));console.log('Fetched',manifest.length,'pages; failures:',manifest.filter(m=>m.status!==200));console.log('Blog pages:',manifest.filter(m=>m.url.includes('/blog/')).map(m=>[m.title,m.words]));});

@@ -1,0 +1,372 @@
+Desktop (Wails)
+Building an Offline-First Desktop App
+
+Use Grit's built-in sync engine to ship a desktop app that works fully offline, tracks every change locally, and pushes to the server with explicit conflict resolution — like Git, for your data.
+
+Offline-capableGit-like conflicts
+Every change is tracked locally and works offline; sync pushes to the server with explicit conflict resolution
+
+The mental model
+
+Most desktop apps assume the network is there. Grit's offline scaffold flips this: every read comes from a local SQLite mirror, every write goes through an outbox, and the user explicitly clicks Sync to push their work to the server. When the server has moved on since the user's edit, a field-level conflict dialog asks the user to pick which side wins per field.
+
+It's the Git workflow applied to application data — work locally, stage changes, push, resolve conflicts, push again.
+
+What ships in every --desktop scaffold
+
+Local SQLite mirror
+
+Cached server state under the OS user-config dir. Reads come from here.
+
+Outbox with squash
+
+One entry per (table, entity_id). Multiple edits collapse to the final state.
+
+Manual Sync button
+
+Title-bar button with pending count badge. User decides when to push.
+
+Field-level merge UI
+
+When server moved on, pick local or server per field. Defaults to local-wins.
+
+Versioned writes
+
+Every server model carries a Version int that auto-increments on update.
+
+Cursor-based pull
+
+Incremental pulls — only rows changed since the last sync.
+
+1. Scaffold a project with desktop included
+
+Use --desktop to add a Wails desktop client to a triple-arch monorepo. The server-side Version column, the sync endpoints, and the desktop sync engine all wire up automatically.
+
+Terminal
+Copy to clipboard
+
+$grit new my-app --triple --vite --desktop
+
+The scaffolded layout:
+
+my-app/
+
+├── apps/
+
+│   ├── api/                           # Go API (Gin + GORM)
+
+│   │   ├── internal/sync/             # Server-side sync handler
+
+│   │   │   └── registry.go            # Reflective model registry
+
+│   │   ├── internal/handlers/sync.go  # POST /api/sync/push + GET /api/sync/pull
+
+│   │   └── internal/models/           # All models carry Version int
+
+│   ├── web/                           # Online-only marketing
+
+│   ├── admin/                         # Online admin panel
+
+│   └── desktop/                       # Wails desktop client
+
+│       ├── sync/                      # Local sync engine
+
+│       │   ├── engine.go              # Sync orchestrator
+
+│       │   ├── outbox.go              # Outbox table with squash
+
+│       │   └── local.go               # LocalCreate/Update/Delete/Get/List
+
+│       ├── app.go                     # Wails-bound methods
+
+│       └── frontend/
+
+│           └── src/
+
+│               ├── lib/sync-client.ts # TS bindings to Wails
+
+│               ├── hooks/use-sync.ts  # React hooks
+
+│               └── components/
+
+│                   ├── sync-button.tsx
+
+│                   ├── pending-changes.tsx
+
+│                   └── conflict-dialog.tsx
+
+Copy to clipboard
+
+2. How writes flow offline
+
+Instead of calling the API directly, the frontend talks to Wails-bound Go methods. Those write to the local SQLite mirror plus an outbox row. Reads come from the same mirror.
+
+import {
+
+localCreate, localUpdate, localDelete, localList,
+
+} from "@/lib/sync-client";
+
+// Create — writes to local SQLite + queues an outbox entry.
+
+// id can be empty; the engine generates a UUID.
+
+await localCreate("buildings", "", {
+
+name: "The Hub",
+
+description: "Co-working space",
+
+});
+
+// Update — merges into the cached row + queues an outbox entry.
+
+// Multiple updates to the same row collapse to one outbox entry.
+
+await localUpdate("buildings", id, { description: "Updated copy" });
+
+// Delete — removes from local mirror + queues a delete entry.
+
+// If the row was a pending create, both cancel without ever
+
+// hitting the network.
+
+await localDelete("buildings", id);
+
+// Read — comes from the local cache, kept fresh by Sync's pull phase.
+
+const buildings = await localList("buildings");
+
+Copy to clipboard
+
+Key property: the network is never on the write path. The user can be on a plane and the app feels indistinguishable from online.
+
+3. The Sync button
+
+The title bar ships with a <SyncButton> that shows a pending-count badge. Click opens the <PendingChangesPanel> — a right-edge drawer listing every outbox entry, split into "Needs review" (conflicts) and "Ready to push".
+
+Configure the list of tables your app cares about in title-bar.tsx:
+
+// frontend/src/components/layout/title-bar.tsx
+
+const SYNC_TABLES: string[] = [
+
+"buildings",
+
+"tenants",
+
+"leases",
+
+"payments",
+
+];
+
+// Pass it down to the SyncButton:
+
+<SyncButton tables={SYNC_TABLES} />
+
+Copy to clipboard
+
+When the user clicks Sync now:
+
+Pull phase — for each table, GET /api/sync/pull?model=<table>&since=<cursor> and upsert the results into the local mirror. Updates the cursor.
+
+Push phase — POST the outbox to /api/sync/push in pushes of up to 500 changes. The server validates each entry's version against its current row.
+
+Apply results — successes clear from the outbox. Conflicts stay with the server's state attached for the merge UI.
+
+Manual Sync isn't the only trigger. The engine also runs a background auto-sync loop (StartAutoSync): on an interval it checks whether the server is reachable (online detection) and, when it is and the user hasn't forced offline mode, replays the same Pull + Push automatically — so offline edits reconcile the moment connectivity returns.
+
+4. Resolving conflicts
+
+A conflict happens when the server's Version has moved on since the user's last sync — someone else (another device, a teammate, a webhook handler) updated the same row first. The server returns VERSION_CONFLICT with its current state, and the engine stashes that on the outbox row.
+
+The <ConflictDialog> shows a three-column diff (Field / Local / Server) with one click to pick a side per field. Defaults to local-wins because the user just typed those values offline.
+
+Resolve conflict: update buildings
+
+The server has a newer version (v7) than what you edited locally.
+
+Pick which side wins for each field.
+
+Field           Local              Server (v7)
+
+─────────────────────────────────────────────────
+
+name            ☑ The Hub          ☐ The Hub Co
+
+description     ☑ Co-working...    ☐ Co-working space (downtown)
+
+phone           ─ unchanged ─      ─ unchanged ─
+
+[ Cancel ] [ Apply merge ]
+
+Copy to clipboard
+
+When the user clicks Apply merge, the engine writes the merged record back to the outbox with the new ServerVersion as the optimistic-lock check. The next Sync replays the entry cleanly.
+
+5. Server-side: register your models
+
+The grit generate resource command auto-registers new models with the sync registry — no manual wiring. The // grit:sync marker in routes.go takes care of it.
+
+// internal/routes/routes.go (auto-managed)
+
+syncRegistry := sync.NewRegistry()
+
+syncRegistry.Register("buildings", &models.Building{}) // injected by generator
+
+syncRegistry.Register("tenants", &models.Tenant{})     // injected by generator
+
+// grit:sync — new resources land here automatically
+
+syncHandler := handlers.NewSyncHandler(db, syncRegistry)
+
+Copy to clipboard
+
+Every generated model carries a Version int column with a BeforeUpdate hook that auto-increments. The optimistic-lock check is fully transparent to your business logic.
+
+6. A complete example: offline rental tracking
+
+Here's a building list page that works fully offline. Reads come from the local cache; writes hit the outbox; the user clicks Sync to push.
+
+import { useEffect, useState } from "react";
+
+import { localList, localCreate } from "@/lib/sync-client";
+
+import { TwoPane, ListPane, ListRow, DetailPane } from "@/components/two-pane";
+
+import { TextField, FormGrid, FormActions } from "@/components/form";
+
+import { Drawer } from "@/components/drawer";
+
+export default function BuildingsPage() {
+
+const [items, setItems] = useState<any[]>([]);
+
+const [search, setSearch] = useState("");
+
+const [selected, setSelected] = useState<any>(null);
+
+const [drawerOpen, setDrawerOpen] = useState(false);
+
+// Load from local cache. The Sync button refreshes this implicitly
+
+// when the user pulls.
+
+useEffect(() => {
+
+localList("buildings").then(setItems);
+
+}, []);
+
+const filtered = items.filter((b) =>
+
+b.name.toLowerCase().includes(search.toLowerCase())
+
+);
+
+const handleCreate = async (data: any) => {
+
+await localCreate("buildings", "", data);
+
+setItems(await localList("buildings"));
+
+setDrawerOpen(false);
+
+};
+
+return (
+
+<TwoPane>
+
+<ListPane
+
+title="Buildings"
+
+count={filtered.length}
+
+search={search}
+
+onSearch={setSearch}
+
+onNew={() => setDrawerOpen(true)}
+
+>
+
+{filtered.map((b) => (
+
+<ListRow
+
+key={b.id}
+
+title={b.name}
+
+subtitle={b.description}
+
+selected={selected?.id === b.id}
+
+onClick={() => setSelected(b)}
+
+/>
+
+))}
+
+</ListPane>
+
+<DetailPane empty={!selected}>
+
+{selected && <BuildingDetail building={selected} />}
+
+</DetailPane>
+
+<Drawer open={drawerOpen} onOpenChange={setDrawerOpen} title="New building">
+
+<CreateForm onSubmit={handleCreate} onCancel={() => setDrawerOpen(false)} />
+
+</Drawer>
+
+</TwoPane>
+
+);
+
+}
+
+Copy to clipboard
+
+Notice what's missing: no fetch / axios / useQuery. The page works whether the API is reachable or not. The user explicitly chooses when to push their work.
+
+7. Trade-offs to be aware of
+
+Squash semantics mean intermediate states aren't pushed individually. If you need a full edit history, the activity log (#32) on the server still records every successful sync.
+
+Local-wins default assumes the user just typed those values intentionally. For workflows where "always take server" is safer (e.g. financial corrections), customize the ConflictDialog default.
+
+Anonymous reads aren't cached — only data the user has touched while authenticated lives in the local mirror.
+
+Deletes on the server surface as a 404 on the next push. The client surfaces this to the user as "this row was deleted by another user" rather than silently dropping their edit.
+
+When this pattern fits
+
+Offline-first desktop is a strong fit when:
+
+Field staff work in low-connectivity environments (rural rentals, on-site inspections, mobile clinics).
+
+Data entry is heavy and network round-trips per keystroke would frustrate users.
+
+Multiple staff edit overlapping data — explicit conflict resolution beats silent last-write-wins.
+
+You want a real audit trail of who synced what when.
+
+It's overkill for read-mostly dashboards or fully online workflows where a brief connection drop is acceptable. For those, stick with the standard online client.
+
+Reference
+
+Server endpoints: POST /api/sync/push, GET /api/sync/pull?model=X&since=cursor
+
+Wails bindings on App: LocalCreate / LocalUpdate / LocalDelete / LocalGet / LocalList / Sync / PendingCount / GetPendingChanges / ResolveConflict
+
+Local DB location: os.UserConfigDir() + "/<app>/sync.db"
+
+Wire format docs: v3.14 changelog
+
+Resource GenerationBuilding & Distribution

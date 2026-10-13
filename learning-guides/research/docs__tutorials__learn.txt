@@ -1,0 +1,1284 @@
+Tutorial
+Learn Grit Step by Step
+
+A progressive, hands-on tutorial that takes you from zero to a full-stack task manager. You'll create 4 resources, add relationships, customize Go handlers, and build a working Next.js frontend — learning Go and React patterns along the way. Estimated time: ~1 hour.
+
+Prerequisites
+
+✓Go 1.26.6+ installed (an older Go downloads it)
+
+✓Node.js 18+ and pnpm installed
+
+✓Docker and Docker Compose installed
+
+✓Grit CLI installed — see /docs/getting-started/installation (one-line install script)
+
+Curriculum
+
+Milestone 1
+
+Your First Resource (Task)
+
+Project setup, code generation, Go structs, admin CRUD
+
+Milestone 2
+
+Adding Categories (Task + Category)
+
+belongs_to relationships, foreign keys, eager loading
+
+Milestone 3
+
+Tags & Comments (+ Tag + Comment)
+
+many_to_many, multi-select, complex relationships
+
+Milestone 4
+
+The Web App (All 4 models)
+
+React data fetching, creating records, building pages
+
+Milestone 1: Your First Resource
+
+One model, one command, full CRUD — let's get familiar with how Grit works.
+
+1
+
+Create a New Project
+
+Scaffold a new Grit monorepo called task-manager. This creates a monorepo with a Go API, two Next.js apps (web and admin), a shared package, and Docker config. Here's the command:
+
+Terminal
+Copy to clipboard
+
+$grit new task-manager
+
+This creates a monorepo with a Go API, two Next.js apps (web and admin), a shared package, and Docker config. Here's the structure:
+
+project structure
+Copy to clipboard
+
+task-manager/
+
+├── apps/
+
+│   ├── api/          # Go backend (Gin + GORM)
+
+│   │   ├── cmd/server/main.go
+
+│   │   └── internal/ # models, handlers, services, middleware
+
+│   ├── web/          # Next.js public frontend
+
+│   └── admin/        # Next.js admin panel
+
+├── packages/
+
+│   └── shared/       # Zod schemas, TypeScript types
+
+├── docker-compose.yml
+
+└── pnpm-workspace.yaml
+
+2
+
+Start the Infrastructure
+
+Spin up PostgreSQL, Redis, MinIO (S3-compatible file storage), and Mailhog. These run in the background and persist data across restarts.
+
+Terminal
+Copy to clipboard
+
+$cd task-manager
+
+$docker compose up -d
+
+Now install dependencies and start the servers:
+
+Terminal
+Copy to clipboard
+
+$pnpm install
+
+$grit start
+
+Your API is running at http://localhost:8080 and the admin panel at http://localhost:3001. Let's generate our first resource.
+
+3
+
+Generate Your First Resource
+
+Use the code generator to create a full-stack Task resource with a single command. This generates the Go model, handler, service, Zod schema, TypeScript types, React Query hooks, and admin page — all wired together.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Task --fields "title:string,description:text,status:string,priority:int,due_date:date,completed:bool"
+
+One command just generated 7 files across the entire stack:
+
+generated files
+Copy to clipboard
+
+✓ apps/api/internal/models/task.go        # Go model
+
+✓ apps/api/internal/services/task.go      # Service layer
+
+✓ apps/api/internal/handlers/task.go      # API endpoints
+
+✓ packages/shared/schemas/task.ts         # Zod validation
+
+✓ packages/shared/types/task.ts           # TypeScript types
+
+✓ apps/admin/resources/tasks.ts           # Admin resource definition
+
+✓ apps/admin/app/.../tasks/page.tsx       # Admin page
+
+Here is the generated Go model:
+
+apps/api/internal/models/task.go
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"gorm.io/gorm"
+
+)
+
+type Task struct {
+
+ID          uint           `gorm:"primarykey" json:"id"`
+
+Title       string         `gorm:"size:255" json:"title" binding:"required"`
+
+Description string         `gorm:"type:text" json:"description"`
+
+Status      string         `gorm:"size:255" json:"status" binding:"required"`
+
+Priority    int            `json:"priority"`
+
+DueDate     *time.Time     `gorm:"type:date" json:"due_date"`
+
+Completed   bool           `json:"completed"`
+
+CreatedAt   time.Time      `json:"created_at"`
+
+UpdatedAt   time.Time      `json:"updated_at"`
+
+DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+
+}
+
+Go Basics
+
+In Go, a struct is a typed collection of fields — similar to a class in other languages, but without methods baked in. Each field has three parts:
+
+Name and type: Title string — a field called Title of type string.
+
+Struct tags: the backtick section after the type. These are metadata used by libraries:
+gorm:"size:255" tells the ORM to create a VARCHAR(255) column.
+
+json:"title" controls the JSON key name when serializing.
+
+binding:"required" tells the Gin framework this field must be provided.
+
+Special types: *time.Time (pointer) means the date can be null. gorm.DeletedAt enables soft delete — records aren't actually deleted, just hidden.
+
+4
+
+Understanding the Go Handler
+
+Grit also generated a handler with full CRUD endpoints. Let's look at the Create handler:
+
+apps/api/internal/handlers/task.go — Create
+Copy to clipboard
+
+func (h *TaskHandler) Create(c *gin.Context) {
+
+var req struct {
+
+Title       string     `json:"title" binding:"required"`
+
+Description string     `json:"description"`
+
+Status      string     `json:"status" binding:"required"`
+
+Priority    int        `json:"priority"`
+
+DueDate     *time.Time `json:"due_date"`
+
+Completed   bool       `json:"completed"`
+
+}
+
+if err := c.ShouldBindJSON(&req); err != nil {
+
+c.JSON(http.StatusUnprocessableEntity, gin.H{
+
+"error": gin.H{
+
+"code":    "VALIDATION_ERROR",
+
+"message": err.Error(),
+
+},
+
+})
+
+return
+
+}
+
+item := models.Task{
+
+Title:       req.Title,
+
+Description: req.Description,
+
+Status:      req.Status,
+
+Priority:    req.Priority,
+
+DueDate:     req.DueDate,
+
+Completed:   req.Completed,
+
+}
+
+if err := h.DB.Create(&item).Error; err != nil {
+
+c.JSON(http.StatusInternalServerError, gin.H{
+
+"error": gin.H{
+
+"code":    "INTERNAL_ERROR",
+
+"message": "Failed to create task",
+
+},
+
+})
+
+return
+
+}
+
+h.DB.First(&item, item.ID)
+
+c.JSON(http.StatusCreated, gin.H{
+
+"data":    item,
+
+"message": "Task created successfully",
+
+})
+
+}
+
+Go Basics
+
+Let's break down the Go patterns:
+
+func (h *TaskHandler) Create(c *gin.Context) — this is a method on the TaskHandler struct. The (h *TaskHandler) part is called a receiver — it's how Go does methods. The * means it's a pointer receiver, so we can access h.DB.
+
+c.ShouldBindJSON(&req) — Gin reads the request body and fills the req struct. The & passes a pointer so Gin can modify it.
+
+if err := ...; err != nil — Go's standard error handling. Functions return errors instead of throwing exceptions. You always check if err is not nil.
+
+gin.H{} — shorthand for map[string]interface{}{}, used to build JSON responses.
+
+5
+
+See It in Action
+
+Restart the API server to pick up the new model, then open the admin panel at http://localhost:3001. You'll see Tasks in the sidebar. Click it to see the data table, then click "Create Task" to add your first task.
+
+You can also test the API directly from the terminal:
+
+Terminal
+Copy to clipboard
+
+$curl http://localhost:8080/api/tasks | jq
+
+API response
+Copy to clipboard
+
+{
+
+"data": [
+
+{
+
+"id": 1,
+
+"title": "Build the landing page",
+
+"description": "Design and implement the hero section",
+
+"status": "in-progress",
+
+"priority": 2,
+
+"due_date": "2026-03-01T00:00:00Z",
+
+"completed": false,
+
+"created_at": "2026-02-16T10:30:00Z",
+
+"updated_at": "2026-02-16T10:30:00Z"
+
+}
+
+],
+
+"meta": {
+
+"total": 1,
+
+"page": 1,
+
+"page_size": 20,
+
+"pages": 1
+
+}
+
+}
+
+Go Basics
+
+Notice how json:"title" in the Go struct maps directly to "title" in the JSON output. The json:"-" tag on DeletedAt means that field is hidden from API responses entirely. This is how Go controls serialization — through struct tags, not decorators or annotations.
+
+Milestone 2: Adding Categories
+
+Two models with a belongs_to relationship — foreign keys, eager loading, and relationship dropdowns.
+
+6
+
+Generate the Category Resource
+
+Categories help organize tasks into groups. Generate a simple Category resource with a name and a color:
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Category --fields "name:string,color:string"
+
+Now we have a Category resource with just a name and a color. Next, we'll connect Tasks to Categories.
+
+7
+
+Add a belongs_to Relationship
+
+In a real project, you'd plan your data model upfront. But Grit makes it easy to regenerate. Let's regenerate the Task resource with a category relationship:
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Task --fields "title:string,description:text,category:belongs_to,status:string,priority:int,due_date:date,completed:bool"
+
+The category:belongs_to syntax tells Grit to create a foreign key relationship. Here's what changed in the Go model:
+
+apps/api/internal/models/task.go — with relationship
+Copy to clipboard
+
+type Task struct {
+
+ID          uint           `gorm:"primarykey" json:"id"`
+
+Title       string         `gorm:"size:255" json:"title" binding:"required"`
+
+Description string         `gorm:"type:text" json:"description"`
+
+CategoryID  uint           `gorm:"index" json:"category_id" binding:"required"`
+
+Category    Category       `gorm:"foreignKey:CategoryID" json:"category"`
+
+Status      string         `gorm:"size:255" json:"status" binding:"required"`
+
+Priority    int            `json:"priority"`
+
+DueDate     *time.Time     `gorm:"type:date" json:"due_date"`
+
+Completed   bool           `json:"completed"`
+
+CreatedAt   time.Time      `json:"created_at"`
+
+UpdatedAt   time.Time      `json:"updated_at"`
+
+DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+
+}
+
+Go Basics
+
+Two new fields were added:
+
+CategoryID uint — the foreign key column. This stores the numeric ID of the related category. The gorm:"index" tag creates a database index for faster lookups.
+
+Category Category — the association struct. This isn't a database column — it's a Go-only field that GORM populates when you use Preload. The gorm:"foreignKey:CategoryID" tag tells GORM which column links the two models.
+
+Think of CategoryID as the actual data (stored in the database) and Category as the convenient Go object (loaded on demand).
+
+The handler now includes .Preload("Category") to eager-load the related category data:
+
+handler snippet
+Copy to clipboard
+
+// List — eager loading with Preload
+
+query := h.DB.Model(&models.Task{}).Preload("Category")
+
+// GetByID — also preloads
+
+h.DB.Preload("Category").First(&item, id)
+
+8
+
+Test the Relationship
+
+First, create a few categories in the admin panel (e.g., "Work", "Personal", "Urgent"). Then create or edit a task — you'll see a Category dropdown that fetches options from the API automatically.
+
+The API response now includes the nested category:
+
+Terminal
+Copy to clipboard
+
+$curl http://localhost:8080/api/tasks/1 | jq
+
+API response
+Copy to clipboard
+
+{
+
+"data": {
+
+"id": 1,
+
+"title": "Build the landing page",
+
+"description": "Design and implement the hero section",
+
+"category_id": 1,
+
+"category": {
+
+"id": 1,
+
+"name": "Work",
+
+"color": "#6c5ce7",
+
+"created_at": "2026-02-16T10:00:00Z",
+
+"updated_at": "2026-02-16T10:00:00Z"
+
+},
+
+"status": "in-progress",
+
+"priority": 2,
+
+"completed": false
+
+}
+
+}
+
+Go Basics
+
+GORM's Preload works by running a second query behind the scenes: first it fetches the tasks, then it fetches all related categories in one batch query (WHERE id IN (1, 2, 3)) and stitches them together in Go. This is much more efficient than N+1 queries.
+
+Milestone 3: Tags & Comments
+
+Adding many_to_many relationships, multiple belongs_to, and seeing the full data model come together.
+
+9
+
+Generate Tags with many_to_many
+
+First, generate a simple Tag resource:
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Tag --fields "name:string:unique"
+
+Tags and tasks have a many-to-many relationship — a task can have multiple tags, and a tag can be on multiple tasks. Let's regenerate Task to add this:
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Task --fields "title:string,description:text,category:belongs_to,tags:many_to_many:Tag,status:string,priority:int,due_date:date,completed:bool"
+
+The tags:many_to_many:Tag syntax creates a junction table. Here's the updated model:
+
+apps/api/internal/models/task.go — with m2m
+Copy to clipboard
+
+type Task struct {
+
+ID          uint           `gorm:"primarykey" json:"id"`
+
+Title       string         `gorm:"size:255" json:"title" binding:"required"`
+
+Description string         `gorm:"type:text" json:"description"`
+
+CategoryID  uint           `gorm:"index" json:"category_id" binding:"required"`
+
+Category    Category       `gorm:"foreignKey:CategoryID" json:"category"`
+
+Tags        []Tag          `gorm:"many2many:task_tags" json:"tags"`
+
+Status      string         `gorm:"size:255" json:"status" binding:"required"`
+
+Priority    int            `json:"priority"`
+
+DueDate     *time.Time     `gorm:"type:date" json:"due_date"`
+
+Completed   bool           `json:"completed"`
+
+CreatedAt   time.Time      `json:"created_at"`
+
+UpdatedAt   time.Time      `json:"updated_at"`
+
+DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+
+}
+
+Go Basics
+
+The Tags []Tag field with gorm:"many2many:task_tags" tells GORM to create a junction table called task_tags with columns task_id and tag_id. Unlike belongs_to, there's no foreign key column on the Task table itself — the relationship lives entirely in the junction table.
+
+In the handler, GORM uses Association("Tags").Replace(tags) to manage the junction table entries. The Replace method handles both adding and removing associations.
+
+10
+
+Add Comments
+
+A Comment belongs to both a Task and a User (the built-in User model). The task:belongs_to:Task syntax uses the explicit form — the field name is task and the related model is Task.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Comment --fields "content:text,task:belongs_to:Task,author:belongs_to:User"
+
+Here is the generated Comment model:
+
+apps/api/internal/models/comment.go
+Copy to clipboard
+
+type Comment struct {
+
+ID        uint           `gorm:"primarykey" json:"id"`
+
+Content   string         `gorm:"type:text" json:"content"`
+
+TaskID    uint           `gorm:"index" json:"task_id" binding:"required"`
+
+Task      Task           `gorm:"foreignKey:TaskID" json:"task"`
+
+AuthorID  uint           `gorm:"index" json:"author_id" binding:"required"`
+
+Author    User           `gorm:"foreignKey:AuthorID" json:"author"`
+
+CreatedAt time.Time      `json:"created_at"`
+
+UpdatedAt time.Time      `json:"updated_at"`
+
+DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+
+}
+
+Go Basics
+
+A model can have multiple belongs_to relationships. Each one creates its own foreign key (TaskID, AuthorID) and association struct (Task, Author). The author:belongs_to:User syntax is the explicit form — you need it when the field name (author) differs from the model name (User).
+
+11
+
+The Full Data Model
+
+You now have 4 models with 3 types of relationships:
+
+data model diagram
+Copy to clipboard
+
+Category ──< Task >── Tag
+
+│        (many-to-many via task_tags)
+
+│
+
+Comment
+
+│
+
+User
+
+── belongs_to (foreign key on child)
+
+>── many_to_many (junction table)
+
+Create some tags ("frontend", "backend", "urgent"), add them to tasks, and create comments. The admin panel handles everything through the generated forms — no custom code required.
+
+Milestone 4: Building the Web App
+
+Fetch and display data from the Next.js frontend — list tasks, view details, and create new ones.
+
+12
+
+Set Up the API Client
+
+The web app at apps/web is a Next.js project. Let's create a simple API helper:
+
+apps/web/lib/api.ts
+Copy to clipboard
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+
+export async function fetchAPI<T>(path: string, options?: RequestInit): Promise<T> {
+
+const res = await fetch(`${API_URL}${path}`, {
+
+headers: { "Content-Type": "application/json", ...options?.headers },
+
+...options,
+
+});
+
+if (!res.ok) throw new Error(`API error: ${res.status}`);
+
+return res.json();
+
+}
+
+React Basics
+
+We're using a simple fetch wrapper instead of a full library. The NEXT_PUBLIC_ prefix makes the env variable available in the browser. For a production app, you'd use React Query (which Grit generates for the admin panel) — but plain fetch is a good way to learn the fundamentals.
+
+13
+
+Create a Task List Page
+
+Let's build a page that shows all tasks with their categories and tags:
+
+apps/web/app/tasks/page.tsx
+Copy to clipboard
+
+"use client";
+
+import { useEffect, useState } from "react";
+
+import Link from "next/link";
+
+import { fetchAPI } from "@/lib/api";
+
+interface Task {
+
+id: number;
+
+title: string;
+
+description: string;
+
+status: string;
+
+priority: number;
+
+completed: boolean;
+
+category?: { id: number; name: string; color: string };
+
+tags?: { id: number; name: string }[];
+
+created_at: string;
+
+}
+
+export default function TasksPage() {
+
+const [tasks, setTasks] = useState<Task[]>([]);
+
+const [loading, setLoading] = useState(true);
+
+useEffect(() => {
+
+fetchAPI<{ data: Task[] }>("/api/tasks?page_size=50")
+
+.then((res) => setTasks(res.data))
+
+.finally(() => setLoading(false));
+
+}, []);
+
+if (loading) return <div className="p-8 text-center">Loading tasks...</div>;
+
+return (
+
+<div className="max-w-4xl mx-auto p-8">
+
+<div className="flex items-center justify-between mb-8">
+
+<h1 className="text-3xl font-bold">Tasks</h1>
+
+<Link
+
+href="/tasks/new"
+
+className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700"
+
+>
+
+New Task
+
+</Link>
+
+</div>
+
+<div className="space-y-4">
+
+{tasks.map((task) => (
+
+<Link
+
+key={task.id}
+
+href={`/tasks/${task.id}`}
+
+className="block rounded-xl border border-gray-800 bg-gray-900 p-5 hover:border-purple-500/50 transition-colors"
+
+>
+
+<div className="flex items-start justify-between">
+
+<div>
+
+<h2 className="text-lg font-semibold">{task.title}</h2>
+
+{task.description && (
+
+<p className="mt-1 text-sm text-gray-400 line-clamp-2">{task.description}</p>
+
+)}
+
+<div className="mt-3 flex items-center gap-2">
+
+{task.category && (
+
+<span className="rounded-full bg-purple-500/10 border border-purple-500/20 px-2.5 py-0.5 text-xs text-purple-400">
+
+{task.category.name}
+
+</span>
+
+)}
+
+{task.tags?.map((tag) => (
+
+<span key={tag.id} className="rounded-full bg-gray-800 px-2.5 py-0.5 text-xs text-gray-400">
+
+{tag.name}
+
+</span>
+
+))}
+
+</div>
+
+</div>
+
+<span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+
+task.completed ? "bg-green-500/10 text-green-400" : "bg-yellow-500/10 text-yellow-400"
+
+}`}>
+
+{task.completed ? "Done" : task.status}
+
+</span>
+
+</div>
+
+</Link>
+
+))}
+
+</div>
+
+</div>
+
+);
+
+}
+
+React Basics
+
+"use client" tells Next.js this is a client component (it runs in the browser). We use useState to store tasks and loading state, and useEffect to fetch data when the page loads. The fetchAPI call hits our Go backend, which returns the paginated task list with preloaded categories and tags.
+
+Note: In a production app, you'd use React Query for caching, background refetching, and optimistic updates. The admin panel already uses it — this vanilla approach is just to show the fundamentals.
+
+14
+
+Create a Task Detail Page
+
+Now let's add a detail page that shows a single task with its comments:
+
+apps/web/app/tasks/[id]/page.tsx
+Copy to clipboard
+
+"use client";
+
+import { useEffect, useState } from "react";
+
+import { useParams } from "next/navigation";
+
+import Link from "next/link";
+
+import { fetchAPI } from "@/lib/api";
+
+interface Comment {
+
+id: number;
+
+content: string;
+
+author?: { first_name: string; last_name: string };
+
+created_at: string;
+
+}
+
+interface Task {
+
+id: number;
+
+title: string;
+
+description: string;
+
+status: string;
+
+priority: number;
+
+completed: boolean;
+
+due_date: string | null;
+
+category?: { id: number; name: string; color: string };
+
+tags?: { id: number; name: string }[];
+
+created_at: string;
+
+}
+
+export default function TaskDetailPage() {
+
+const { id } = useParams();
+
+const [task, setTask] = useState<Task | null>(null);
+
+const [comments, setComments] = useState<Comment[]>([]);
+
+useEffect(() => {
+
+fetchAPI<{ data: Task }>(`/api/tasks/${id}`).then((res) => setTask(res.data));
+
+fetchAPI<{ data: Comment[] }>(`/api/comments?search=${id}`).then((res) => setComments(res.data));
+
+}, [id]);
+
+if (!task) return <div className="p-8 text-center">Loading...</div>;
+
+return (
+
+<div className="max-w-3xl mx-auto p-8">
+
+<Link href="/tasks" className="text-sm text-purple-400 hover:text-purple-300 mb-6 inline-block">
+
+&larr; Back to tasks
+
+</Link>
+
+<div className="rounded-xl border border-gray-800 bg-gray-900 p-6">
+
+<div className="flex items-start justify-between">
+
+<h1 className="text-2xl font-bold">{task.title}</h1>
+
+<span className={`rounded-full px-3 py-1 text-xs font-medium ${
+
+task.completed ? "bg-green-500/10 text-green-400" : "bg-yellow-500/10 text-yellow-400"
+
+}`}>
+
+{task.completed ? "Completed" : task.status}
+
+</span>
+
+</div>
+
+{task.description && (
+
+<p className="mt-4 text-gray-400 leading-relaxed">{task.description}</p>
+
+)}
+
+<div className="mt-6 flex flex-wrap items-center gap-3">
+
+{task.category && (
+
+<span className="rounded-full bg-purple-500/10 border border-purple-500/20 px-3 py-1 text-sm text-purple-400">
+
+{task.category.name}
+
+</span>
+
+)}
+
+{task.tags?.map((tag) => (
+
+<span key={tag.id} className="rounded-full bg-gray-800 px-3 py-1 text-sm text-gray-400">
+
+{tag.name}
+
+</span>
+
+))}
+
+</div>
+
+<div className="mt-6 flex items-center gap-6 text-sm text-gray-500">
+
+<span>Priority: {task.priority}</span>
+
+{task.due_date && <span>Due: {new Date(task.due_date).toLocaleDateString()}</span>}
+
+<span>Created: {new Date(task.created_at).toLocaleDateString()}</span>
+
+</div>
+
+</div>
+
+{/* Comments */}
+
+<div className="mt-8">
+
+<h2 className="text-xl font-semibold mb-4">Comments ({comments.length})</h2>
+
+<div className="space-y-3">
+
+{comments.map((comment) => (
+
+<div key={comment.id} className="rounded-lg border border-gray-800 bg-gray-900/50 p-4">
+
+<p className="text-sm text-gray-300">{comment.content}</p>
+
+<p className="mt-2 text-xs text-gray-500">
+
+{comment.author ? `${comment.author.first_name} ${comment.author.last_name}` : "Unknown"} &middot;{" "}
+
+{new Date(comment.created_at).toLocaleDateString()}
+
+</p>
+
+</div>
+
+))}
+
+{comments.length === 0 && (
+
+<p className="text-sm text-gray-500">No comments yet. Add one from the admin panel.</p>
+
+)}
+
+</div>
+
+</div>
+
+</div>
+
+);
+
+}
+
+15
+
+Create a New Task Form
+
+Finally, let's build a form that creates tasks by POSTing to the Go API:
+
+apps/web/app/tasks/new/page.tsx
+Copy to clipboard
+
+"use client";
+
+import { useEffect, useState } from "react";
+
+import { useRouter } from "next/navigation";
+
+import { fetchAPI } from "@/lib/api";
+
+interface Category {
+
+id: number;
+
+name: string;
+
+}
+
+export default function NewTaskPage() {
+
+const router = useRouter();
+
+const [categories, setCategories] = useState<Category[]>([]);
+
+const [submitting, setSubmitting] = useState(false);
+
+useEffect(() => {
+
+fetchAPI<{ data: Category[] }>("/api/categories?page_size=100")
+
+.then((res) => setCategories(res.data));
+
+}, []);
+
+async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+
+e.preventDefault();
+
+setSubmitting(true);
+
+const form = new FormData(e.currentTarget);
+
+const body = {
+
+title: form.get("title") as string,
+
+description: form.get("description") as string,
+
+category_id: Number(form.get("category_id")),
+
+status: form.get("status") as string || "todo",
+
+priority: Number(form.get("priority") || 0),
+
+};
+
+try {
+
+await fetchAPI("/api/tasks", {
+
+method: "POST",
+
+body: JSON.stringify(body),
+
+});
+
+router.push("/tasks");
+
+} catch (err) {
+
+alert("Failed to create task");
+
+} finally {
+
+setSubmitting(false);
+
+}
+
+}
+
+return (
+
+<div className="max-w-2xl mx-auto p-8">
+
+<h1 className="text-3xl font-bold mb-8">New Task</h1>
+
+<form onSubmit={handleSubmit} className="space-y-6">
+
+<div>
+
+<label className="block text-sm font-medium mb-2">Title *</label>
+
+<input
+
+name="title"
+
+required
+
+className="w-full rounded-lg border border-gray-700 bg-gray-900 px-4 py-2.5 text-sm focus:border-purple-500 focus:outline-none"
+
+placeholder="What needs to be done?"
+
+/>
+
+</div>
+
+<div>
+
+<label className="block text-sm font-medium mb-2">Description</label>
+
+<textarea
+
+name="description"
+
+rows={4}
+
+className="w-full rounded-lg border border-gray-700 bg-gray-900 px-4 py-2.5 text-sm focus:border-purple-500 focus:outline-none"
+
+placeholder="Add some details..."
+
+/>
+
+</div>
+
+<div className="grid grid-cols-2 gap-4">
+
+<div>
+
+<label className="block text-sm font-medium mb-2">Category</label>
+
+<select
+
+name="category_id"
+
+className="w-full rounded-lg border border-gray-700 bg-gray-900 px-4 py-2.5 text-sm focus:border-purple-500 focus:outline-none"
+
+>
+
+<option value="">Select category</option>
+
+{categories.map((cat) => (
+
+<option key={cat.id} value={cat.id}>{cat.name}</option>
+
+))}
+
+</select>
+
+</div>
+
+<div>
+
+<label className="block text-sm font-medium mb-2">Priority</label>
+
+<input
+
+name="priority"
+
+type="number"
+
+min={0}
+
+max={5}
+
+defaultValue={0}
+
+className="w-full rounded-lg border border-gray-700 bg-gray-900 px-4 py-2.5 text-sm focus:border-purple-500 focus:outline-none"
+
+/>
+
+</div>
+
+</div>
+
+<button
+
+type="submit"
+
+disabled={submitting}
+
+className="rounded-lg bg-purple-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+
+>
+
+{submitting ? "Creating..." : "Create Task"}
+
+</button>
+
+</form>
+
+</div>
+
+);
+
+}
+
+React Basics
+
+This form demonstrates the fundamentals of creating data from React:
+
+e.preventDefault() stops the browser from doing a full page reload.
+
+FormData extracts values from form inputs by their name attributes.
+
+JSON.stringify(body) converts the JavaScript object to a JSON string for the API.
+
+router.push("/tasks") navigates to the task list after successful creation.
+
+The Go API validates the request body using the binding:"required" tags. If title is missing, it returns a 422 error with a validation message.
+
+16
+
+Run Everything Together
+
+Start the web frontend and test the full flow:
+
+Terminal
+Copy to clipboard
+
+$grit start web
+
+Now open http://localhost:3000/tasks in your browser. You should see:
+
+1.A list of all tasks with category badges and tags
+
+2.Click a task to see its details and comments
+
+3.Click "New Task" to create one from the web app
+
+4.Check the admin panel — your new task appears there too
+
+Congratulations! You've built a full-stack application with 4 related models, a Go API with eager loading, an admin panel with relationship forms, and a Next.js frontend that fetches and creates data.
+
+What you've built
+
+✓A full-stack task manager with Go API and Next.js frontend
+
+✓4 resources (Task, Category, Tag, Comment) generated with CLI commands
+
+✓A belongs_to relationship between Tasks and Categories
+
+✓A many_to_many relationship between Tasks and Tags via a junction table
+
+✓Comments with multiple belongs_to relationships (Task + User)
+
+✓An admin panel with data tables, forms, relationship selects, and multi-selects
+
+✓A web app with task list, detail page, and create form
+
+✓Type-safe API responses with nested related data via GORM Preload
+
+✓Docker-based PostgreSQL, Redis, MinIO, and Mailhog running locally
+
+Next steps
+
+Now that you have a working task manager, here are some ways to extend it:
+
+Add authentication to the web app — protect the /tasks routes with JWT tokens from the Go API.
+
+Use grit sync — run grit sync to automatically keep Go types and TypeScript types in sync as you change models.
+
+File uploads — add an attachment field to tasks using Grit's S3 storage service.
+
+Email notifications — send an email when a task is completed using the background jobs system.
+
+Try the Blog tutorial — build a complete blogging platform with custom public endpoints and frontend pages.
+
+Theme & ColorsBuild a Blog

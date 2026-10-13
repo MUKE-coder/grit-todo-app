@@ -1,0 +1,102 @@
+Backend
+The public surface
+
+Generated CRUD sits behind auth, which is right for an admin panel and useless for a storefront: a customer has no session, so every request is a 401. --public adds a second, narrower surface, and the read layer that calls it.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Product \
+
+$  --fields "name:string,slug:slug:name,price:int,image:file:image,category:belongs_to:Category,active:bool" \
+
+$  --public
+
+What you get
+
+GET /api/v1/public/products and GET /api/v1/public/products/:slug, mounted outside the auth middleware and guarded by an API key.
+
+/related when the resource has a belongs_to, and /tree when it is a --tree.
+
+internal/handlers/product_public.go, holding the allowlist. Not overwritten when you regenerate the resource.
+
+apps/web/lib/products-public.ts: the read functions, typed against that allowlist, with the key on every request.
+
+An allowlist, not the model
+
+The response is a struct listing what may be published, so a column added next month is private until somebody says otherwise. That is the opposite default to the admin surface and the right one when the audience is the internet. Publishing everything and expecting the developer to remove what should not be there gets you a cost_price column on the internet the first time somebody adds one and forgets.
+
+internal/handlers/product_public.go
+Copy to clipboard
+
+type publicProduct struct {
+
+ID          string         `json:"id"`
+
+CategoryID  string         `json:"category_id"`
+
+Name        string         `json:"name"`
+
+Slug        string         `json:"slug"`
+
+Price       int            `json:"price"`
+
+Image       *files.FileRef `json:"image"`
+
+}
+
+Names, slugs, prices, descriptions and images go out. Anything reading as cost, margin, internal notes or credentials does not, and neither does a stock count: a page almost always wants "in stock" rather than "we have four left". Add a field to the struct and to its mapper to publish it.
+
+Foreign keys are published, which the relation they point at is not. Those are different things, and conflating them left a storefront unable to link a product to its category from a response that had already agreed to return the product: the id names a row the endpoint was willing to list and says nothing about the parent beyond its existence, while the relation would publish a whole record nobody vetted.
+
+What counts as live
+
+One scope decides, and every public read goes through it, so there is one answer to "why is this not on the site" rather than one per endpoint:
+
+internal/services/product.go
+Copy to clipboard
+
+func (s *ProductService) publicScope(q *gorm.DB) *gorm.DB {
+
+q = q.Where("archived_at IS NULL")
+
+q = q.Where("active = ?", true)
+
+return q
+
+}
+
+The second line appears when the model has a boolean saying whether a row may be seen: active, published, visible, enabled, public, or an is_ prefixed one. The first matching field in declaration order, so regenerating gives the same answer. featured and taxable are booleans about the row and are not this.
+
+Archiving is a different actBefore this only archived_at hid a row, so an admin switching active off left the product on sale, and a shop that wanted an item back next week had to archive it to take it down today. A row outside the scope is a 404 rather than a 403: whether it exists is itself not public.
+
+Neither column is filterable from the query string. A column in the filter list is settable by the caller, so ?active=false would hand back exactly the rows somebody took down on purpose.
+
+Reading it from the web app
+
+The hooks in hooks/use-products.ts call the authenticated routes, which is right for the admin panel and answers 401 here. The generated public reads call the public ones and send the key:
+
+apps/web/app/shop/page.tsx
+Copy to clipboard
+
+import { getPublicProducts } from "@/lib/products-public";
+
+export default async function ShopPage() {
+
+const { data, meta } = await getPublicProducts({ page: 1, page_size: 24, featured: "true" });
+
+return <ProductGrid products={data} total={meta?.total ?? 0} />;
+
+}
+
+getPublicProduct(slug) returns null for a row that is not live, and throws when the API itself fails, so a 500 is not rendered as "no such product". getRelatedProducts(slug) and getPublicCategoriesTree() appear when the resource has the endpoints behind them. On a Next.js app these are server reads with revalidate: 60; on a TanStack app they are plain functions for a loader.
+
+The API key
+
+The seeder writes NEXT_PUBLIC_API_KEY into apps/web/.env.local. It is publishable by design: it reaches the read-only public endpoints and nothing else, which is why it is safe in a browser bundle. Rotate it from the admin's API keys screen.
+
+Demo data you can demo with
+
+--faker picks a generator per field, and takes the resource into account: a name on a Product is a product name and on a Customer is a person's. A whole number called price or total gets a money-sized range rather than 1 to 100, and a title reads as a headline. A catalogue seeded with forty items named "Emily Gardner" at 37 shillings each is demo data nobody can demo with.
+
+ServicesAPI Response Format

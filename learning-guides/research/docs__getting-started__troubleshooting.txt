@@ -1,0 +1,324 @@
+Getting Started
+Troubleshooting
+
+Common errors you may encounter when setting up or running a Grit project, and how to fix them.
+
+Port Already in Use
+
+This is the most common error when starting Docker services or dev servers. It means another process or container is already using the port Grit needs.
+
+Bind for 0.0.0.0:5434 failed: port is already allocated
+
+Cause: Another PostgreSQL instance or Docker container is using port 5434.
+
+Solutions:
+
+Option 1: Stop the conflicting container
+
+Terminal
+Copy to clipboard
+
+# Find what's using the port
+
+$docker ps --format "table {{.Names}}\t{{.Ports}}" | grep 5434
+
+# Stop the conflicting container
+
+$docker stop <container-name>
+
+Option 2: Stop a local PostgreSQL service
+
+Terminal
+Copy to clipboard
+
+# macOS (Homebrew)
+
+$brew services stop postgresql@16
+
+# Linux (systemd)
+
+$sudo systemctl stop postgresql
+
+# Windows
+
+$net stop postgresql-x64-16
+
+Option 3: Change the port in docker-compose.yml
+
+Edit docker-compose.yml and change the host port (left side):
+
+docker-compose.yml
+Copy to clipboard
+
+# Change "5434:5432" to "5435:5432"
+
+ports:
+
+- "5435:5432"
+
+Then update .env to match: POSTGRES_PORT=5435
+
+Bind for 0.0.0.0:6380 failed: port is already allocated
+
+Cause: Another Redis instance or Docker container is using port 6380.
+
+Fix: Same approach as PostgreSQL -- find and stop the conflicting container, stop the local Redis service, or remap the port.
+
+Terminal
+Copy to clipboard
+
+$docker ps --format "table {{.Names}}\t{{.Ports}}" | grep 6380
+
+$docker stop <container-name>
+
+Or to stop a locally installed Redis:
+
+Terminal
+Copy to clipboard
+
+# macOS
+
+$brew services stop redis
+
+# Linux
+
+$sudo systemctl stop redis-server
+
+# Windows
+
+$net stop Redis
+
+Port 3000 is already in use
+
+Cause: Another Next.js app, React dev server, or other process is running on port 3000 (web) or 3001 (admin).
+
+Fix: Find and kill the process:
+
+Terminal
+Copy to clipboard
+
+# macOS / Linux
+
+$lsof -i :3000
+
+$kill -9 <PID>
+
+# Windows
+
+$netstat -ano | findstr :3000
+
+$taskkill /PID <PID> /F
+
+listen tcp :8080: bind: address already in use
+
+Cause: Another Go server or process is already running on port 8080.
+
+Fix: Kill the existing process or change the port in .env:
+
+Terminal
+Copy to clipboard
+
+# Find and kill the process
+
+$lsof -i :8080
+
+$kill -9 <PID>
+
+# Or change the port in .env
+
+$APP_PORT=8081
+
+Nuclear option: stop ALL Docker containers
+
+If you have many stale containers from other projects hogging ports, you can stop them all at once:
+
+Terminal
+Copy to clipboard
+
+$docker stop $(docker ps -q)
+
+This stops every running container. Then retry docker compose up -din your Grit project.
+
+Go API Errors
+
+go: module not found / cannot find module providing package
+
+Cause: Go module cache is stale or dependencies haven't been downloaded yet.
+
+Fix:
+
+Terminal
+Copy to clipboard
+
+$cd apps/api
+
+$go mod tidy
+
+$go mod download
+
+If that doesn't work, clear the module cache and try again:
+
+Terminal
+Copy to clipboard
+
+$go clean -modcache && go mod tidy
+
+failed to connect to host=localhost: dial tcp connection refused
+
+Cause: The Go API can't connect to PostgreSQL. Either Docker isn't running or the database container hasn't started yet.
+
+Fix:
+
+Make sure Docker is running: docker ps
+
+Start infrastructure: docker compose up -d
+
+Wait a few seconds for PostgreSQL to initialize, then retry
+
+Check the container logs: docker compose logs postgres
+
+Also verify your .env has the correct database URL:
+
+.env
+Copy to clipboard
+
+DATABASE_URL=postgres://grit:grit@localhost:5434/myapp?sslmode=disable
+
+redis: dial tcp localhost:6380: connection refused
+
+Cause: Redis container isn't running. Grit's batteries (cache, jobs, cron) need Redis.
+
+Fix: Start the Redis container:
+
+Terminal
+Copy to clipboard
+
+$docker compose up -d redis
+
+The API will still work without Redis -- it logs a warning and disables caching/jobs/cron features gracefully.
+
+Frontend Errors
+
+ERR_PNPM_NO_MATCHING_VERSION / pnpm: command not found
+
+Cause: pnpm is not installed, or an outdated version is installed.
+
+Fix:
+
+Terminal
+Copy to clipboard
+
+# Install pnpm globally
+
+$npm install -g pnpm
+
+# Or use corepack (built into Node.js 16+)
+
+$corepack enable
+
+$corepack prepare pnpm@latest --activate
+
+Module not found: Can't resolve '@/components/...'
+
+Cause: Node modules haven't been installed yet, or the install was interrupted.
+
+Fix: Run install from the project root:
+
+Terminal
+Copy to clipboard
+
+$cd myapp
+
+$pnpm install
+
+If that doesn't work, delete node_modules and the lockfile, then reinstall:
+
+Terminal
+Copy to clipboard
+
+$rm -rf node_modules apps/*/node_modules pnpm-lock.yaml
+
+$pnpm install
+
+Access to XMLHttpRequest blocked by CORS policy
+
+Cause: The browser is blocking requests from the frontend (localhost:3000) to the API (localhost:8080) due to CORS.
+
+Fix: Make sure your .env includes the frontend origins:
+
+.env
+Copy to clipboard
+
+CORS_ORIGINS=http://localhost:3000,http://localhost:3001
+
+Then restart the Go API. The CORS middleware reads this value on startup.
+
+Docker Errors
+
+Cannot connect to the Docker daemon. Is the docker daemon running?
+
+Cause: Docker Desktop is not running.
+
+Fix:
+
+macOS/Windows: Open Docker Desktop from the Applications menu
+
+Linux: sudo systemctl start docker
+
+Wait for Docker to fully start (you'll see the whale icon in the system tray), then retry docker compose up -d.
+
+permission denied while trying to connect to the Docker daemon socket
+
+Cause: Your user doesn't have permission to use Docker (Linux only).
+
+Fix: Add your user to the docker group:
+
+Terminal
+Copy to clipboard
+
+$sudo usermod -aG docker $USER
+
+$newgrp docker
+
+You may need to log out and log back in for the group change to take effect.
+
+Code Generation Errors
+
+Error: not a Grit project (no apps/api directory found)
+
+Cause: You ran grit generate from outside the project root.
+
+Fix: Make sure you're in the project root directory (the folder that contains docker-compose.yml, apps/, and packages/):
+
+Terminal
+Copy to clipboard
+
+$cd myapp
+
+$grit generate resource Post --fields "title:string"
+
+Error: resource "Post" already exists
+
+Cause: A model file for this resource already exists inapps/api/internal/models/.
+
+Fix: If you want to regenerate it, delete the existing files first. The code generator won't overwrite files to protect your custom code.
+
+General Tips
+
+Always start Docker first. Run docker compose up -d before starting the Go API. The API needs PostgreSQL and Redis to be available.
+
+Let grit handle Go dependencies. Running grit start (or grit start server) downloads and tidies Go modules for you — no manual go mod tidy step is needed.
+
+Check the .env file. Most connection errors are caused by incorrect values in .env. Compare it with .env.example to make sure all values are set.
+
+Restart after .env changes. The Go API reads environment variables on startup. If you change .env, restart the server.
+
+Use docker compose logs to debug container issues. For example: docker compose logs postgres or docker compose logs redis.
+
+Windows users: Make sure Docker Desktop has WSL 2 integration enabled. Some port binding issues on Windows are resolved by restarting Docker Desktop.
+
+Still stuck?
+
+If you're encountering an error not listed here, open an issue on GitHub with your error message, OS, and the command you ran. The community and maintainers are happy to help.
+
+ConfigurationArchitecture

@@ -1,0 +1,405 @@
+Backend
+Realtime (WebSockets)
+
+Push live updates to the browser: a toast when a background job finishes, a new-message badge, who else has this invoice open, "Ada is typing". Grit's realtime package is a WebSocket Hub. Clients connect once at GET /api/ws, and any handler, service or worker can call SendToUser, Broadcast or Publish on a channel from anywhere in the app. Clients subscribe to channels, presence channels say who is in one, and client events go straight from one browser to the others in the channel.
+
+How it fits together
+
+One Hub per process owns a registry keyed by user id. A single user can hold several connections at once (desktop, mobile, web) — each is a Client with its own buffered send channel. The hub never blocks: a slow client's message is dropped for that connection only, and it resyncs on its next REST refetch.
+
+HubOne connection per device
+One Hub fans an event to every connection a user holds; a slow client is dropped, never blocking
+
+internal/realtime
+Copy to clipboard
+
+GET /api/ws?token=<jwt>
+
+│  validate JWT → claims.UserID
+
+▼
+
+upgrader.Upgrade(...)  → *websocket.Conn
+
+│
+
+▼
+
+Hub.Register(client)          clients: map[userID]→ set of *Client
+
+│                                   user "u1" → { desktop, mobile }
+
+├─ writePump  (hub → socket, + keepalive pings every 54s)
+
+└─ readPump   (socket → hub; services ping/pong, cleans up on close)
+
+── anywhere in app code ───────────────────────────────
+
+hub.SendToUser("u1", Event{Type: "job.finished", Payload: …})
+
+→ every connection bound to u1 receives it
+
+hub.Broadcast(Event{Type: "system.maintenance", Payload: …})
+
+→ every connected client, all users
+
+Connecting: GET /api/ws
+
+The one endpoint upgrades an HTTP request to a WebSocket. A browser authenticates with the HttpOnly grit_access cookie, which rides along with the handshake GET; a native or service client, which has no cookie jar, passes ?token=<jwt> or an Authorization header instead. Either way the token goes through the same AuthService.ValidateAccessToken as the REST API. On success the server sends a system.connected greeting so the client knows the link is live, then registers the connection.
+
+You do not open the socket yourself. Every frontend is scaffolded with lib/realtime.ts and a useRealtime hook that owns one connection for the whole app, reconnects with exponential backoff and jitter, and hands events to whichever components asked for them.
+
+apps/web — subscribing
+Copy to clipboard
+
+import { useRealtime, useLiveResource } from '@/hooks/use-realtime'
+
+// One or more event types, handled for as long as the component is mounted.
+
+useRealtime({
+
+'chat.message.new': (payload) => {
+
+queryClient.setQueryData(
+
+['messages', payload.conversation_id],
+
+(old) => [...(old ?? []), payload.message],
+
+)
+
+},
+
+})
+
+// Or, for an ordinary list: keep it in step with created / updated / deleted.
+
+useLiveResource('invoices', ['invoices'])
+
+Handlers are held in a ref, so passing an inline object literal is fine: the subscription is not torn down and rebuilt on every render.useRealtimeStatus() returns connecting | open | closed for a status dot, and disconnectRealtime() closes the socket on sign-out.
+
+How each client authenticates. A browser cannot put the token in the query string, because login stores it in the HttpOnly grit_access cookie so that scripts cannot read it. The handshake is an ordinary HTTP GET, so the cookie is sent with it and the server reads it from there. Expo and service clients have no cookie jar and pass ?token= instead; call setRealtimeToken(() => ...) once where you set up auth. Either way the token is validated with the same AuthService.ValidateToken as the REST API.
+
+Origins, limits and the module flag. A browser sends the cookie with a handshake from any page, so a cookie handshake is accepted only from an origin in CORS_ORIGINS (or the cors.origins setting) or from the API's own host, and refused with 403 otherwise. A wildcard does not count. Clients that send ?token= or an Authorization header are not affected. Each user may hold REALTIME_MAX_CONNECTIONS_PER_USER sockets (default 10) and each process REALTIME_MAX_CONNECTIONS (default 10,000); a socket past either cap is closed with code 1013. With MODULE_REALTIME=false the Redis backplane is not started and /api/ws answers 404.
+
+The socket does not outlive its token. The JWT is checked once, at the handshake. The connection carries that token's expiry and closes when it passes, and revoking a session closes every socket the user holds immediately. Both are deliberate: without them a socket opened with a fifteen minute token kept delivering events forever, and "sign out of all devices" left the signed-out device receiving message bodies. The client reconnects on its own, so a live session is uninterrupted and a revoked one is turned away at the handshake.
+
+Not an RPC transport. A client may send exactly three things on the socket: subscribe, unsubscribe and client-event, all covered below. Every mutation still goes through the authenticated REST API, and the read limit is 2 KB, which is a subscribe message many times over and one client event. The rest of the readPump services ping and pong keepalives (a ping every 54 s, a 60 s pong deadline) and cleans up when the socket closes.
+
+The event envelope
+
+Every message on the wire is the same JSON envelope: a type topic string and an arbitrary payload. Topics are caller-defined; the package suggests dotted namespacing.
+
+internal/realtime/hub.go
+Copy to clipboard
+
+type Event struct {
+
+Type    string      `json:"type"`
+
+Payload interface{} `json:"payload"`
+
+}
+
+// on the wire:  { "type": "notification.new", "payload": { ... } }
+
+Topic conventionUse
+
+system.connectedServer greeting on first connect
+
+notification.newA new notification for the user
+
+chat.message.newA chat message payload
+
+resource.<name>.<verb>e.g. building.created, lease.expired
+
+SendToUser vs Broadcast
+
+The hub is built once in routes.Setup (realtime.NewHub()) and shared. Hand it to any handler, service, or worker that needs to push. Three ways out:
+
+MethodReaches
+
+SendToUser(userID, evt)Every connection bound to one user (all their devices)
+
+SendToUsers(ids, evt)A slice of users — fans out SendToUser per id
+
+Broadcast(evt)Every connected client, all users. Use sparingly
+
+Publish(channel, evt)Every connection subscribed to one channel, whoever they are
+
+All three marshal the event once and push to each client's buffered Send channel with a non-blocking select — a full buffer drops the message for that connection rather than stalling the hub. User ids are UUID strings, matching User.ID.
+
+Example: notify a user when a job finishes
+
+A background worker generates an export, then pushes a job.finished event to just that user. Every device they have open lights up; the browser example above invalidates its React Query cache and shows a toast.
+
+internal/jobs/export_worker.go
+Copy to clipboard
+
+type ExportWorker struct {
+
+DB  *gorm.DB
+
+Hub *realtime.Hub
+
+}
+
+func (w *ExportWorker) Handle(ctx context.Context, userID string) error {
+
+url, err := w.generateExport(ctx, userID)
+
+if err != nil {
+
+// tell just this user it failed
+
+w.Hub.SendToUser(userID, realtime.Event{
+
+Type:    "job.failed",
+
+Payload: map[string]any{"kind": "export", "error": err.Error()},
+
+})
+
+return err
+
+}
+
+// push the ready file to every device this user has connected
+
+w.Hub.SendToUser(userID, realtime.Event{
+
+Type:    "job.finished",
+
+Payload: map[string]any{"kind": "export", "download_url": url},
+
+})
+
+return nil
+
+}
+
+A system-wide notice — maintenance window, a shipped feature flag change — uses Broadcast instead. In fact the feature-flags engine already does this: an admin flag write calls hub.Broadcast(Event{Type: "flag.updated"}) so connected clients can refetch.
+
+Channels: subscribe, and who is allowed to
+
+A user id is not always the right address. "Everyone looking at invoice 42" is a channel, and a channel is the only way for a client to say what it wants to hear about. A client sends subscribe with a channel name; the server answers subscribed or subscription_error, and from then on the connection receives everything published on that channel, from any replica.
+
+The prefix decides the rules. public- needs no check and lets any connected client in. private- and presence- call the authorizer you registered for the pattern, with the user id and the parsed parameters, and a channel with no registered pattern is refused outright. Register the patterns once, where the hub is built:
+
+internal/routes/routes.go, after the hub is built
+Copy to clipboard
+
+// private-invoices.42 → authorize(userID="u1", params{"id": "42"})
+
+realtime.Channel("invoices.{id}", func(c realtime.ChannelContext) bool {
+
+return canReadInvoice(db, c.UserID, c.Param("id"))
+
+})
+
+// Anyone signed in may watch the status board.
+
+realtime.Channel("status", func(realtime.ChannelContext) bool { return true })
+
+The pattern is the name without its prefix, so one registration covers private-invoices.42 and presence-invoices.42. An authorizer runs on the connection's own goroutine, so keep it to a query; one that panics refuses the subscription rather than taking the process down. A connection may hold 100 channels, and a name is one of the three prefixes followed by up to 155 letters, digits or _ - = @ , . ;
+
+Publishing is one call, and it reaches subscribers on every replica:
+
+anywhere with the hub
+Copy to clipboard
+
+hub.Publish("private-invoices."+invoice.ID, realtime.Event{
+
+Type:    "invoices.paid",
+
+Payload: map[string]any{"id": invoice.ID, "paid_at": invoice.PaidAt},
+
+})
+
+On the client, useChannel subscribes for as long as the component is mounted and again after every reconnect. Pass null while the name is not known yet:
+
+apps/web: following one record
+Copy to clipboard
+
+import { useChannel } from '@/hooks/use-realtime'
+
+useChannel(invoice ? 'private-invoices.' + invoice.id : null, {
+
+'invoices.paid': () => refetch(),
+
+subscription_error: (p) => console.warn(p.message),
+
+})
+
+Generated resource events still go to services.RealtimeAudience by user id, unchanged. To send one to a channel as well, set services.RealtimeChannels, which returns the channel names an event should also be published on.
+
+Presence: who else is here
+
+A presence- channel is a private channel that also keeps a member list. Subscribing gets you a presence.members snapshot, and everyone already in the channel gets presence.joined; closing the last socket a user holds on the channel sends presence.left. The list lives in Redis, keyed per channel and per node, with a TTL the heartbeat refreshes, so a replica that dies takes its members out of the list within about a minute rather than leaving ghosts.
+
+What each member looks like is up to the authorizer. Call SetInfo on the context and that object travels with the member, capped at 1 KB:
+
+internal/routes/routes.go
+Copy to clipboard
+
+realtime.Channel("rooms.{id}", func(c realtime.ChannelContext) bool {
+
+user, err := users.ByID(db, c.UserID)
+
+if err != nil || !canJoinRoom(db, user.ID, c.Param("id")) {
+
+return false
+
+}
+
+// Shown to the other members. Do not put anything here they may not see.
+
+c.SetInfo(map[string]any{"name": user.Name, "avatar": user.AvatarURL})
+
+return true
+
+})
+
+apps/web: the member list
+Copy to clipboard
+
+import { usePresence } from '@/hooks/use-realtime'
+
+const members = usePresence<{ name: string }>('presence-rooms.' + room.id)
+
+// each user once, however many tabs they have open
+
+return <AvatarStack names={members.map((m) => m.info?.name ?? m.user_id)} />
+
+A user appears once however many devices they have open, and the list empties while the connection is down and refills from a fresh snapshot when it is back, so a member who left meanwhile is never left on screen.
+
+Client events: browser to browser
+
+Some things are worth telling the other people in a channel and worth nothing a second later: "Ada is typing", a cursor position, "is viewing this invoice". A client event, or whisper, goes from one socket to the others through the hub with no REST call and nothing stored.
+
+apps/web: a typing indicator
+Copy to clipboard
+
+import { useChannel, useWhisper } from '@/hooks/use-realtime'
+
+const channel = 'presence-rooms.' + room.id
+
+const say = useWhisper(channel)
+
+useChannel(channel, {
+
+// handle one whisper by name, or "client-event" for all of them
+
+'client-event:typing': (p) => setTyping(p.user_id, p.data.typing),
+
+})
+
+<input onChange={() => say('typing', { typing: true })} />
+
+The rules the server applies, in order: only private- and presence- channels, because everyone subscribed to one passed its authorizer; only a channel this connection is subscribed to; at most ten a second per connection; a payload under 1 KB; and an event name of 1 to 64 letters, digits or _ . : - A whisper never comes back to the connection that sent it, though the same user's other tabs do receive it.
+
+A refusal arrives on the sender's socket only, as a client_event_error with a code: INVALID_CHANNEL, PUBLIC_CHANNEL, NOT_SUBSCRIBED, INVALID_EVENT, PAYLOAD_TOO_LARGE or RATE_LIMITED. The rate limit answers once per second however many whispers that second drops, so a runaway loop does not get a reply per message.
+
+The payload is user input. user_id is filled in by the hub from the connection's token, so a receiver can trust who sent a whisper. Everything else is whatever that browser typed. Never write a whisper to the database or render it as HTML without escaping, and never use one to grant anything.
+
+What the hub reports
+
+/api/health carries a realtime object, and the admin's System Health page shows it as a card. The three counts are this process's own, so with several replicas each reports its share; the counters run from process start, which means a number that keeps climbing is the signal, not its size.
+
+GET /api/health
+Copy to clipboard
+
+"realtime": {
+
+"connections": 412,
+
+"users": 310,
+
+"channels": 88,
+
+"messages_sent": 1904221,
+
+"messages_dropped": 17,
+
+"client_events": 40233,
+
+"client_events_rate_limited": 12,
+
+"backplane": true,
+
+"backplane_publish_errors": 0
+
+}
+
+messages_dropped climbing steadily means clients cannot drain their 32 message buffer fast enough: they are not losing data, since the database is the record and every client resyncs on its next REST call, but they are seeing stale screens. backplane_publish_errors above zero means events are not reaching the other replicas, which looks to a user like realtime working for some people and not others. client_events_rate_limited rising is usually a client whispering on every keystroke rather than on a timer.
+
+Who receives a resource event
+
+Every generated handler emits <plural>.created, .updated and .deleted. Those go to services.RealtimeAudience(e), which by default returns the actor and nobody else: your own devices stay in step, and no one learns about a row they may not be allowed to read.
+
+The default is narrow on purpose. The payload carries e.Label, the row's human-readable title, and there is no per-row authorization in the event bus to filter on. Broadcasting it handed every signed-in session a live feed of every title written anywhere in the system, across tenants. Widen it where the app knows who is entitled to look:
+
+internal/routes/routes.go — after RegisterEventSubscribers
+Copy to clipboard
+
+services.RealtimeAudience = func(e events.Event) []string {
+
+switch e.Resource {
+
+case "messages":
+
+// Everyone in the conversation the message belongs to.
+
+return participantIDs(db, e.ID)
+
+case "announcements":
+
+return staffIDs(db)
+
+}
+
+// Anything not named here keeps the safe default.
+
+if e.Actor == "" {
+
+return nil
+
+}
+
+return []string{e.Actor}
+
+}
+
+Returning nil drops the event, which is what a system-initiated write does by default since it has no actor.
+
+Running more than one replica
+
+The Hub is an in-process registry, so on its own a user connected to replica A never receives an event published on replica B: the push succeeds, into a registry that does not contain them, and nothing errors. A backplane joins the processes, and routes.Setup wires one whenever the project has Redis:
+
+internal/routes/routes.go
+Copy to clipboard
+
+var realtimeOptions []realtime.Option
+
+if cfg.Modules.Realtime {
+
+realtimeOptions = append(realtimeOptions, realtime.WithRedis(cfg.RedisURL, ""))
+
+}
+
+realtimeHub := realtime.NewHub(realtimeOptions...)
+
+WithRedis is a no-op on an empty URL, so a project with no Redis keeps the single-process hub rather than failing to start. Redis is already there for cache and background jobs, so the common case adds no new infrastructure. Pass a channel name as the second argument if two applications share one Redis, or they will deliver each other's events.
+
+Every send takes both paths: this node's own clients first and unconditionally, then a single publish for the others no matter how large the audience. Local delivery never waits on Redis and still works when Redis is down, so an outage degrades realtime to one replica rather than breaking it. Revocation crosses the backplane as well, so signing out of all devices closes sockets on every instance and not just the one that served the request.
+
+Delivery between nodes is best effort, deliberately. A realtime event is a hint that something changed, not the record of it: the database holds the truth and every client resyncs on its next REST call. Guaranteeing delivery here would mean per-subscriber queues, acknowledgements and retention, which is a message broker, and one that fails in ways a notification badge does not justify. A message published while a node is reconnecting is lost, and a publish queued behind a backplane that has stopped answering is dropped rather than blocking the request that made it.
+
+Backplane is an interface, so Redis is the shipped implementation rather than the only possible one. Implement Publish, Subscribe and Close over NATS or anything else and pass it with realtime.WithBackplane(...). The one rule is that Publish must not block: it is reachable from a request handler.
+
+Go deeper
+
+Build a full realtime chat on top of the Hub — rooms, presence, typing indicators, and reconnection — wiring the WebSocket to React Query and optimistic updates.
+Course: Realtime Chat with WebSockets →
+
+WebhooksSecurity Guide

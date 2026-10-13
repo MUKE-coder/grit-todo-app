@@ -1,0 +1,106 @@
+Infrastructure
+
+Deploy Command
+
+One-command production deployment. Build, upload, and configure your server with grit deploy.
+
+One commandLive server
+grit deploy builds, uploads, and configures your server — one command to production
+
+How it works
+
+01
+Build
+
+Cross-compiles your Go binary for Linux (GOOS=linux GOARCH=amd64 CGO_ENABLED=0). If a frontend/ directory exists, builds the frontend first.
+
+Terminal
+Copy to clipboard
+
+grit deploy --host user@server.com --domain myapp.com
+
+02
+Upload
+
+Uploads the compiled binary to the remote server via SCP. Creates the deployment directory if it does not exist.
+
+Terminal
+Copy to clipboard
+
+# Binary uploaded to /opt/my-app/my-app
+
+# via: scp -P 22 bin/my-app user@server.com:/opt/my-app/
+
+03
+Systemd service
+
+Creates and enables a systemd service unit. The service auto-restarts on failure and reads environment variables from your .env file.
+
+my-app.service
+Copy to clipboard
+
+[Unit]
+
+Description=my-app
+
+After=network.target
+
+[Service]
+
+Type=simple
+
+User=www-data
+
+WorkingDirectory=/opt/my-app
+
+ExecStart=/opt/my-app/my-app
+
+Restart=on-failure
+
+EnvironmentFile=/opt/my-app/.env
+
+[Install]
+
+WantedBy=multi-user.target
+
+04
+Caddy reverse proxy
+
+If --domain is provided, configures Caddy as a reverse proxy with automatic HTTPS via Let's Encrypt.
+
+Caddyfile
+Copy to clipboard
+
+myapp.com {
+
+reverse_proxy localhost:8080
+
+encode gzip
+
+header {
+
+X-Frame-Options "DENY"
+
+X-Content-Type-Options "nosniff"
+
+-Server
+
+}
+
+}
+
+Flags
+
+FlagEnv VarDescription
+
+--hostDEPLOY_HOSTSSH host (e.g. user@server.com)
+
+--port-SSH port (default: 22)
+
+--keyDEPLOY_KEY_FILEPath to SSH private key
+
+--domainDEPLOY_DOMAINDomain for Caddy reverse proxy
+
+--app-port-Port the app runs on (default: 8080)
+
+DeploymentDeploy with Dokploy

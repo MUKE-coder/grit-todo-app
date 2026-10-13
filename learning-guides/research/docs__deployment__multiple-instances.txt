@@ -1,0 +1,87 @@
+Deployment
+
+Running more than one instance
+
+A Grit API is one Go binary, and you can run as many copies of it as you like behind a load balancer, pointed at the same database and the same Redis. This page is what that takes, what is already shared between the copies, and the little that is still counted per copy.
+
+What every copy needs
+
+The same database and the same Redis. Everything below that is shared is shared through one of the two.
+
+The same JWT_SECRET. A token issued by one copy is checked by whichever copy the next request lands on.
+
+The same FIELD_ENCRYPTION_KEY, if you use :encrypted fields, or a value written by one copy cannot be read by another.
+
+Migrations run once per deploy, not once per copy. The server does not migrate on start, so run grit migrate (or the migrate command in your image) as a deploy step before the new copies take traffic.
+
+No sticky sessions are needed, for HTTP or for WebSockets. Point the load balancer's health check at /api/health.
+
+What is shared between copies
+
+Sessions and refresh tokens live in the database, so signing out of all devices signs out everywhere.
+
+The response cache and idempotency keys live in Redis, so a retried request with the same Idempotency-Key replays whichever copy it reaches.
+
+Per-API-key rate limits are counted in Redis, so a key limited to 100 requests a minute gets 100, however many copies are running.
+
+Realtime events cross copies through a Redis backplane. A user whose socket is on one copy receives an event caused on another. Measured: one event reached 1,000 sockets on one copy, caused by a write on another, in 0.16 seconds.
+
+The tamper-evident activity log is written under a database lock, so copies never fork the hash chain. Verified with 50 concurrent writes across two copies.
+
+Background jobs are queued in Redis, and any copy's worker takes any job.
+
+Permission changes. Each copy caches who may do what. A role change on one copy reaches every other within about a second, through a small cluster_generations table. Before v3.218.0 a revoked permission kept working on the other copies until they restarted.
+
+SSO connections. Each copy builds its identity-provider connections at start-up and rebuilds them within a couple of seconds of another copy saving one. Before v3.218.0 a connection created on one copy was unknown to the others.
+
+Scheduled jobs run once, on whichever copy holds a Redis lock. It is a 30-second lease, renewed every 10 seconds, so if that copy dies another takes over within half a minute. Before v3.218.0 every copy ran every scheduled job.
+
+grit:cron:leader   the copy running the scheduled jobs (a 30s lease)
+
+cluster_generations   one row per shared cache: authz, sso
+
+Copy to clipboard
+
+What is still counted per copy
+
+Sentinel's per-IP rate limits. Sentinel keeps those counters in memory, so with three copies a client spreading its requests gets three times each limit, including the login limit. Tracked in Sentinel #18. Until it changes, set the limits for one copy's share of the traffic, and lean on per-API-key limits, which are shared, for anything that must hold exactly.
+
+Pulse keeps its default store in memory, so each copy's dashboard shows that copy's traffic.
+
+Two people saving the same record
+
+Every generated record carries a version that each update increments, and every read returns it as an ETag. Send it back as If-Match on a PUT or PATCH, and the write lands only if nobody saved in between; otherwise the answer is a 409 naming the version the record is at now, so the client can reload and decide. Without the header, the last write wins, as it always did.
+
+GET   /api/v1/lots/42          ETag: W/"7"
+
+PATCH /api/v1/lots/42          If-Match: W/"7"   {"current_bid": 210}
+
+200 when the lot is still at version 7
+
+409 {"error": {"code": "VERSION_CONFLICT", "details": {"current_version": 8}}}
+
+Copy to clipboard
+
+The check is the WHERE clause of the update itself, not a read before it, so it holds under any amount of contention and across any number of copies. Measured: twenty simultaneous bids on version 1, split across two copies, landed one and refused nineteen.
+
+In your own code
+
+Anything you keep in a package-level variable is per copy. If you cache something that other copies can change, use the same mechanism the framework does:
+
+// Where the data changes:
+
+cluster.Bump(db, "price-list")
+
+// Where it is cached, checked at most once a second:
+
+var prices = cluster.NewWatch(db, "price-list", time.Second)
+
+if prices.Changed() {
+
+reloadPriceList()
+
+}
+
+Copy to clipboard
+
+Go-live checklistDeploy command

@@ -1,0 +1,449 @@
+Core Concepts
+Performance
+
+Every Grit project is scaffolded with production-grade performance optimisations out of the box — both in the Go API and the Next.js frontends. No extra configuration needed.
+
+Backend Performance
+
+Go API — Gin + GORM
+
+Gzip Response Compression
+
+Text responses are compressed with Gzip when the client sends Accept-Encoding: gzip, at BestSpeed, the sweet spot between CPU cost and payload size. JSON payloads typically shrink by 60 to 80%, which matters most on paginated list endpoints. Compressors come from a pool, so a response does not pay to build one.
+
+The middleware decides at the handler's first write, when the status and headers are known. It leaves alone anything already compressed (images, video, PDF, zip, xlsx), server-sent event streams, responses with no body and bodies declared under 1 KB, and it drops a declared Content-Length when it compresses. Flush flushes the compressor and then the connection, so a streamed response streams.
+
+Typical paginated JSON list, over the wire
+
+Uncompressed
+
+100 KB
+
+Gzip (BestSpeed)
+
+~28 KB
+
+60 to 80% smaller JSON responses, on every route that sends text
+
+apps/api/internal/middleware/gzip.go
+Copy to clipboard
+
+// decide chooses, once, whether this response is compressed.
+
+func (g *gzipResponseWriter) decide(first []byte) {
+
+h := g.ResponseWriter.Header()
+
+status := g.ResponseWriter.Status()
+
+if status < http.StatusOK || status == http.StatusNoContent || status == http.StatusNotModified ||
+
+h.Get("Content-Encoding") != "" || !compressible(h.Get("Content-Type")) {
+
+return // sent as it is
+
+}
+
+h.Del("Content-Length")
+
+h.Set("Content-Encoding", "gzip")
+
+h.Add("Vary", "Accept-Encoding")
+
+g.gz = gzipWriters.Get().(*gzip.Writer) // pooled
+
+g.gz.Reset(g.ResponseWriter)
+
+}
+
+// Registered globally in routes.go
+
+r.Use(middleware.Gzip())
+
+Request ID Tracing
+
+Every request receives a unique X-Request-ID header. If the upstream proxy or client already sends one it is echoed back; otherwise a new ID is generated from the nanosecond timestamp. The ID is stored in Gin's context and included in every structured log line — making it trivial to trace a specific request through logs, Pulse, and your reverse proxy.
+
+apps/api/internal/middleware/middleware.go
+Copy to clipboard
+
+func RequestID() gin.HandlerFunc {
+
+return func(c *gin.Context) {
+
+id := c.GetHeader("X-Request-ID")
+
+if id == "" {
+
+id = fmt.Sprintf("%d-%d", time.Now().UnixNano(), rand.Int63())
+
+}
+
+c.Set("request_id", id)
+
+c.Header("X-Request-ID", id)
+
+c.Next()
+
+}
+
+}
+
+// Logger includes the request_id in every log line
+
+log.Printf("[%s] %s %s %d", requestID, c.Request.Method, c.Request.URL.Path, statusCode)
+
+Database Connection Pool
+
+The scaffold configures GORM's underlying database/sql pool with four tuned settings. Without these, Go's default behaviour is to open unlimited connections and keep them forever — which exhausts Postgres under load and causes stale connection errors after network interruptions.
+
+apps/api/internal/config/database.go
+Copy to clipboard
+
+sqlDB, _ := db.DB()
+
+sqlDB.SetMaxIdleConns(10)          // keep 10 idle connections warm
+
+sqlDB.SetMaxOpenConns(100)         // never open more than 100 connections
+
+sqlDB.SetConnMaxLifetime(30 * time.Minute) // recycle to prevent stale connections
+
+sqlDB.SetConnMaxIdleTime(10 * time.Minute) // evict idle connections sooner
+
+MaxIdleConns: 10
+
+Warm pool ready for burst traffic without cold-start latency
+
+MaxOpenConns: 100
+
+Prevents connection exhaustion on the Postgres server
+
+ConnMaxLifetime: 30m
+
+Recycles connections — fixes stale connection errors after failover
+
+ConnMaxIdleTime: 10m
+
+Evicts idle connections to free Postgres resources during quiet periods
+
+Cache-Control Headers on Public Endpoints
+
+Public read endpoints (blog list and single post by slug) emit Cache-Control headers so CDNs and edge caches (Cloudflare, Vercel Edge, Nginx) can serve them without hitting the Go API at all. The single-post endpoint uses a longer TTL because published content changes infrequently.
+
+apps/api/internal/handlers/blog_handler.go
+Copy to clipboard
+
+// ListPublished — paginated public blog list
+
+func (h *BlogHandler) ListPublished(c *gin.Context) {
+
+// ... query
+
+c.Header("Cache-Control", "public, max-age=300")  // 5 minutes
+
+c.JSON(http.StatusOK, gin.H{"data": blogs, "meta": meta})
+
+}
+
+// GetBySlug — single published post
+
+func (h *BlogHandler) GetBySlug(c *gin.Context) {
+
+// ... query
+
+c.Header("Cache-Control", "public, max-age=3600") // 1 hour
+
+c.JSON(http.StatusOK, gin.H{"data": blog})
+
+}
+
+Presigned URL Uploads (Bypass the API)
+
+File uploads never pass through the Go API. The browser asks the API for a presigned PUT URL, then uploads the binary directly to S3/R2/MinIO. This eliminates request body size limits imposed by reverse proxies (Nginx, Traefik), removes Go memory pressure from large uploads, and allows XHR progress tracking.
+
+1
+
+Browser → POST /api/uploads/presign
+
+Returns a time-limited presigned PUT URL + storage key + public URL
+
+2
+
+Browser → PUT directly to R2/S3/MinIO
+
+Binary is sent straight to storage — Go API is not involved. XHR tracks progress.
+
+3
+
+Browser → POST /api/uploads/complete
+
+API creates the Upload DB record and enqueues thumbnail processing job
+
+Async Background Jobs
+
+Slow operations — image thumbnail generation, welcome emails, PDF reports, webhook delivery — are pushed to a Redis-backed asynq queue so the HTTP handler returns immediately. Workers process jobs concurrently in separate goroutines. Retries, dead-letter queues, and job monitoring are available through the built-in admin dashboard.
+
+apps/api/internal/handlers/upload_handler.go
+Copy to clipboard
+
+// Handler returns 201 in < 1ms. Thumbnail is generated asynchronously.
+
+func (h *UploadHandler) CompleteUpload(c *gin.Context) {
+
+// ... save Upload record
+
+if strings.HasPrefix(upload.MimeType, "image/") {
+
+h.Jobs.EnqueueImageProcessing(upload.ID, upload.StorageKey)
+
+}
+
+c.JSON(http.StatusCreated, gin.H{"data": upload})
+
+}
+
+Redis Caching Layer
+
+The scaffold includes a Redis cache service and a Gin middleware that caches entire API responses by URL. Hot endpoints like product lists or homepage data are served from memory in under a millisecond. The cache middleware skips authenticated routes automatically so user-specific data is never cached.
+
+apps/api/internal/routes/routes.go
+Copy to clipboard
+
+// Cache public product list for 5 minutes
+
+public.GET("/products", middleware.Cache(5*time.Minute), productHandler.List)
+
+// Authenticated routes — cache skipped automatically
+
+protected.GET("/orders", orderHandler.List)
+
+Rate Limiting & WAF (Sentinel)
+
+Sentinel is Grit's built-in security suite. It acts as a Web Application Firewall, rate limiter, and brute-force shield — protecting the API from abuse that could degrade performance for legitimate users. Internal dashboards (/pulse, /sentinel, /docs, /studio) are excluded from rate limiting so health checks never trigger false positives.
+
+apps/api/internal/config/sentinel.go
+Copy to clipboard
+
+sentinel.Init(sentinel.Config{
+
+RateLimit: &sentinel.RateLimitConfig{
+
+Enabled:       true,
+
+RequestsPerSecond: 10,
+
+Burst:         20,
+
+ExcludeRoutes: []string{"/pulse/*", "/sentinel/*", "/docs/*", "/studio/*"},
+
+},
+
+WAF:            &sentinel.WAFConfig{Enabled: true},
+
+BruteForce:     &sentinel.BruteForceConfig{Enabled: true, MaxAttempts: 5},
+
+})
+
+Frontend Performance
+
+Next.js 15 — App Router + React
+
+React Server Components by Default
+
+Every page in the Next.js web app is a React Server Component unless it explicitly opts in with 'use client'. Server Components fetch data directly on the server before streaming HTML to the browser — zero JavaScript for data fetching, no loading spinners on initial render, and no client-server waterfalls. Only interactive UI (forms, modals, dropdowns) becomes a Client Component.
+
+apps/web/app/blog/page.tsx
+Copy to clipboard
+
+// Server Component — fetches on the server, streams HTML
+
+// No JS bundle cost. No useEffect. No loading state.
+
+export default async function BlogPage() {
+
+const posts = await fetch(`${process.env.API_URL}/api/blogs/published`, {
+
+next: { revalidate: 300 }, // ISR: revalidate every 5 minutes
+
+}).then((r) => r.json())
+
+return <BlogList posts={posts.data} />
+
+}
+
+Incremental Static Regeneration (ISR)
+
+Public content pages (blogs, product catalogs, landing pages) use ISR via Next.js's next: { revalidate } option. The page is rendered once and cached at the CDN edge. Subsequent visitors get the cached HTML in milliseconds. The cache revalidates in the background after the TTL expires — users always get fast responses even while content refreshes.
+
+apps/web/app/blog/[slug]/page.tsx
+Copy to clipboard
+
+// generateStaticParams pre-builds all published post pages at build time
+
+export async function generateStaticParams() {
+
+const posts = await fetch(`${process.env.API_URL}/api/blogs/published`)
+
+.then((r) => r.json())
+
+return posts.data.map((p: { slug: string }) => ({ slug: p.slug }))
+
+}
+
+export default async function PostPage({ params }: { params: { slug: string } }) {
+
+const post = await fetch(`${process.env.API_URL}/api/blogs/slug/${params.slug}`, {
+
+next: { revalidate: 3600 }, // re-check every hour
+
+}).then((r) => r.json())
+
+return <PostContent post={post.data} />
+
+}
+
+React Query — Smart Client Caching
+
+All admin panel data fetching uses React Query (TanStack Query). Responses are cached in memory so navigating back to a previously visited page is instant. Mutations automatically invalidate the relevant query so lists refresh without a full page reload. Generated hooks follow a consistent pattern across all resources.
+
+apps/admin/hooks/use-products.ts (generated)
+Copy to clipboard
+
+// Generated by: grit generate resource Product
+
+export function useProducts(page = 1) {
+
+return useQuery({
+
+queryKey: ['products', page],
+
+queryFn: () => apiClient.get(`/api/products?page=${page}`).then((r) => r.data),
+
+staleTime: 30_000, // treat data as fresh for 30 s
+
+})
+
+}
+
+export function useCreateProduct() {
+
+const qc = useQueryClient()
+
+return useMutation({
+
+mutationFn: (data) => apiClient.post('/api/products', data).then((r) => r.data),
+
+onSuccess: () => qc.invalidateQueries({ queryKey: ['products'] }),
+
+})
+
+}
+
+Next.js Image Optimisation
+
+The scaffolded web app uses the next/image component throughout. Images are automatically converted to WebP/AVIF, served at the correct size for the user's device, lazy-loaded by default, and cached at the CDN layer. The next.config is pre-configured with remotePatterns for your storage domain (R2, S3, MinIO) so remote images work without unoptimized.
+
+apps/web/app/blog/[slug]/page.tsx
+Copy to clipboard
+
+import Image from 'next/image'
+
+<Image
+
+src={post.image}           // remote R2 / S3 URL
+
+alt={post.title}
+
+width={1200}
+
+height={630}
+
+priority                   // eager-load above-the-fold hero
+
+className="rounded-xl object-cover"
+
+/>
+
+Turborepo Build Cache
+
+Grit projects are managed by Turborepo. Build outputs are hashed and cached locally (and optionally remotely). If neither the source nor its dependencies changed, Turbo replays the cached output in milliseconds instead of re-running the build. On a typical GritCMS-scale project this cuts CI build time from 4+ minutes to under 30 seconds on the second run.
+
+turbo.json
+Copy to clipboard
+
+{
+
+"tasks": {
+
+"build": {
+
+"dependsOn": ["^build"],
+
+"outputs": [".next/**", "!.next/cache/**", "dist/**"]
+
+},
+
+"dev": {
+
+"cache": false,
+
+"persistent": true
+
+}
+
+}
+
+}
+
+Automatic Code Splitting
+
+Next.js App Router automatically splits the JavaScript bundle per route — users only download code for the page they are visiting. Heavy admin components (rich-text editor, chart library, data grid) are dynamically imported with next/dynamic so they don't inflate the initial bundle. Combined with Server Components, the JS sent to the browser is kept to an absolute minimum.
+
+apps/admin/components/rich-text-editor.tsx
+Copy to clipboard
+
+import dynamic from 'next/dynamic'
+
+// Loaded only when the component is actually rendered
+
+const RichTextEditor = dynamic(() => import('@/components/editor'), {
+
+loading: () => <div className="h-40 animate-pulse rounded-lg bg-accent/30" />,
+
+ssr: false, // editor requires browser APIs
+
+})
+
+What You Get Out of the Box
+
+OptimisationLayerBenefit
+
+Gzip middlewareBackend60-80% smaller API responses
+
+Request ID tracingBackendCorrelate logs across services
+
+Connection pool tuningBackendNo stale connections under load
+
+Cache-Control headersBackendCDN-cacheable public endpoints
+
+Presigned URL uploadsBackendBypass API for large files
+
+Background jobs (asynq)BackendNon-blocking async operations
+
+Redis response cacheBackendSub-millisecond hot reads
+
+Sentinel rate limitingBackendProtect API from abuse
+
+Server ComponentsFrontendZero JS for data fetching
+
+ISR / revalidateFrontendCDN-cached public pages
+
+React Query cachingFrontendInstant back-navigation in admin
+
+next/imageFrontendWebP, lazy load, correct sizing
+
+Turborepo cacheFrontendFast CI and local builds
+
+Code splittingFrontendMinimal JS per route
+
+Naming ConventionsMiddleware

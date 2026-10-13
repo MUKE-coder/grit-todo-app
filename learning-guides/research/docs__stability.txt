@@ -1,0 +1,256 @@
+Security & Testing
+Stability and hardening
+
+What is proven, what is young, and where the line runs between what Grit guarantees and what stays your job. Per subsystem, so you can make your own risk call on the part you are about to depend on instead of on the whole framework at once.
+
+The rule for the table below: a claim in Grit guarantees names the test that would fail if it stopped being true. Where no such test exists, the claim sits in your responsibility instead, however right the code looks. Three of the worst entries in the changelog were docs asserting a guarantee the code did not provide, so the discipline is the point.
+
+stable long-lived, covered by tests and live checks, and no correctness bug found in it recently.
+
+beta works and is tested, and has had a real bug found in it recently enough that you should verify your own case.
+
+new shipped in the last few weeks. Integration bugs are still plausible.
+
+Auth: JWT, sessions, refresh rotation
+stable
+
+Grit guaranteesEvery refresh token is backed by a session row, rotation detects replay, and a password change signs out every device.Proven byhandlers/auth_test.go, services/session_test.go, services/password_reset_test.go (41 handler tests, 75 service tests ship in your project)
+
+Your responsibilitySet JWT_SECRET to 32+ random bytes and keep it out of the repository. grit doctor fails if it is short, empty or a placeholder.What went wrong onceTwo logins in the same second once produced identical refresh tokens (fixed in v3.86.0: every token carries a jti).
+
+Two-factor, passkeys, recovery codes
+beta
+
+Grit guaranteesTOTP is RFC 6238 (HMAC-SHA1 by the spec), recovery codes are single-use, and passkey challenges are bound to a session.Proven byservices/passkey_test.go, services/recovery_test.go, crypto/field_test.go
+
+Your responsibilityDecide your own lockout and recovery policy, and test the flow with the authenticator app your users actually have.
+
+RBAC: roles, permissions, the staff group
+beta
+
+Grit guaranteesA custom role reaches only the endpoints its permissions name, a revoked permission stops working everywhere, and a route that names no permission stays ADMIN-only, so one that forgets fails closed.Proven byauthz/grants_test.go, authz/permissions_test.go, handlers/role_test.go, services/user_test.go, plus a live check that a staff account holding notes.delete still cannot delete another user’s row
+
+Your responsibilityName a permission on every route you add yourself. The generator does it for generated resources; a hand-written route is yours.What went wrong onceA custom role could not reach a single admin endpoint until v3.220.0; a revoked permission kept working on other replicas until v3.218.0.
+
+Generated CRUD: services, handlers, pagination
+stable
+
+Grit guaranteesHandlers run no queries; the service owns every read and write, takes a context, and whitelists what a client may search, sort, filter and patch, because those names reach SQL.Proven byinternal/generate tests in the CLI (492 test functions across 99 files), an import-versus-use check on every generated file, and 57 live checks against a running app on Postgres 15, 16 and 17
+
+Your responsibilityPut your own queries in the service, not the handler, so a job and a route cannot disagree.What went wrong onceHandlers ran all of their own queries until v3.224.0, and the service written beside them was never called.
+
+Owned resources (--owned-by)
+stable
+
+Grit guaranteesList, export, get, PDF, update, patch, delete and bulk are all scoped to the caller; somebody else’s row is 404 rather than 403; the owner comes from the session and never from the request body. ADMIN is exempt.Proven byLive checks cover every one of those paths, including the staff-permission case, plus generator tests that fail if a method loses its scoping. grit doctor reports the same thing in your project.
+
+Your responsibilityAdd --owned-by when rows belong to a user. A resource that merely references a user is not scoped, and grit doctor asks about it.What went wrong onceThe export, PDF, patch and bulk routes were unscoped once: a second ordinary account printed another user’s record and rewrote it.
+
+Optimistic locking (If-Match)
+stable
+
+Grit guaranteesA read returns the version as an ETag, a write against a stale version is 409 naming the current one, and of twenty simultaneous writes on one version exactly one lands.Proven byconcurrency/concurrency_test.go in your project, generator tests, and a 20-way race in the live suite on all three Postgres versions
+
+Your responsibilitySend If-Match from your own clients. Without it the last write still wins, by design.What went wrong onceAdded in v3.219.0, after two people saving the same record meant the second silently won.
+
+Encryption at rest (:encrypted fields)
+beta
+
+Grit guaranteesAn encrypted column is ciphertext in the database and plaintext through the API, and it is kept out of search, sort and filter lists, where ciphertext would match nothing.Proven bycrypto/field_test.go, crypto/map_update_test.go, and a live check that reads the column straight out of Postgres
+
+Your responsibilitySet FIELD_ENCRYPTION_KEY. Without it the value is stored as it is, and nothing fails: grit doctor makes this an error, and it is the first thing it found in a real project.What went wrong onceA plaintext leak was fixed in v3.212.0. Re-audit before storing real PII.
+
+Multitenancy (plugin, tenant.Owned)
+beta
+
+Grit guaranteesA tenant-owned model is scoped by the organization on the request context on every authenticated route group, a query with no organization is refused rather than answered (400 NO_ORGANIZATION), the X-Organization-ID header is checked against membership, and a role held through a membership grants inside that organization only.Proven byA CI job scaffolds a project with the multitenant and impersonate plugins and runs 26 checks across the seams on a real Postgres: cross-tenant reads, an admin with no organization, an organization and an owner on one row, a membership role used in the wrong organization, and an impersonated session inside a tenant. It also asserts the middleware order that one of those bugs was.
+
+Your responsibilityAdd tenant.Owned to every model that belongs to an organization. Decide which organization a user provisioned by SSO joins: nothing does it for you, and grit doctor says so. Combining tenancy with --tree or --public is still not covered by the fixture.What went wrong onceIsolation bugs were fixed in v3.197 and v3.198. v3.233.0 fixed three found by building tenancy, roles and impersonation together: every DELETE on a tenant-owned row answered 500 because the staff group never resolved an organization, a membership role granted nothing at all, and “no active organization” was an opaque 500.
+
+Money (exact, multi-currency)
+stable
+
+Grit guaranteesAmounts are integer minor units with their currency, two money columns per row do not collide, and sums stay exact.Proven bymoney/money_test.go (13 tests), generator tests for the embedded columns and whitelists, and a live round-trip check
+
+Your responsibilityPick the currency per row deliberately; Grit does not convert between currencies.
+
+CSV/XLSX import and export
+beta
+
+Grit guaranteesAn export streams every matching row; an import runs in the background with a job to poll, resolves relations, skips duplicates, and an owned resource’s rows belong to whoever imported them unless an ADMIN names another owner.Proven byLive checks for both, including the owned cases, and generator tests for the importer’s columns
+
+Your responsibilityValidate the files your users upload. The parser is hardened and bounded, and it is still parsing a stranger’s spreadsheet.What went wrong onceEvery export was an empty 200 once. The importer created a user for every unrecognised email until that was removed.
+
+Trees (--tree)
+beta
+
+Grit guaranteesA move carries its subtree, a reorder keeps the parent the node has, and a node cannot be moved under its own descendant.Proven byservices/category_tree_test.go ships with the resource (10 tests), plus live checks for the move, the reorder and the refusal
+
+Your responsibilityRun the rebuild endpoint once after adding --tree to a table that already had rows.What went wrong onceDragging a node that predated --tree once added one to the depth of every row in the table.
+
+Public API (--public)
+beta
+
+Grit guaranteesPublic reads are an allowlist struct rather than the model, they are guarded by an API key, archived rows are excluded, and cost-shaped columns are held back by default.Proven byLive checks for the key, the allowlist, the filters and the archived case; grit doctor reports a held-back column that was published by hand
+
+Your responsibilityReview the allowlist when you add fields; it is your file and the generator will not rewrite it. Public responses are cached by URL for cache.public_ttl_seconds (60 by default), so an archived row can linger in a cached list for up to a minute.
+
+Append-only resources
+beta
+
+Grit guaranteesRows are created and read, never changed or deleted: a GORM guard, no mutating routes, and a database trigger that refuses the write.Proven byappendonly/appendonly_test.go, and grit doctor reports an append-only resource that still mounts a write
+
+Your responsibilityRun grit migrate so the trigger exists. The guard alone is not the database refusing.
+
+Realtime (WebSockets, Redis backplane)
+beta
+
+Grit guaranteesEvents reach a user on every replica through the backplane, and a closed socket is cleaned up.Proven byrealtime/backplane_test.go, cluster/cluster_test.go
+
+Your responsibilityRun Redis if you run more than one replica. Without it, events stay in the process that emitted them.What went wrong onceCross-replica and revocation bugs were fixed in v3.193 and v3.196.
+
+Durable events (outbox)
+beta
+
+Grit guaranteesA durable subscriber’s work is committed with the row that triggered it, and the relay delivers it once.Proven byoutbox/outbox_test.go (12 tests)
+
+Your responsibilityStart the relay. grit upgrade wires it for projects that predate it.
+
+Error responses
+new
+
+Grit guaranteesEvery error is the same envelope, each code is documented with what it means and what a client should do, and a code always arrives with the same status. The typed codes in Go and the union type in TypeScript are generated from one catalogue, so they cannot disagree.Proven byinternal/errorcodes walks every template: a code that is not catalogued, or that is returned with a status other than its own, fails the build
+
+Your responsibilityCodes your own handlers invent are yours to document. respond.Rule covers a business rule without adding one.What went wrong onceShipped in v3.232.0, which reconciled 31 sites. VALIDATION_ERROR was 422 in thirty-eight handlers and 400 in twenty-five, INVALID_TOKEN was both 401 and 400, and an upload that did not exist answered 400.
+
+Migrations and rollback
+new
+
+Grit guaranteesEvery run records what it changed, taken from the schema before and after, and grit migrate down drops exactly that: indexes, then columns, then tables. A drop already done is skipped, so an interrupted rollback can be re-run. The run that built the schema is a baseline and is refused.Proven byinternal/migrate tests ship in every project, and the live suite adds a column with grit generate field, rolls it back on a real Postgres and checks the column is gone and the table is not
+
+Your responsibilityRead the statements before you answer the prompt. A rollback drops columns, and the data in them is not recoverable: this undoes a schema change, not a deployment.What went wrong onceShipped in v3.230.0. The first version counted SQLite’s own sqlite_sequence table as part of the schema, so on SQLite no run would have been recognised as the baseline and a rollback would have offered to drop everything.
+
+Backups and restore
+beta
+
+Grit guaranteesA backup streams row by row, and a restore writes parents before children.Proven byThe CLI’s backup tests and the generated project’s backup command
+
+Your responsibilityRestore into a scratch database and look at the rows. A backup nobody has restored is a hope.What went wrong onceRestore correctness bugs were fixed in v3.207.0 and v3.213.0.
+
+Offline sync (desktop)
+new
+
+Grit guaranteesRegistered models mirror to the client, and conflicts resolve by the policy you set.Proven byThe sync engine’s tests in the CLI, and grit sync doctor reports a model that cannot work (no version column, an allowlist naming a column that does not exist)
+
+Your responsibilityRun grit sync doctor, and test the flows your users will have offline.
+
+Workflows (status state machines)
+new
+
+Grit guaranteesOnly declared transitions are allowed, they are guarded by role, and a transition hook commits with the move or not at all.Proven byThe generated workflow service’s tests, plus generator tests for the transition route
+
+Your responsibilityDecide who may make each transition. The generator gives you the shape, not your policy.What went wrong onceShipped in v3.221.0: before it, a workflow could change a status and nothing else.
+
+Feature flags
+new
+
+Grit guaranteesA flag can target attributes, a percentage and a date window, and flags.IsEnabled works from anywhere, answering false before the engine starts.Proven byflags/flags_test.go ships in every project and runs against a real engine
+
+Your responsibilityManage flags through the API: there is no admin screen for them yet.What went wrong onceShipped in v3.223.0, when the documented package-level API did not exist at all.
+
+Desktop (Wails) and mobile (Expo)
+new
+
+Grit guaranteesBoth share the monorepo API and its generated types.Proven byThe desktop module builds in CI; the Expo app is built by the nightly canary
+
+Your responsibilitySigning and store submission. A signed desktop release has never been verified end to end, because that needs Authenticode and Apple Developer certificates this project does not own.
+
+Stable, and how to tell
+
+The table above says which features are settled. This says which releases are, which is a different question and is answered entirely by the version number.
+
+A version with nothing after the patch number is stable: 3.398.0 is the current one. A version carrying a suffix is not, and the suffix says which kind:
+
+3.398.0-rc.1 is a release candidate: feature complete, published so it can be tried before the real thing.
+
+3.398.0-beta.1 is a beta: the shape is settled, the details are not.
+
+3.398.0-alpha.1 is an alpha: published to get feedback, and expected to change.
+
+The suffix is not only a naming convention. The release workflow marks any tag containing -rc, -beta or -alpha as a GitHub prerelease, and grit update asks GitHub for the latest release, which by definition excludes prereleases. So a prerelease is something you install deliberately, and never something an update moves you onto.
+
+Everywhere this site shows a version, a prerelease is labelled next to it. No label means stable, which is why there is no badge saying so on every page.
+
+To install one on purpose, name it: go install github.com/MUKE-coder/grit/v3/cmd/grit@v3.398.0-rc.1, or take the binary from that release on GitHub. To go back, grit update returns you to the newest stable.
+
+Every release is cut when something ships rather than on a schedule, so the version number tells you what kind of release it is and nothing about how much changed. The changelog is where that lives.
+
+How Grit is tested
+
+Nearly every serious bug in Grit's history was found the same way: by building a real application on it and using it until something was wrong. That method works, and it only protects the next release if what it found is kept as a test. So it is.
+
+492 test functions in the CLI
+
+across 99 files, over the generator, the scaffolder and every command. They run with -race on every push.
+
+256 tests ship into your project
+
+across 46 files: authz, concurrency, crypto, money, files, media, outbox, stock, paginate, realtime, webhooks, appendonly and the services. They are yours to run and to extend.
+
+57 live checks on Postgres 15, 16 and 17
+
+CI scaffolds a project, generates the resource shapes past bugs lived in, migrates, starts the server and drives it over HTTP, reading Postgres directly where the database is the only witness.
+
+The live suite on five databases
+
+the same 68 checks run on Postgres 15, 16 and 17, on MySQL 8, and on SQLite, with a smaller set on an in-memory database. Until v3.234.0 they ran on Postgres alone, so MySQL support rested on the driver compiling: the first project built on it hit a table AutoMigrate refused.
+
+A tenancy fixture, run on every push
+
+CI scaffolds a project with the multitenant and impersonate plugins, a tenant-owned resource and one that is tenant-owned and owned by a user, then drives 26 checks across the seams: cross-tenant reads, an admin with no organization, a role held through a membership, and an impersonated session inside a tenant.
+
+106 error codes, one status each, checked
+
+every code a handler returns is resolved against the catalogue, and a code returned with a status other than its own fails the build. That test is why the statuses are consistent: VALIDATION_ERROR was 422 in thirty-eight handlers and 400 in twenty-five.
+
+Every documented command, checked against the CLI
+
+all 586 of them are resolved against the real command tree, and every --fields spec is run through the generator’s own parser. A renamed command or a field type that does not exist fails the build. Blocks marked verify= go further: CI runs them against a scaffolded project on a real Postgres.
+
+Every architecture generated, run and looked at
+
+the eight shapes the stack selector offers, each scaffolded fresh, built, type-checked, migrated, started and driven through a browser as a contact app. It found thirty faults in one pass, every one of them now a test: a Content-Security-Policy that authorised a different host from the one the client called, an owner picker whose answer the server discarded, a mobile app shipping the framework’s logo as its own, a desktop app that did not build, and a Next single-binary project whose admin panel could not reach its API in development. Five of the thirty were the same fault in five places, which is why there is now a test for that family across every shape.
+
+13 project checks in grit doctor
+
+the mistakes that fail silently, reported in your own project: an encrypted field with no key, a resource nothing scopes, a table shared across organizations, a database browser with no login.
+
+gosec, govulncheck, Trivy, CodeQL, Scorecard
+
+gosec gates the CLI and a generated app, govulncheck reports what is reachable, and Trivy reads the dependency graph. That last one found five HIGH CVEs in a freshly scaffolded project that reachability analysis does not see.
+
+A nightly dependency canary
+
+scaffolds with no lockfile and builds every frontend, because a generated project resolves its dependencies at your install time, not at our release time.
+
+The detail is in how Grit itself is tested, and the project-side audit is grit doctor.
+
+What is not covered yet
+
+Stated plainly, because a matrix that only lists strengths is marketing:
+
+No independent security audit. Every bug in auth, tenancy and encryption listed above was found by the person who wrote it. An adversarial review looks for what should not be possible, which is a different search.
+
+The framework's own handlers still query directly. Auth, two-factor, uploads, form shares and the dashboard read and write from their handlers. Generated resources do not, since v3.225.0.
+
+Multitenancy is not covered by the live suite, and not at all in combination with --tree or --public.
+
+No LTS channel. Releases land daily on one track. If you need a slower train, pin a version and read the changelog before moving.
+
+No signed desktop release has been verified end to end. The desktop app itself is built and run on every sweep; what is unverified is the Authenticode and Apple Developer signing, which needs certificates this project does not own.
+
+The architecture sweep is a person, not a job. CI builds a generated app and type-checks it, and the live suite drives the API over HTTP, but nothing in CI opens a browser and looks at eight shapes. The thirty faults that found were all invisible to a green build, and five of them were in work that had shipped hours earlier the same day.
+
+No production case studies yet. Benchmarks and tests are not the same evidence as somebody else's traffic.
+
+Project audit (grit doctor)Performance & Pentest Testing

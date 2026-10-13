@@ -1,0 +1,407 @@
+Backend (Go API)
+Handlers
+
+Handlers are the HTTP layer of your Grit API. A generated handler reads the request, calls its service, and writes the answer. It runs no query of its own: every read and write belongs to the service, so the same logic is there for a background job, a command or a test that has no request at all.
+
+Every request walks the same path down through the Go layers and returns back up as a JSON response:
+
+HTTPGo layersData
+The handler talks HTTP; the service talks to the database
+Handler Pattern
+
+A generated handler is a struct with the handler's dependencies and three small helpers. Its other methods are the endpoints.
+
+apps/api/internal/handlers/post.go
+Copy to clipboard
+
+// PostHandler serves the post endpoints. It reads the request, asks
+
+// services.PostService, and writes the answer; it runs no query of its
+
+// own, so everything a route does is also available to a job or a test.
+
+type PostHandler struct {
+
+DB *gorm.DB
+
+}
+
+// service is the post service over this handler's database.
+
+func (h *PostHandler) service() *services.PostService {
+
+return &services.PostService{DB: h.DB}
+
+}
+
+// ctx is the request's context with the caller on it, which the service
+
+// scopes owned rows by. The organization the multitenant plugin resolved and
+
+// the cancellation when the client goes away travel with it.
+
+func (h *PostHandler) ctx(c *gin.Context) context.Context {
+
+return authz.WithActor(c.Request.Context(), authz.ActorOf(c))
+
+}
+
+// fail answers an error from the service: a version conflict with the version
+
+// the record is at, a missing row with 404, a broken rule with 422 and its
+
+// message, and anything else as an opaque 500 that is logged.
+
+func (h *PostHandler) fail(c *gin.Context, err error, fallback string) {
+
+var conflict *concurrency.ErrConflict
+
+switch {
+
+case errors.As(err, &conflict):
+
+concurrency.WriteConflict(c, conflict.Current)
+
+case errors.Is(err, gorm.ErrRecordNotFound):
+
+c.JSON(http.StatusNotFound, gin.H{
+
+"error": gin.H{"code": "NOT_FOUND", "message": "Post not found"},
+
+})
+
+default:
+
+respond.WriteError(c, err, fallback)
+
+}
+
+}
+
+The handler keeps its DB field and builds the service from it on each call, so the routes file constructs it exactly as it always has. The generated routes (excerpt):
+
+apps/api/internal/routes/post_routes.go
+Copy to clipboard
+
+m.Staff.GET("/posts", middleware.RequireRole("ADMIN", "perm:posts.view"), h.List)
+
+m.Staff.GET("/posts/export", middleware.RequireRole("ADMIN", "perm:posts.view"), h.Export)
+
+m.Staff.GET("/posts/:id", middleware.RequireRole("ADMIN", "perm:posts.view"), h.GetByID)
+
+m.Staff.POST("/posts", middleware.RequireRole("ADMIN", "perm:posts.create"), h.Create)
+
+m.Staff.PUT("/posts/:id", middleware.RequireRole("ADMIN", "perm:posts.edit"), h.Update)
+
+m.Staff.PATCH("/posts/:id", middleware.RequireRole("ADMIN", "perm:posts.edit"), h.Patch)
+
+m.Staff.DELETE("/posts/:id", middleware.RequireRole("ADMIN", "perm:posts.delete"), h.Delete)
+
+m.Staff.POST("/posts/bulk", middleware.RequireRole("ADMIN", "perm:posts.delete"), h.Bulk)
+
+Every verb asks for its permission, because signing in is not one: on an app with open registration it is anybody. An ADMIN holds them all, and a role grants them in the roles screen. A resource generated with --owned-by or --tenant-owned is different: its queries are already narrowed to the caller's own rows or organization, so those routes are on m.Protected. A project whose routes predate the staff group puts shared routes on m.Admin instead.
+
+What Stays in the Handler
+
+Everything that is about HTTP, and nothing that is about the data:
+
+HandlerService
+
+Binding and validating the bodyEvery query, and every transaction
+
+Turning the request into a row or an update mapWhat may be searched, sorted, filtered and patched
+
+Reading If-Match, writing ETagRefusing a write against a stale version
+
+Putting the caller on the contextScoping owned rows to that caller
+
+Mapping an error to a status codeReturning the error: not found, a conflict, a broken rule
+
+Rendering: JSON, CSV, XLSX, PDF; emitting the activity eventHanding over rows, a batch at a time for an export
+
+Request Binding with Gin
+
+Gin's ShouldBindJSON parses the body into a struct and validates it with its binding tags. The generated Create binds, builds the row, and hands it to the service:
+
+handlers/post.go (Create)
+Copy to clipboard
+
+// CreatePostRequest is the JSON body accepted by POST /posts.
+
+type CreatePostRequest struct {
+
+Title     string `json:"title" binding:"required"`
+
+Body      string `json:"body"`
+
+Published bool   `json:"published"`
+
+}
+
+func (h *PostHandler) Create(c *gin.Context) {
+
+var req CreatePostRequest
+
+if err := c.ShouldBindJSON(&req); err != nil {
+
+c.JSON(http.StatusUnprocessableEntity, gin.H{
+
+"error": gin.H{"code": "VALIDATION_ERROR", "message": err.Error()},
+
+})
+
+return
+
+}
+
+item := models.Post{
+
+Title:     req.Title,
+
+Body:      req.Body,
+
+Published: req.Published,
+
+}
+
+if err := h.service().Create(h.ctx(c), &item); err != nil {
+
+h.fail(c, err, "Failed to create post")
+
+return
+
+}
+
+events.Emitted(c, "posts", "Post", "created", item.ID, item.Title, "", nil, item)
+
+c.JSON(http.StatusCreated, gin.H{
+
+"data":    item,
+
+"message": "Post created successfully",
+
+})
+
+}
+
+Request structs are named types, not anonymous ones, so the API reference can reflect over them and document the body.
+
+Validation with Binding Tags
+
+Gin uses the go-playground/validator library under the hood. Here are the most commonly used binding tags:
+
+TagDescriptionExample
+
+requiredField must be present and non-zerobinding:"required"
+
+emailMust be a valid email addressbinding:"required,email"
+
+min=NMinimum length (string) or value (number)binding:"min=3"
+
+max=NMaximum length (string) or value (number)binding:"max=255"
+
+gt=NGreater than (for numbers)binding:"gt=0"
+
+oneof=a b cMust be one of the listed valuesbinding:"oneof=admin editor user"
+
+urlMust be a valid URLbinding:"url"
+
+Pagination, Search, Sort and Filter
+
+The handler reads the query string with paginate.Bind and passes it on. Which columns a client may search, sort and filter by is the service's decision, whitelisted in its list config, because each name ends up in SQL.
+
+handlers/post.go (List)
+Copy to clipboard
+
+func (h *PostHandler) List(c *gin.Context) {
+
+res, err := h.service().List(h.ctx(c), paginate.Bind(c), c.Query("archived"))
+
+if err != nil {
+
+h.fail(c, err, "Failed to fetch posts")
+
+return
+
+}
+
+c.JSON(http.StatusOK, res) // { data, meta }
+
+}
+
+Query ParamDescription
+
+page, page_sizePage number (1-based) and rows per page, clamped
+
+searchMatched against the service's Searchable columns
+
+sort_by, sort_orderA column in Sortable, and asc or desc
+
+any column, e.g. status=paidAn equality filter, if the column is in Filterable
+
+created_from, created_toA date window, both ends inclusive
+
+archivedtrue for archived rows only, all for both
+
+Reads and Writes
+
+GetByID
+
+handlers/post.go (GetByID)
+Copy to clipboard
+
+func (h *PostHandler) GetByID(c *gin.Context) {
+
+item, err := h.service().GetByID(h.ctx(c), c.Param("id"))
+
+if err != nil {
+
+h.fail(c, err, "Failed to load post")
+
+return
+
+}
+
+// The version to send back as If-Match when saving.
+
+c.Header("ETag", concurrency.Tag(item.Version))
+
+c.JSON(http.StatusOK, gin.H{"data": item})
+
+}
+
+Update
+
+The handler turns the typed request into the columns to write, and passes on the version the client read. The service writes only if the row is still at that version.
+
+handlers/post.go (Update)
+Copy to clipboard
+
+// UpdatePostRequest is the JSON body accepted by PUT /posts/:id.
+
+// Every field is optional: only what the client sends is applied.
+
+type UpdatePostRequest struct {
+
+Title     string `json:"title"`
+
+Body      string `json:"body"`
+
+Published *bool  `json:"published"`
+
+}
+
+func (h *PostHandler) Update(c *gin.Context) {
+
+var req UpdatePostRequest
+
+if err := c.ShouldBindJSON(&req); err != nil {
+
+c.JSON(http.StatusUnprocessableEntity, gin.H{
+
+"error": gin.H{"code": "VALIDATION_ERROR", "message": err.Error()},
+
+})
+
+return
+
+}
+
+updates := map[string]interface{}{}
+
+if req.Title != "" {
+
+updates["title"] = req.Title
+
+}
+
+if req.Body != "" {
+
+updates["body"] = req.Body
+
+}
+
+if req.Published != nil {
+
+updates["published"] = *req.Published
+
+}
+
+item, err := h.service().Update(h.ctx(c), c.Param("id"), updates, concurrency.FromRequest(c))
+
+if err != nil {
+
+h.fail(c, err, "Failed to update post") // 409 on a stale If-Match
+
+return
+
+}
+
+c.Header("ETag", concurrency.Tag(item.Version))
+
+c.JSON(http.StatusOK, gin.H{
+
+"data":    item,
+
+"message": "Post updated successfully",
+
+})
+
+}
+
+Notice the pointer for the boolean (*bool). It tells "not sent" (nil) from "sent as false"; without it, Go's zero value would overwrite the field on every save.
+
+Delete
+
+handlers/post.go (Delete)
+Copy to clipboard
+
+func (h *PostHandler) Delete(c *gin.Context) {
+
+item, err := h.service().Delete(h.ctx(c), c.Param("id"))
+
+if err != nil {
+
+h.fail(c, err, "Failed to delete post")
+
+return
+
+}
+
+events.Emitted(c, "posts", "Post", "deleted", item.ID, item.Title, "", item, nil)
+
+c.JSON(http.StatusOK, gin.H{"message": "Post deleted successfully"})
+
+}
+
+Models carry gorm.DeletedAt, so this is a soft delete: the row stays with a deleted_at timestamp and drops out of every query.
+
+Errors
+
+The service returns Go errors and never an HTTP status. fail decides the status:
+
+The service returnsThe client gets
+
+*concurrency.ErrConflict409 VERSION_CONFLICT, with the version the row is at
+
+gorm.ErrRecordNotFound404, also for somebody else's row on an owned resource
+
+respond.Rule("...")422 with that message
+
+anything else500 with the fallback message; the error is logged, not sent
+
+Resources Generated Before v3.224.0
+
+Until v3.224.0 the generated handler ran its own queries, and the service beside it was never called. grit upgrade does not rewrite your API code, so a resource generated before then keeps that handler until you regenerate it. Since v3.225.0 the CSV import, the public read endpoints and the tree endpoints work the same way. One exception: a public handler you already have is kept on purpose, because its allowlist is yours, so it goes on querying for itself until you delete it and regenerate. The framework's own handlers (auth, two-factor, uploads and the rest) still query directly.
+
+Best Practices
+
+No query in a handler. If a handler needs data, it asks a service method for it. A rule written in a handler is a rule a job can skip.
+
+Pass h.ctx(c), not context.Background(). The caller, the organization and the cancellation are on the request's context, and a service given anything else cannot see them.
+
+Use pointers for optional fields in update requests, so "not provided" is not "set to zero".
+
+Send errors through fail. It keeps the standard error envelope, and it keeps database errors out of responses.
+
+Models & DatabaseServices

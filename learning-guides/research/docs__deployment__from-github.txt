@@ -1,0 +1,205 @@
+Deployment
+Deploy from GitHub
+
+Every platform in these guides deploys the same way: it clones your repository, reads your compose file, builds the images and runs them. This page covers the two things all of them assume you have already done, and explains the compose file line by line so the provider pages can get on with the provider-specific part.
+
+The production compose file, line by line
+
+Every Grit project ships two compose files. docker-compose.yml is for your laptop: it bind-mounts source so hot reload works and publishes Postgres on a host port so you can attach a GUI. docker-compose.prod.yml is the one you deploy, and the differences are the whole point.
+
+docker-compose.prod.yml
+Copy to clipboard
+
+services:
+
+api:
+
+build:
+
+context: ./apps/api
+
+dockerfile: Dockerfile
+
+restart: unless-stopped
+
+expose:
+
+- "8080"
+
+environment:
+
+DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+
+REDIS_URL: redis://redis:6379
+
+JWT_SECRET: ${JWT_SECRET}
+
+depends_on:
+
+postgres:
+
+condition: service_healthy
+
+redis:
+
+condition: service_started
+
+networks: [internal]
+
+web:
+
+build:
+
+context: ./apps/web
+
+dockerfile: Dockerfile
+
+restart: unless-stopped
+
+expose:
+
+- "3000"
+
+environment:
+
+NEXT_PUBLIC_API_URL: ${API_URL}
+
+depends_on: [api]
+
+networks: [internal]
+
+postgres:
+
+image: postgres:16-alpine
+
+restart: unless-stopped
+
+environment:
+
+POSTGRES_USER: ${POSTGRES_USER}
+
+POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+POSTGRES_DB: ${POSTGRES_DB}
+
+volumes:
+
+- postgres-data:/var/lib/postgresql/data
+
+healthcheck:
+
+test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+
+interval: 5s
+
+timeout: 5s
+
+retries: 10
+
+networks: [internal]
+
+redis:
+
+image: redis:7-alpine
+
+restart: unless-stopped
+
+volumes:
+
+- redis-data:/data
+
+networks: [internal]
+
+volumes:
+
+postgres-data:
+
+redis-data:
+
+networks:
+
+internal:
+
+driver: bridge
+
+expose, never ports
+
+expose opens a port to the other containers on the network. ports publishes it on the host. Every platform here puts a reverse proxy in front and terminates TLS there, so publishing a host port bypasses both. On a plain VPS with no firewall it puts your database on the public internet. The development compose file publishes Postgres deliberately, which is exactly why you do not deploy that one.
+
+Service names are hostnames
+
+postgres:5432 works because Docker gives every service a DNS entry on the shared network. This is why the connection string says @postgres and not @localhost: inside a container, localhost is that container. Getting this wrong is the single most common self-hosted deployment question.
+
+The healthcheck is what makes depends_on mean anything
+
+depends_on on its own waits for the container to start, not for Postgres to accept connections, and those are several seconds apart. condition: service_healthy plus the pg_isready healthcheck is what actually holds the API back until the database answers. Platforms that run real Compose honour this. Platforms that translate your file into their own model do not, which is covered per provider below.
+
+Named volumes are your database
+
+postgres-data survives docker compose down and a server reboot. It does not survive docker compose down -v. That one flag is the difference between a restart and losing everything, and it is worth knowing before you type it at 2am.
+
+${VAR} substitution, not hardcoded secrets
+
+Compose substitutes ${POSTGRES_PASSWORD} from a .env sitting beside the compose file. Every platform below fills that file from its own dashboard, which is how your secrets reach the containers without ever being committed. Keep the ${VAR} syntax: it is the mechanism, not a formality.
+
+Getting the code on GitHub
+
+Every platform on this page except a plain VPS deploys by cloning a repository. It needs to exist before you start clicking around in a dashboard.
+
+# from your project root
+
+git init
+
+git add .
+
+git commit -m "Initial commit"
+
+# create the repo and push, using the GitHub CLI
+
+gh repo create my-app --private --source=. --push
+
+# or, if you made the repo in the browser first
+
+git remote add origin git@github.com:you/my-app.git
+
+git branch -M main
+
+git push -u origin main
+
+Copy to clipboard
+
+Check what you just committed
+
+Grit's .gitignore excludes .env, but only if you have not renamed it. Run git ls-files | grep -i env before pushing. A committed .env means rotating every secret in it, and a private repository does not save you: it is in the history the moment a collaborator clones it.
+
+What every platform needs from the repository is the same three things: a docker-compose.prod.yml at a path you can name, a Dockerfile per service that builds, and no secrets in the tree. Grit scaffolds the first two.
+
+Then pick a platform
+
+They divide into two groups, and the division matters more than the branding. Some run the real Docker Compose engine, so your file behaves exactly as it does on your laptop. Others read your file and translate it into their own model, which changes hostnames and drops depends_on ordering. Neither is wrong; knowing which you picked saves an afternoon.
+
+Fly.io
+
+Runs the Docker image close to your users, with a real disk if you need one.
+
+Railway
+
+Push to Git, get a URL. The least ceremony of anything here.
+
+Render
+
+Managed Postgres with real backups, and a free tier you can demo on.
+
+Orbita
+
+A self-hosted PaaS that already knows what a Grit app is. It reads grit.json and derives the rest.
+
+Dokploy
+
+A Heroku-like panel on your own server. Grit’s own sites run on it.
+
+Coolify
+
+Open-source self-hosted PaaS. Similar shape to Dokploy, larger ecosystem.
+
+All platformsPre-launch checklist

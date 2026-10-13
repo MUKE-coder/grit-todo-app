@@ -1,0 +1,474 @@
+Desktop (Wails)
+Your First Desktop App
+
+Build a Task Manager desktop application from scratch. This step-by-step tutorial covers scaffolding, development, resource generation, GORM Studio, and building for distribution.
+
+Prefer a narrative walkthrough? This build has a story-form companion on the blog — an offline-first POS: Build a desktop app with Grit →
+
+What you'll build
+
+A native desktop Task Manager with:
+
+• Full CRUD for tasks (title, description, priority, completion status, due date)
+
+• A categories resource to organize tasks
+
+• Search, pagination, PDF and Excel export
+
+• Authentication with login and default admin user
+
+• Visual database browsing with GORM Studio
+
+• A single native executable for distribution
+
+Prerequisites
+
+Make sure the following tools are installed on your system before starting:
+
+Go1.21+
+go version
+
+Node.js18+
+node --version
+
+Wails CLIv2
+wails version
+
+Grit CLILatest
+grit --help
+
+Install the Wails CLI:
+
+Terminal
+Copy to clipboard
+
+$go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+Install the Grit CLI:
+
+Terminal
+Copy to clipboard
+
+# macOS / Linux
+
+$curl -fsSL https://gritframework.dev/install.sh | sh
+
+# Windows (PowerShell)
+
+$iwr -useb https://gritframework.dev/install.ps1 | iex
+
+Run wails doctor to verify your environment. It checks for Go, Node.js, npm/pnpm, and platform-specific build tools (GCC on Linux, Xcode on macOS, or WebView2 on Windows).
+
+Terminal
+Copy to clipboard
+
+$wails doctor
+
+Scaffold the Project
+
+Create a new desktop project called taskmanager with the Grit CLI. This generates a complete Wails application with everything included.
+
+Terminal
+Copy to clipboard
+
+$grit new-desktop taskmanager
+
+Here is the project structure that gets created:
+
+taskmanager/
+
+main.goWails entry point
+
+app.goApp struct with bound methods
+
+wails.jsonWails project configuration
+
+go.mod
+
+go.sum
+
+📂internal
+
+📂config
+
+config.goApp configuration
+
+📂db
+
+db.goGORM database setup (SQLite)
+
+📂models
+
+user.goUser model + AutoMigrate
+
+blog.goBlog post model
+
+contact.goContact model
+
+📂service
+
+auth.goAuthentication service
+
+blog.goBlog CRUD service
+
+contact.goContact CRUD service
+
+export.goPDF / Excel export service
+
+📁apiEmbedded Gin REST API (127.0.0.1:34999)
+
+📁storageUpload storage in the OS app-data dir
+
+📁filesFileRef — stored upload JSON shape
+
+📂types
+
+types.goShared request/response types
+
+📂frontend
+
+📂src
+
+main.tsxReact entry point (TanStack Router)
+
+📂routesFile-based routes (TanStack Router)
+
+__root.tsxRoot route
+
+_layout.tsxAuth guard + sidebar layout
+
+📁_layoutProtected page routes
+
+📁componentsReusable UI components
+
+📁hooksTanStack Query hooks
+
+📁libUtilities
+
+index.html
+
+package.json
+
+vite.config.ts
+
+tailwind.config.ts
+
+📂cmd
+
+📂studio
+
+main.goGORM Studio standalone server
+
+What gets created out of the box:
+
+Go backend with Wails bindingsGo services are bound to the Wails runtime so React can call them directly for CRUD, while an embedded Gin REST API on 127.0.0.1:34999 handles native uploads, health, and external clients.
+
+React frontend with ViteA full React app with Tailwind CSS, TanStack Router, TanStack Query, and pre-built pages.
+
+SQLite databaseZero-config local database. GORM AutoMigrate runs on startup.
+
+AuthenticationLogin and register pages with JWT-based auth. A default admin user is seeded automatically.
+
+Blog + Contact CRUDTwo fully working resources with list pages, forms, search, pagination, and PDF/Excel export.
+
+GORM StudioA standalone visual database browser you can launch alongside the app.
+
+Start Development
+
+Navigate into the project and start Wails in development mode:
+
+Terminal
+Copy to clipboard
+
+$cd taskmanager
+
+$wails dev
+
+When you run wails dev, the following happens:
+
+1.A native desktop window opens with your app
+
+2.The Go backend compiles and starts with Wails bindings
+
+3.The Vite dev server starts for the React frontend
+
+4.Hot-reload is active for both Go and React changes
+
+The frontend dev server also runs at http://localhost:34115, which you can open in a browser for debugging with browser DevTools.
+On first run, wails dev installs frontend npm dependencies automatically. This takes a minute or two. Subsequent starts are much faster.
+
+Explore the Default App
+
+Once the desktop window opens, log in with the default admin credentials:
+
+Email: admin@example.com
+
+Password: password
+
+After logging in, explore what the scaffold gives you out of the box:
+
+Dashboard
+A landing page with stats cards showing total blogs, contacts, and users.
+
+Blog
+Full CRUD with list table, create/edit forms, search, pagination, and PDF/Excel export.
+
+Contacts
+Another complete CRUD resource following the same pattern as Blog.
+
+These built-in resources demonstrate every feature that your generated resources will also have: search, sorting, pagination, inline editing, bulk operations, and export.
+
+Generate the Task Resource
+
+Now for the main event. Open a new terminal in the taskmanager directory and run:
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Task --fields "title:string,description:text,priority:string,completed:bool,due_date:date"
+
+This single command creates 5 new files:
+
+internal/models/task.go
+GORM model struct with all fields, timestamps, and soft delete
+
+internal/service/task.go
+Service with List, ListAll, GetByID, Create, Update, Delete methods
+
+frontend/src/routes/_layout/tasks.index.tsx
+List route with search, pagination, edit/delete, PDF and Excel export
+
+frontend/src/routes/_layout/tasks.new.tsx
+Create form route with inputs mapped to each field type
+
+frontend/src/routes/_layout/tasks.$id.edit.tsx
+Edit form route with pre-filled field values
+
+It also injects code into 10 locations in existing files using grit: markers:
+
+FileMarkerWhat
+
+db.go// grit:modelsTask model in AutoMigrate
+
+main.go// grit:service-initTaskService initialization
+
+main.go/* grit:app-args */Service passed to NewApp
+
+app.go// grit:fieldsTaskService field on App struct
+
+app.go/* grit:constructor-params */Constructor parameter
+
+app.go/* grit:constructor-assign */Field assignment
+
+app.go// grit:methods7 bound methods (CRUD + export)
+
+types.go// grit:input-typesTaskInput struct
+
+cmd/studio/main.go// grit:studio-modelsTask model in Studio
+
+sidebar.tsx// grit:nav-icons + navNav icon + sidebar item
+
+Here is the generated Go model:
+
+internal/models/task.go
+Copy to clipboard
+
+type Task struct {
+
+ID          uint           `gorm:"primaryKey" json:"id"`
+
+Title       string         `json:"title"`
+
+Description string         `json:"description"`
+
+Priority    string         `json:"priority"`
+
+Completed   bool           `json:"completed"`
+
+DueDate     time.Time      `json:"due_date"`
+
+CreatedAt   time.Time      `json:"created_at"`
+
+UpdatedAt   time.Time      `json:"updated_at"`
+
+DeletedAt   gorm.DeletedAt `gorm:"index" json:"deleted_at"`
+
+}
+
+Understanding the Generated Route Files
+
+The three frontend files are TanStack Router route files. Each file exports a Route constant created with createFileRoute(). The TanStack Router Vite plugin auto-discovers these files — no import or route registry update is needed.
+
+frontend/src/routes/_layout/tasks.index.tsx
+Copy to clipboard
+
+import { createFileRoute } from "@tanstack/react-router";
+
+// This line registers the route at /_layout/tasks/
+
+export const Route = createFileRoute("/_layout/tasks/")({
+
+component: TasksPage,
+
+});
+
+function TasksPage() {
+
+// DataTable with search, pagination, PDF/Excel export
+
+// Calls ListTasks() via Wails bindings
+
+}
+
+The edit route uses Route.useParams() for type-safe parameter access. The $id in the filename becomes a typed parameter:
+
+frontend/src/routes/_layout/tasks.$id.edit.tsx
+Copy to clipboard
+
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+
+export const Route = createFileRoute("/_layout/tasks/$id/edit")({
+
+component: EditTaskPage,
+
+});
+
+function EditTaskPage() {
+
+const { id } = Route.useParams(); // typed string
+
+const navigate = useNavigate();
+
+// Fetch task by ID, populate form
+
+// On save: navigate({ to: "/tasks" })
+
+}
+
+Navigation uses TanStack Router's object syntax: navigate({ to: "/tasks" }) instead of navigate("/tasks"). All routes, params, and navigation calls are validated by TypeScript at compile time.
+
+Test the Task Manager
+
+Restart the development server to pick up the new Go code. If wails dev is still running, it automatically detects Go file changes and rebuilds. Otherwise, restart it:
+
+Terminal
+Copy to clipboard
+
+$wails dev
+
+Once the app reloads, you will see a new Tasks item in the sidebar. Click it to open the task list page. Try the following:
+
+Create a taskClick the "New Task" button. Fill in the title, description, priority, due date, and toggle the completed switch. Hit save.
+
+Search tasksType in the search box at the top of the list. It filters across all text fields in real time.
+
+PaginateCreate a few more tasks. The table paginates automatically with page size controls.
+
+Edit a taskClick the edit icon on any row. The form pre-fills with the existing values.
+
+Delete a taskClick the delete icon. A confirmation dialog appears before the soft delete.
+
+Export to PDFClick the "PDF" export button to download a formatted PDF of all tasks.
+
+Export to ExcelClick the "Excel" export button to download an .xlsx spreadsheet.
+
+All of this was generated from a single CLI command. The list page, form, service methods, Wails bindings, routes, and sidebar navigation are all wired up automatically.
+
+Generate Another Resource — Categories
+
+To demonstrate how easy it is to add more resources, generate a Category resource for organizing tasks:
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Category --fields "name:string,color:string"
+
+This creates 5 more files and injects into the same 10 locations. Your app now has:
+
+ResourceSourceFields
+
+BlogBuilt-in (scaffold)title, slug, content, image, published
+
+ContactBuilt-in (scaffold)name, email, phone, message
+
+TaskGenerated (Step 5)title, description, priority, completed, due_date
+
+CategoryGenerated (Step 7)name, color
+
+Each resource gets its own sidebar entry, list page, form page, Go model, and service. You can keep generating as many resources as your app needs.
+
+Open GORM Studio
+
+GORM Studio is a visual database browser bundled with every Grit desktop project. Open a separate terminal in the taskmanager directory and run:
+
+Terminal
+Copy to clipboard
+
+$grit studio
+
+Your browser opens automatically at http://localhost:8080/studio. You can:
+
+1.Browse all tables: users, blogs, contacts, tasks, categories
+
+2.View and edit records directly in the browser
+
+3.Run raw SQL queries against the SQLite database
+
+4.Inspect table schemas, column types, and indexes
+
+5.Export query results for debugging
+
+Studio runs as a standalone Go process that connects to the same SQLite file your desktop app uses. This is useful for verifying data, debugging issues, and understanding the database schema during development.
+
+Build for Distribution
+
+When you are ready to ship, compile the app into a native executable:
+
+Terminal
+Copy to clipboard
+
+$grit compile
+
+This runs wails build under the hood. The output binary is placed in build/bin/:
+
+PlatformOutput
+
+Windowsbuild/bin/taskmanager.exe
+
+macOSbuild/bin/taskmanager.app
+
+Linuxbuild/bin/taskmanager
+
+The resulting binary is a single executable with everything embedded:
+
+Embedded frontendThe entire React app is compiled and embedded into the Go binary via go:embed. No separate files to distribute.
+
+SQLite databaseThe database file (app.db) is created at runtime in the working directory. Ship the binary alone.
+
+No runtime dependenciesUsers do not need Go, Node.js, or any other tooling. Just double-click the executable.
+
+For a distributable Windows installer, run grit package — it builds an NSIS installer (.exe) and auto-detects makensis on your PATH. See the Building & Distribution guide for cross-platform builds and distribution details.
+
+What's Next
+
+You have built a fully functional Task Manager desktop application with two custom resources, authentication, and database browsing — all from a few CLI commands. Here is where to go from here:
+
+Resource Generation
+
+Deep dive into field types, slug generation, belongs_to relationships, and the remove command.
+
+Building & Distribution
+
+Cross-platform builds, NSIS installers, app icons, environment config, and production tips.
+
+Build a POS App
+
+Follow the next tutorial to build a Point of Sale desktop application with products, orders, and receipts.
+
+Desktop LLM Reference
+
+The complete Grit desktop reference for AI assistants — every convention, pattern, and code marker.
+
+Download Desktop Handbook (PDF)Complete offline reference for Grit Desktop development
+
+Getting StartedBuild a POS App

@@ -1,0 +1,525 @@
+Core Concepts
+CLI Commands
+
+The Grit CLI is a single binary that scaffolds projects, generates full-stack resources, and syncs types between Go and TypeScript. Running grit new is interactive by default -- it walks you through architecture mode and frontend selection. Install it once and use it across all your Grit projects.
+
+The CLI across a project's life
+
+Four commands carry a Grit project from empty folder to production. Everything else — migrate, seed, sync, studio — slots in between these stages.
+
+ScaffoldGenerateRunShip
+migrate · seed · sync · studio slot in between these four stages
+
+Installing the CLI
+
+Install the Grit CLI globally using Go:
+
+$ grit generate resource Invoice -i
+
+Defining fields for Invoice
+
+Enter fields as name:type (e.g., title:string)
+
+Valid types: string, text, int, uint, float, bool, datetime, date, slug, belongs_to, many_to_many
+
+Press Enter with no input when done.
+
+> number:string
+
+✓ Added number (string)
+
+> amount:float
+
+✓ Added amount (float)
+
+> status:string
+
+✓ Added status (string)
+
+> due_date:date
+
+✓ Added due_date (date)
+
+> paid:bool
+
+✓ Added paid (bool)
+
+>
+
+Copy to clipboard
+
+More Examples
+
+terminal
+
+# Blog post with title, content, and published flag
+$ grit g resource Post --fields "title:string,content:text,published:bool"
+
+# Product with name, price, and stock
+$ grit g resource Product --fields "name:string,description:text,price:float,stock:uint"
+
+# Event with title, date, and description
+$ grit g resource Event --fields "title:string,description:text,start_date:datetime,end_date:datetime"
+
+# Category with just a name
+$ grit g resource Category --fields "name:string,description:text"
+
+# Article with an auto-generated slug
+$ grit g resource Article --fields "title:string,slug:slug,body:text,published:bool"
+
+# Invoice with inline line-items — an editable child table inside the form, saved atomically
+$ grit g resource Invoice --fields "number:string,status:string" --items "InvoiceItem:description:string,qty:int,unit_rate:float"
+
+grit plugin
+
+Install and remove plugins. A plugin generates code into your project — models, routes, pages — which you then own and can edit. Everything an install does is recorded in .grit/plugins.lock.json, and removal replays that record backwards, so uninstalling is exact rather than best-effort. Commit the lockfile.
+
+# See what's available and what you have
+$ grit plugin list
+
+$ grit plugin info multitenant
+
+# Install / uninstall
+$ grit plugin add multitenant
+
+$ grit plugin remove multitenant
+
+See Plugins for writing your own, and Multi-tenancy for the first-party one.
+
+grit remove resource
+
+Remove a previously generated resource. This deletes the Go model, service, handler, Zod schemas, TypeScript types, React hooks, resource definition, and admin page. It also cleans up all injection markers that were added when the resource was generated.
+
+terminal
+
+$ grit remove resource Post
+
+Syntax
+
+usage
+Copy to clipboard
+
+grit remove resource <Name>
+
+# Shorthand alias
+
+grit rm resource <Name>
+
+The resource name should be the singular PascalCase name (e.g., Post, Product, BlogCategory) — the same name you used with grit generate resource.
+
+grit add role
+
+Add a new role to your project. This command updates all relevant files across the stack in one step — Go model constants, TypeScript types, Zod schemas, shared constants, and admin panel resource definitions (badge, filter, and form options).
+
+terminal
+
+$ grit add role MODERATOR
+
+This single command updates 7 locations across your project:
+
+Go model constants (RoleModerator = "MODERATOR")
+
+Zod schema enum validation
+
+TypeScript union type
+
+ROLES constants object
+
+Admin badge configuration
+
+Admin table filter options
+
+Admin form select options
+
+The role name is automatically uppercased. Multi-word roles use underscores:grit add role CONTENT_MANAGER
+
+grit start
+
+Start development servers for your Grit project. Use subcommands to launch the frontend client apps or the Go API server individually.
+
+grit start client
+
+Runs pnpm dev from the project root, which starts all frontend apps (web, admin, expo, docs) via Turborepo.
+
+terminal
+
+$ grit start client
+
+grit start server
+
+Runs go run cmd/server/main.go from the apps/api directory to start the Go API server.
+
+terminal
+
+$ grit start server
+
+Both commands auto-detect the project root by looking for docker-compose.yml or turbo.json, so you can run them from any subdirectory within your project.
+
+grit test
+
+Runs every test suite in the project — Go, the frontend suites, and with --e2e the Playwright tests — then prints one report. Which suites exist depends on the architecture you scaffolded, and this command works that out for you.
+
+terminal
+
+$ grit test
+
+ 
+
+  RUNNER           STATUS  TIME
+
+  ──────────  ──────  ────────
+
+  Go           PASS    14.6s
+
+  web          PASS     8.1s
+
+  End-to-end  SKIP    not requested — pass --e2e
+
+Flags
+
+--goRun only the Go tests
+
+--nodeRun only the frontend tests
+
+--e2eInclude the Playwright suite (needs the app running)
+
+--raceEnable the Go race detector
+
+--coverReport Go coverage
+
+A suite that cannot run is reported as SKIP with the reason, never dropped from the report. A runner that silently runs nothing looks exactly like one that passed, and that is the most expensive kind of green.
+
+End-to-end tests are opt-in because they need the API and frontends already running — failing against a server that was never started tells you nothing about your code. The command exits non-zero if any suite fails, so it drops straight into CI.
+
+grit sync
+
+Parse all Go model files and regenerate the corresponding TypeScript types and Zod schemas in the shared package. Use this command whenever you manually modify a Go model and want the frontend types to stay in sync.
+
+terminal
+
+$ grit sync
+
+How It Works
+
+Finds the project root by walking up directories looking for docker-compose.yml or turbo.json
+
+Scans all .go files in apps/api/internal/models/
+
+Parses each file using Go's AST (Abstract Syntax Tree) parser to extract struct definitions
+
+For each struct, reads field names, Go types, JSON tags, and GORM tags
+
+Maps Go types to TypeScript types and Zod validators
+
+Writes TypeScript interface files to packages/shared/types/
+
+Writes Zod schema files to packages/shared/schemas/
+
+Skips the User model (which has custom hand-written schemas)
+
+When to Use It
+
+✓After manually adding or removing fields from a Go model
+
+✓After changing a field's type in a Go struct
+
+✓After modifying GORM tags (e.g., adding type:text)
+
+✓After adding a completely new model file manually (without using grit generate)
+
+Note: You do not need to run grit sync after using grit generate resource. The generator already creates the TypeScript types and Zod schemas for the new resource.
+
+grit upgrade
+
+Bring a project's framework files up to the CLI's version: admin components, the web app shell, Docker and root config, the migrate and seed tools. Your resource definitions, handlers, models and .env are not touched.
+
+Since v3.147.0 it also does not touch framework files you have edited. Grit records what it wrote and its hash in .grit/manifest.json, so an upgrade can tell a file nobody has opened from one you have customised. Untouched files are replaced. Edited ones are listed and left exactly as they are.
+
+grit upgrade
+
+✓ Upgrade complete. Updated 87 files.
+
+⚠ Left alone, because you have edited these files since Grit wrote them:
+
+apps/admin/components/data-table.tsx
+
+apps/admin/components/app-sidebar.tsx
+
+grit upgrade --diff     # see what the new version would change
+
+grit upgrade --force    # take the new version and lose your edits
+
+Copy to clipboard
+
+It also raises the libraries every API mounts, Sentinel, GORM Studio and Pulse, to at least the versions this CLI was tested with. One below its floor is raised with go get and named, with the reason; one above it is left alone. It never lowers a version.
+
+--diff prints a unified diff of your version against the new one, so you can port the parts you want by hand. --force overwrites everything, which is what upgrade did unconditionally before this release.
+
+A project created before v3.147.0 has no manifest, so nothing can be said about what has been edited in it, and the first upgrade behaves exactly as it always did. That upgrade writes the manifest, and every one after it is protected. Commit .grit/manifest.json so the protection applies to everyone on the team.
+
+grit update
+
+Update the Grit CLI itself to the latest version. It first checks GitHub for the newest release and exits immediately if you are already up to date. Otherwise it picks a strategy: if the Go toolchain is on your PATH it runs go install ...@<latest>; if Go is not installed it downloads the matching prebuilt binary from the GitHub release and atomically swaps it in. On Windows the running .exe is locked, so the old binary is renamed to .old before the new one is written (and restored if the update fails).
+
+terminal
+
+$ grit update
+
+Grit self-update — current: v3.55.0
+
+→ Checking GitHub for the latest release...
+
+→ New version available: v3.55.0 → v3.56.0
+
+→ Running: go install github.com/MUKE-coder/grit/v3/cmd/grit@v3.56.0
+
+✓ Updated to v3.56.0
+
+Aliased as grit self-update. Pass --from-release to skip the go install path and always pull the prebuilt binary from the GitHub release.
+
+Note: grit update updates the CLI tool itself. To update your project's scaffold files (admin panel, configs, web app), use grit upgrade instead.
+
+grit version
+
+Print the current version of the Grit CLI.
+
+terminal
+
+$ grit version
+
+grit version 3.55.0
+
+Operational Commands
+
+Grit ships a set of operational commands inspired by Laravel/Goravel for day-to-day workflows: route inspection, maintenance mode, and one-command deployment.
+
+grit routes
+
+List all registered API routes in a formatted table. Parses your routes.go file and shows the HTTP method, path, handler function, and middleware group.
+
+Terminal
+Copy to clipboard
+
+$ grit routes
+
+METHOD  PATH                              HANDLER                GROUP
+
+──────  ────                              ───────                ─────
+
+GET     /api/health                       func1                  public
+
+POST    /api/auth/register                authHandler.Register   public
+
+POST    /api/auth/login                   authHandler.Login      public
+
+POST    /api/auth/refresh                 authHandler.Refresh    public
+
+GET     /api/auth/me                      authHandler.Me         protected
+
+POST    /api/auth/logout                  authHandler.Logout     protected
+
+POST    /api/auth/totp/setup              totpHandler.Setup      protected
+
+GET     /api/auth/totp/status             totpHandler.Status     protected
+
+GET     /api/users/:id                    userHandler.GetByID    protected
+
+POST    /api/uploads                      uploadHandler.Create   protected
+
+POST    /api/ai/chat                      aiHandler.Chat         protected
+
+DELETE  /api/admin/users/:id              userHandler.Delete     admin
+
+16 routes total
+
+Works for both monorepo (apps/api/internal/routes/) and single app (internal/routes/) projects.
+
+grit down / grit up
+
+Toggle maintenance mode. When enabled, all API requests receive a 503 Service Unavailable response.
+
+Enable maintenance
+Copy to clipboard
+
+$ grit down
+
+Application is now in maintenance mode.
+
+All requests will receive 503.
+
+Run 'grit up' to bring it back online.
+
+Disable maintenance
+Copy to clipboard
+
+$ grit up
+
+Application is back online!
+
+Normal request handling has resumed.
+
+How it works
+
+1.grit down creates a .maintenance file in the project root
+
+2.The scaffolded Maintenance() middleware checks for this file on every request
+
+3.grit up removes the file, resuming normal operation
+
+middleware/maintenance.go
+Copy to clipboard
+
+func Maintenance() gin.HandlerFunc {
+
+return func(c *gin.Context) {
+
+if _, err := os.Stat(".maintenance"); err == nil {
+
+c.JSON(http.StatusServiceUnavailable, gin.H{
+
+"error": gin.H{
+
+"code":    "MAINTENANCE",
+
+"message": "Application is in maintenance mode.",
+
+},
+
+})
+
+c.Abort()
+
+return
+
+}
+
+c.Next()
+
+}
+
+}
+
+grit deploy
+
+One-command production deployment. See the dedicated Deploy Command guide for full details.
+
+Terminal
+Copy to clipboard
+
+# Deploy with flags
+
+grit deploy --host user@server.com --domain myapp.com
+
+# Or set env vars in .env
+
+DEPLOY_HOST=user@server.com
+
+DEPLOY_DOMAIN=myapp.com
+
+DEPLOY_KEY_FILE=~/.ssh/id_rsa
+
+grit deploy
+
+Quick Reference
+
+CommandDescription
+
+grit initWrite CLAUDE.md / AGENTS.md convention docs to the project root
+
+grit new <name>Scaffold a new project (interactive by default)
+
+grit new-desktop <name>Scaffold a standalone Wails desktop app
+
+grit new .Scaffold into the current directory
+
+grit new . --forceScaffold into a non-empty directory
+
+grit new myapp --hereExplicit in-place scaffolding
+
+grit new <name> --apiScaffold Go API only
+
+grit new <name> --fullScaffold everything including docs
+
+grit new <name> --singleSingle architecture (API only)
+
+grit new <name> --doubleDouble architecture (API + web)
+
+grit new <name> --tripleTriple architecture (API + web + admin)
+
+grit new <name> --viteUse TanStack Router (Vite) frontend
+
+grit new <name> --nextUse Next.js frontend
+
+grit new <name> --desktopAdd Wails desktop client (combinable with --triple/--double/--mobile/--api)
+
+grit new <name> --mobile --desktopMulti-client: API + Expo mobile + Wails desktop (shared types)
+
+--arch, --frontendLong-form flags for architecture and frontend
+
+grit generate resource <Name>Generate full-stack CRUD resource
+
+grit g resource <Name>Shorthand for generate resource
+
+grit generate seeder <Resource>Generate a database seeder for existing resources
+
+grit generate sequence <Name>Generate a sequential numbering helper (e.g. INV-202605-0001)
+
+grit generate field <Resource> <spec>Add a column to an existing resource (model + Zod + TS + admin)
+
+grit generate perfGenerate a k6 load test (perf/load.js) for the API
+
+grit remove resource <Name>Remove a generated resource and clean up markers
+
+grit add role <ROLE>Add a new role across all project files
+
+grit add web-authAuth pages, the guard, and the customer area at /account
+
+grit expose form <Resource>Scaffold a public form page for a resource
+
+grit expose table <Resource>Scaffold a paginated list page for a resource
+
+grit startStart every app in the project in parallel
+
+grit start clientStart frontend apps via pnpm dev
+
+grit start serverStart Go API server (hot-reload via air)
+
+grit compileBuild the desktop app executable (Wails)
+
+grit packageBuild a distributable desktop installer (.exe / .app / binary)
+
+grit studioOpen the GORM Studio database browser
+
+grit testRun every test suite and print one report
+
+grit mcp serveExpose the project to AI agents over MCP
+
+grit syncSync Go models to TypeScript + Zod
+
+grit migrateRun GORM AutoMigrate for all models
+
+grit migrate --freshDrop all tables then re-migrate
+
+grit seedPopulate database with initial data
+
+grit backupBack up the entire database to a ZIP archive
+
+grit restore <backup.zip>Restore the database from a backup archive
+
+grit upgradeUpdate project scaffold files to latest
+
+grit updateRemove old CLI and install latest version
+
+grit routesList all registered API routes
+
+grit downEnable maintenance mode (503)
+
+grit upDisable maintenance mode
+
+grit deployDeploy to production server
+
+grit versionPrint CLI version
+
+Found a bug? Open an issue at https://github.com/MUKE-coder/grit/issues — we fix bugs fast and appreciate every report.
+
+ArchitectureCode Generation

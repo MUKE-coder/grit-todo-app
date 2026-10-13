@@ -1,0 +1,104 @@
+Tutorial
+Contacts: the API on its own
+
+When the clients are somebody else's: a mobile team, a partner integration, or a frontend you have already built. You get the Go API with authentication, migrations, generated reference documentation and nothing else. No Node, no pnpm, no JavaScript anywhere in the project.
+
+The app is a contact book: contacts that belong to groups, each with a photo. Two resources, two commands, and everything that follows is the same in every tier. What differs is what you run and where it ends up, which is what this page is about.
+
+Before you start
+
+Go 1.21 or newer — The only thing this tier needs.
+
+And Grit itself: go install github.com/MUKE-coder/grit/v3/cmd/grit@latest.
+
+1. Create the project
+
+Terminal
+Copy to clipboard
+
+$grit new contacts --api --theme emerald --db sqlite
+
+$cd contacts
+
+Postgres is the default. --db sqlite above means the project runs with no database server at all, which is the shortest path to seeing it work; drop the flag when you want Postgres, and docker compose up -d brings one up along with Redis, MinIO and a mail catcher.
+
+DirectoryWhat is in it
+
+apps/api/internal/modelsThe Go structs the database is built from
+
+apps/api/internal/servicesWhere the queries live
+
+apps/api/internal/handlersThin HTTP handlers that call the services
+
+apps/api/internal/routesThe route table, and the access registry built from it
+
+2. Describe the data
+
+A group first, because a contact points at one. Each command writes the Go model, the migration, the service, the handler, the routes, the Zod schema, the TypeScript types and an admin screen, and registers all of it.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Group \
+
+$  --fields "name:string,description:text"
+
+Then the contact, with a photo and a group to belong to. The belongs_to:Group field is what makes the admin screen render a picker rather than a text box asking for an id.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Contact \
+
+$  --fields "name:string,email:email,phone:tel,photo:file:image,group:belongs_to:Group"
+
+3. Build the database
+
+Terminal
+Copy to clipboard
+
+$grit migrate
+
+$grit seed
+
+grit migrate creates the tables from the models, and grit seed fills them: an administrator you can sign in as, a few users, and an API key. The administrator is admin@example.com with the password admin123. Change it before anybody else can reach the machine.
+
+4. Run it
+
+Terminal
+Copy to clipboard
+
+$grit start
+
+There are no frontends to start, so this runs the API alone, with hot reload.
+
+WhereWhat
+
+http://localhost:8080/api/v1The API
+
+http://localhost:8080/docsThe reference, generated from the routes
+
+http://localhost:8080/studioGORM Studio: browse and edit the tables
+
+5. What you have
+
+Two resources, and for each of them: a table with sorting, filtering, search, pagination, bulk edit and CSV import and export; a form that validates on both sides from one schema; and REST endpoints under /api/v1/groups and /api/v1/contacts with the same rules applied.
+
+The photo field is a real upload: the browser asks the API for a presigned URL and sends the file straight to storage, so the file never passes through the API process. With STORAGE_DRIVER=local that storage is a directory on disk, which is the default when there is no MinIO to talk to.
+
+6. Deploy it
+
+Terminal
+Copy to clipboard
+
+$grit deploy --host user@server.com --domain api.example.com
+
+# Or a container, if that is your shape
+
+$docker compose -f docker-compose.prod.yml up --build
+
+The simplest tier to deploy, because there is one thing to deploy. The Docker form builds the API image and brings up Postgres and Redis beside it.
+
+Before any of that, read the go-live checklist: it is the list of things that are fine in development and not in production, starting with the seeded password above and the secrets in .env.
+
+The mobile appOne binary

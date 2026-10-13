@@ -1,0 +1,1027 @@
+Getting Started
+CLI Cheatsheet
+
+Every command the Grit CLI offers in one place. Bookmark this page or print it out — it's your pocket reference for scaffolding projects, generating resources, running migrations, and everything in between.
+Download Grit Handbook PDF
+
+Command Overview
+
+All top-level commands at a glance. Scroll down for detailed usage, flags, and examples.
+
+CommandAliasDescription
+
+grit init—Write CLAUDE.md / AGENTS.md convention docs
+
+grit new—Scaffold a new project
+
+grit new-desktop—Scaffold a standalone Wails desktop app
+
+grit generategGenerate resources, seeders, sequences
+
+grit removermRemove a generated resource
+
+grit add—Add roles / web-auth helpers
+
+grit expose—Scaffold a web page for a resource (form/table)
+
+grit start—Start dev servers
+
+grit compile—Build desktop app executable (Wails)
+
+grit package—Build a distributable desktop installer
+
+grit studio—Open the GORM Studio database browser
+
+grit sync—Sync Go types → TypeScript
+
+grit env—Create .env with fresh secrets after git clone
+
+grit migrate—Run database migrations
+
+grit seed—Seed the database
+
+grit backup—Back up the entire database
+
+grit restore—Restore the database from a backup archive
+
+grit routes—List all registered API routes
+
+grit down—Enter maintenance mode (503)
+
+grit up—Exit maintenance mode
+
+grit deploy—Deploy to a remote server
+
+grit upgrade—Upgrade project templates
+
+grit updateself-updateUpdate the CLI binary
+
+grit version—Print CLI version
+
+grit init
+
+Write the framework's hard-rules convention docs to the project root as CLAUDE.md and AGENTS.md (same content — different AI tools look for different filenames). Skips files that already exist unless --force is passed.
+
+terminal
+
+$ grit init
+
+Write CLAUDE.md and AGENTS.md (skips existing files)
+
+terminal
+
+$ grit init --force
+
+Overwrite the convention docs (e.g. after a major upgrade)
+
+grit new
+
+Scaffold a brand-new Grit monorepo with the Go API, Next.js web app, admin panel, shared packages, Docker configs, and all the batteries.
+
+terminal
+
+$ grit new myapp
+
+Create a full-stack project (API + web + admin + shared)
+
+terminal
+
+$ grit new myapp --api
+
+Scaffold only the Go API (no frontend apps)
+
+terminal
+
+$ grit new myapp --expo
+
+Full stack + Expo mobile app
+
+terminal
+
+$ grit new myapp --mobile
+
+API + Expo mobile app only (no web/admin)
+
+terminal
+
+$ grit new myapp --mobile --desktop
+
+API + Expo + Wails desktop — the multi-client pattern (new in v3.9)
+
+terminal
+
+$ grit new myapp --triple --next --desktop
+
+API + web + admin + desktop, one monorepo, shared types
+
+terminal
+
+$ grit new myapp --full
+
+Scaffold everything including docs site
+
+terminal
+
+$ grit new myapp --style modern
+
+Set admin panel style variant (default, modern, minimal, glass, centered)
+
+FLAGS
+
+--apiboolScaffold only the Go API
+
+--expoboolInclude Expo mobile app
+
+--mobileboolAPI + Expo mobile only
+
+--desktopboolAdd a Wails desktop client (combinable with --triple/--double/--mobile/--api; not --single)
+
+--fullboolInclude docs site
+
+--stylestringAdmin style: default, modern, minimal, glass, centered
+
+The project name must be lowercase, alphanumeric, and hyphens only (e.g. my-saas-app). It must start with a letter and cannot end with a hyphen. Only one architecture flag (--api, --single, --double, --triple, --mobile, --full) can be used at a time. --desktop and --expo are additive — combine them with any architecture (--desktop is not supported with --single).
+
+grit generate resource
+
+alias: grit g resource
+
+Generate a complete full-stack CRUD resource: Go model, handler, service, Zod schemas, TypeScript types, React Query hooks, and an admin page — all wired together automatically.
+
+terminal
+
+$ grit generate resource Post --fields "title:string,content:text,published:bool"
+
+Generate a resource with inline field definitions
+
+terminal
+
+$ grit g resource Post --fields "title:string,slug:string:unique,views:int"
+
+Use the short alias and add a unique constraint
+
+terminal
+
+$ grit generate resource Post --from post.yaml
+
+Generate from a YAML field definition file
+
+terminal
+
+$ grit generate resource Post -i
+
+Interactive mode — define fields with prompts
+
+terminal
+
+$ grit g resource Post --fields "title:string,content:text" --roles "ADMIN,EDITOR"
+
+Restrict generated routes to specific roles
+
+terminal
+
+$ grit g resource Invoice --fields "number:string,total:money" --owned-by user
+
+Scope every row to its owner: a caller sees and edits only their own
+
+terminal
+
+$ grit g resource LabResult --fields "test:string,result:text" --owned-by user --audit-reads
+
+Record every read: who opened which rows, in the tamper-evident activity log
+
+terminal
+
+$ grit g resource JournalEntry --fields "reference:string,memo:text" --append-only
+
+Created and read, never changed or deleted: for ledgers and audit trails
+
+terminal
+
+$ grit g job ReconcileLedger --cron "30 23 * * *"
+
+A background job with its handler registered, run every night at 23:30
+
+terminal
+
+$ grit g resource Patient --fields "name:string,notes:text:encrypted"
+
+Encrypt a column at rest: plaintext in code and the API, ciphertext in the database
+
+terminal
+
+$ grit g resource Post --fields "title:string,views:int" --faker --count 50
+
+Also generate a seeder that inserts 50 fake rows
+
+FLAGS
+
+--fieldsstringInline fields (e.g. "title:string,published:bool")
+
+--fromstringPath to YAML file defining the resource fields
+
+-i, --interactiveboolInteractively define fields via prompts
+
+--rolesstringRestrict routes to roles (e.g. "ADMIN,EDITOR")
+
+--tenant-ownedboolScope rows to the active organization (needs the multitenant plugin)
+
+--owned-bystringScope rows to their owner (e.g. user). Adds the field if absent; ADMIN is exempt
+
+--audit-readsboolRecord every read (who, which rows, when) in the tamper-evident activity log
+
+--append-onlyboolRows are created and read, never changed or deleted: read and create routes, a GORM guard and a database trigger
+
+--seedboolAlso generate a seeder with one example record
+
+--fakerboolAlso generate a gofakeit seeder (implies --seed)
+
+--countintNumber of rows for the faker seeder (default 10)
+
+Generated Files
+
+apps/api/internal/models/<name>.goGORM model with struct tags
+
+apps/api/internal/handlers/<name>.goFull CRUD handler with pagination
+
+apps/api/internal/services/<name>.goBusiness logic layer
+
+packages/shared/schemas/<name>.tsZod validation schemas
+
+packages/shared/types/<name>.tsTypeScript types
+
+apps/admin/hooks/use-<names>.tsReact Query hooks
+
+apps/admin/app/resources/<names>/page.tsxAdmin page with data table
+
+Routes are auto-registered in routes.go, the model is added to auto-migrations, and the resource is injected into the admin sidebar.
+
+Supported Field Types
+
+TypeGo TypeTS TypeForm Field
+
+stringstringstringtext
+
+textstringstringtextarea
+
+richtextstringstringrichtext
+
+intintnumbernumber
+
+uintuintnumbernumber
+
+floatfloat64numbernumber
+
+boolboolbooleantoggle
+
+datetime*time.Timestring | nulldatetime
+
+date*time.Timestring | nulldate
+
+slugstringstringauto
+
+belongs_touintnumberselect
+
+many_to_many[]uintnumber[]multi-select
+
+string_arrayJSONSlice[string]string[]images
+
+Inline Field Syntax
+
+Fields are comma-separated. Each field follows the pattern name:type or name:type:modifier. Available modifiers:
+
+:uniqueAdds a unique database index
+
+:requiredMarks the field as required
+
+grit generate seeder
+
+alias: grit g seeder
+
+Generate a database seeder for one or more already-generated resources. Writes internal/database/<name>_seeder.go with one editable example record, registers it in seed.go, and runs with grit seed. Pass --faker to fill many rows instead.
+
+terminal
+
+$ grit generate seeder Customer
+
+Seed one example Customer record
+
+terminal
+
+$ grit generate seeder Customer Order Product
+
+Generate seeders for several resources at once
+
+terminal
+
+$ grit g seeder Customer --faker --count 50
+
+Fill 50 rows with gofakeit data
+
+FLAGS
+
+--fakerboolFill many rows with gofakeit instead of one example
+
+--countintNumber of rows for the faker seeder (default 10)
+
+grit generate sequence
+
+alias: grit g sequence
+
+Generate atomic sequential numbers for a resource (e.g. INV-202605-0001). Creates a database-backed counter package plus a typed helper so handlers call services.Next<Name>Number(db, t).
+
+terminal
+
+$ grit generate sequence Invoice
+
+Create an Invoice number sequence with defaults
+
+terminal
+
+$ grit g sequence Invoice --prefix INV --reset monthly --width 4
+
+Custom prefix, monthly reset, 4-digit width
+
+terminal
+
+$ grit g sequence Receipt --reset never
+
+A counter that never resets
+
+FLAGS
+
+--prefixstringAlphabetic prefix (default: first 3 chars of name, uppercased)
+
+--resetstringWhen the counter resets: monthly, yearly, never (default monthly)
+
+--widthintZero-padded width of the numeric portion (default 4)
+
+grit plugin
+
+Plugins write real code into your repo — models, routes, pages, migrations — rather than hiding behind a runtime dependency. Every install is recorded in .grit/plugins.lock.json, and removal replays that record backwards. Commit the lockfile.
+
+terminal
+
+$ grit plugin list
+
+List available plugins
+
+terminal
+
+$ grit plugin info multitenant
+
+Show what a plugin does before installing it
+
+terminal
+
+$ grit plugin add multitenant
+
+Install a plugin (refuses to run with uncommitted changes)
+
+terminal
+
+$ grit plugin add multitenant --force
+
+Install even with a dirty working tree
+
+terminal
+
+$ grit plugin update multitenant
+
+Take this CLI's version of the files the plugin owns, leaving yours alone
+
+terminal
+
+$ grit plugin update --all --overwrite
+
+Every plugin, taking its version even of files you have edited
+
+terminal
+
+$ grit plugin remove multitenant
+
+Reverse the install using the lockfile record
+
+grit remove resource
+
+alias: grit rm resource
+
+Delete all generated files for a resource and reverse all marker-based injections (routes, migrations, sidebar entries).
+
+terminal
+
+$ grit remove resource Post
+
+Remove the Post resource (prompts for confirmation)
+
+terminal
+
+$ grit rm resource Post --force
+
+Skip the confirmation prompt
+
+FLAGS
+
+--forceboolSkip the confirmation prompt
+
+grit add role
+
+Add a new role constant across the entire stack: Go models, TypeScript types, Zod schemas, constants, and admin resource definitions.
+
+terminal
+
+$ grit add role EDITOR
+
+Add EDITOR role to Go, TypeScript, and admin files
+
+terminal
+
+$ grit add role MODERATOR
+
+Add a custom MODERATOR role across the stack
+
+Role names should be UPPERCASE. The command updates all the right files so the role is instantly available in both Go middleware and the admin panel's role dropdowns.
+
+grit add web-auth
+
+Add page-protection helpers to apps/web/: a middleware.ts SSR cookie check that redirects to /login, and a ProtectedWebRoute client wrapper. Existing files are left alone unless --force.
+
+terminal
+
+$ grit add web-auth
+
+Scaffold middleware.ts + ProtectedWebRoute.tsx
+
+terminal
+
+$ grit add web-auth --force
+
+Overwrite the helpers if they already exist
+
+grit expose
+
+Scaffold a public-facing Next.js page in apps/web/ that consumes an already-generated resource — reusing its shared Zod schema and React Query hook instead of re-implementing the form or table.
+
+terminal
+
+$ grit expose form Contact --to apps/web/app/contact-us/page.tsx
+
+A create-styled form page (authenticated submit)
+
+terminal
+
+$ grit expose form Contact --to apps/web/app/contact-us/page.tsx --public-share --token 9CkLh7...
+
+A no-auth public form backed by a FormShare token
+
+terminal
+
+$ grit expose table Contact --to apps/web/app/contacts/page.tsx
+
+A paginated, searchable list page
+
+FLAGS
+
+--tostringDestination page path (required)
+
+--forceboolOverwrite the destination if it exists
+
+--public-shareboolform only — submit via the public FormShare endpoint (no auth)
+
+--tokenstringform only — FormShare token (falls back to NEXT_PUBLIC_FORM_TOKEN)
+
+grit start
+
+Start development servers. With no argument, grit start runs every app in the project in parallel (API + frontends, plus the Wails desktop app when present) and stops them all on Ctrl+C. Pass an app name to run just one.
+
+terminal
+
+$ grit start
+
+Start every app in the project in parallel
+
+terminal
+
+$ grit start server
+
+Start the Go API only (hot-reload via air)
+
+terminal
+
+$ grit start client
+
+Start all frontend apps via Turborepo (runs pnpm dev)
+
+terminal
+
+$ grit start web
+
+Start a single app: web, admin, expo, or desktop
+
+grit sync
+
+Parse Go model files and regenerate TypeScript types and Zod schemas in packages/shared. Run this whenever you manually edit a Go model to keep frontend types in sync.
+
+terminal
+
+$ grit sync
+
+Sync Go types → TypeScript types and Zod schemas
+
+grit migrate
+
+Connect to the database and run GORM AutoMigrate for all registered models. Use --fresh to drop all tables first for a clean slate.
+
+terminal
+
+$ grit migrate
+
+Run database migrations for all models
+
+terminal
+
+$ grit migrate --fresh
+
+Drop all tables, then re-run migrations from scratch
+
+terminal
+
+$ grit new myapp --db mysql
+
+Pick the engine at scaffold time: postgres (default), mysql, sqlite, memory
+
+terminal
+
+$ grit migrate status
+
+What each recorded run added, newest first
+
+terminal
+
+$ grit migrate down
+
+Undo what the last run added: --steps N, --dry-run, --yes
+
+FLAGS
+
+--freshboolDrop all tables before migrating (destructive)
+
+Danger: --fresh permanently deletes all data in every table. Only use this in development.
+
+grit seed
+
+Populate the database with initial data including an admin user and demo records. Perfect for bootstrapping a fresh development environment.
+
+terminal
+
+$ grit seed
+
+Run all database seeders
+
+grit backup
+
+Dump every registered model to a ZIP archive: one CSV per table, a dump.sql of INSERTs in parent-to-child order, and a metadata.json manifest. By default the archive is uploaded to object storage; pass --output to write a local file instead.
+
+terminal
+
+$ grit backup
+
+Back up to object storage (R2 / S3 / MinIO)
+
+terminal
+
+$ grit backup --output ./backup.zip
+
+Write a local archive (no storage credentials needed)
+
+FLAGS
+
+-o, --outputstringWrite the archive to a local file instead of uploading it
+
+grit restore
+
+Run migrations, then replay a backup archive's dump.sql inside a single transaction — every row lands or none does. Point it at an empty database; the archive carries data, not schema.
+
+terminal
+
+$ grit restore backup.zip
+
+Migrate, then replay the archive in one transaction
+
+terminal
+
+$ grit restore backup.zip --no-migrate
+
+Skip migrations (schema already exists)
+
+FLAGS
+
+--no-migrateboolSkip running migrations before restoring
+
+grit studio
+
+Open the GORM Studio database browser at http://localhost:8080/studio. For web projects, make sure your API server is running first.
+
+terminal
+
+$ grit studio
+
+Open GORM Studio in your browser
+
+grit routes
+
+Parse routes.go and print a table of every registered HTTP route with its method, path, handler, and middleware group.
+
+terminal
+
+$ grit routes
+
+List all registered API routes
+
+grit upgrade
+
+Upgrade an existing project to the latest scaffold templates. This regenerates framework components (admin panel, web app, configs) while preserving your resource definitions and API code.
+
+terminal
+
+$ grit upgrade
+
+Upgrade project templates (prompts before overwriting)
+
+terminal
+
+$ grit upgrade --force
+
+Overwrite all files without prompting
+
+FLAGS
+
+-f, --forceboolOverwrite all files without prompting
+
+grit update
+
+Update the Grit CLI binary to the latest version. It checks GitHub first and exits if you are already up to date. Otherwise, if the Go toolchain is on your PATH it runs go install ...@<latest>; if Go is not installed it downloads the matching prebuilt binary from the GitHub release and atomically swaps it in (on Windows the old .exe is renamed to .old first). Aliased as grit self-update.
+
+terminal
+
+$ grit update
+
+Update the Grit CLI to the latest release
+
+terminal
+
+$ grit update --from-release
+
+Skip go install and pull the prebuilt GitHub binary
+
+grit version
+
+Print the installed Grit CLI version.
+
+terminal
+
+$ grit version
+
+Print the current CLI version number
+
+grit down / grit up
+
+Toggle maintenance mode. grit down writes a .maintenance file that makes the scaffolded middleware return 503 for every request; grit up removes it and resumes normal handling.
+
+terminal
+
+$ grit down
+
+Enter maintenance mode (all requests get 503)
+
+terminal
+
+$ grit up
+
+Exit maintenance mode
+
+grit deploy
+
+Build the app, upload it over SSH, configure a systemd service, and optionally set up a Caddy reverse proxy with auto-TLS. Flags fall back to DEPLOY_* environment variables.
+
+terminal
+
+$ grit deploy --host user@server.com --domain myapp.com
+
+Deploy and serve behind Caddy with auto-TLS
+
+terminal
+
+$ grit deploy
+
+Use DEPLOY_HOST / DEPLOY_DOMAIN / DEPLOY_KEY_FILE from .env
+
+FLAGS
+
+--hoststringSSH host (user@server.com) or DEPLOY_HOST
+
+--portstringSSH port (default 22)
+
+--keystringPath to SSH private key or DEPLOY_KEY_FILE
+
+--domainstringDomain for the Caddy reverse proxy or DEPLOY_DOMAIN
+
+--app-portstringPort the app listens on (default 8080)
+
+Desktop apps
+
+Scaffold and ship standalone Wails desktop applications (Go + React + SQLite).
+
+terminal
+
+$ grit new-desktop myapp
+
+Scaffold a standalone Wails desktop app
+
+terminal
+
+$ grit compile
+
+Build the desktop app into a binary (wails build)
+
+terminal
+
+$ grit package
+
+Build a distributable installer (.exe / .app / binary)
+
+terminal
+
+$ grit package --platform windows/amd64 --clean
+
+Target a platform and clean the build dir first
+
+Common Workflows
+
+Copy-paste recipes for everyday development tasks.
+
+New project from scratch
+
+Terminal
+Copy to clipboard
+
+# Create the project
+
+$grit new myapp
+
+# Start infrastructure
+
+$cd myapp && docker compose up -d
+
+# Start the API
+
+$grit start server
+
+# In another terminal — start frontend
+
+$grit start client
+
+Add a new resource
+
+Terminal
+Copy to clipboard
+
+# Generate the resource
+
+$grit g resource Product --fields "name:string,price:float,description:text,published:bool"
+
+# Sync types to keep everything in sync
+
+$grit sync
+
+# Run migrations to create the table
+
+$grit migrate
+
+Resource with relationships
+
+Terminal
+Copy to clipboard
+
+# Generate a Category resource first
+
+$grit g resource Category --fields "name:string,description:text"
+
+# Generate Product that belongs to Category
+
+$grit g resource Product --fields "name:string,price:float,category:belongs_to"
+
+# Apply database changes
+
+$grit migrate
+
+Fresh database reset
+
+Terminal
+Copy to clipboard
+
+# Drop all tables and re-migrate
+
+$grit migrate --fresh
+
+# Re-seed with initial data
+
+$grit seed
+
+Remove and regenerate a resource
+
+Terminal
+Copy to clipboard
+
+# Remove the old resource
+
+$grit rm resource Post --force
+
+# Regenerate with updated fields
+
+$grit g resource Post --fields "title:string,slug:slug,content:richtext,published:bool,views:int"
+
+Upgrade an existing project
+
+Terminal
+Copy to clipboard
+
+# Update the CLI first
+
+$grit update
+
+# Then upgrade project templates
+
+$grit upgrade
+
+Full Command Tree
+
+The complete hierarchy of every command and subcommand.
+
+grit
+
+├── init                      # Write CLAUDE.md / AGENTS.md convention docs
+
+│   └── --force               # Overwrite existing files
+
+│
+
+├── new <project-name|.>      # Scaffold a new project
+
+│   ├── --single              # Go API + embedded SPA (one binary)
+
+│   ├── --double              # API + web (no admin)
+
+│   ├── --triple              # API + web + admin (default)
+
+│   ├── --api                 # Go API only
+
+│   ├── --mobile              # API + Expo mobile only
+
+│   ├── --expo                # Add Expo mobile (additive)
+
+│   ├── --desktop             # Add Wails desktop client (combinable, not --single)
+
+│   ├── --full                # Everything + docs site
+
+│   ├── --next / --vite       # Frontend: Next.js or TanStack (Vite)
+
+│   ├── --style <variant>     # Admin style: default, modern, minimal, glass, centered
+
+│   ├── --theme <name>        # Theme: atlas, aurora, pulse
+
+│   ├── --here                # Scaffold into the current directory
+
+│   └── --force               # Allow a non-empty directory
+
+│
+
+├── new-desktop <name>        # Scaffold a standalone Wails desktop app
+
+│
+
+├── generate (g)              # Code generation
+
+│   ├── resource <Name>       # Generate full-stack CRUD resource
+
+│   │   ├── --fields "..."    # Inline field definitions
+
+│   │   ├── --from file.yaml  # YAML field definitions
+
+│   │   ├── -i, --interactive # Interactive field prompts
+
+│   │   ├── --roles "..."     # Restrict routes to roles
+
+│   │   ├── --owned-by user  # Each row belongs to a user; scope every route to them
+
+│   │   ├── --audit-reads    # Record every read in the tamper-evident activity log
+
+│   │   ├── --seed            # Also generate a seeder (one example row)
+
+│   │   ├── --faker           # Also generate a gofakeit seeder (implies --seed)
+
+│   │   └── --count <n>       # Rows for the faker seeder (default 10)
+
+│   ├── seeder <Resource>...  # Seeder for existing resources (--faker, --count)
+
+│   └── sequence <Name>       # Sequential numbering helper (--prefix, --reset, --width)
+
+│
+
+├── remove (rm)               # Remove components
+
+│   └── resource <Name>       # Remove a generated resource
+
+│       └── --force           # Skip confirmation
+
+│
+
+├── add                       # Add components
+
+│   ├── role <ROLE_NAME>      # Add a role across the stack
+
+│   └── web-auth              # Add page-protection helpers to apps/web/ (--force)
+
+│
+
+├── expose                    # Scaffold a web page for a resource
+
+│   ├── form <Resource>       # Public form page (--to, --public-share, --token, --force)
+
+│   └── table <Resource>      # Paginated list page (--to, --force)
+
+│
+
+├── start                     # Development servers (all apps if no arg)
+
+│   ├── server                # Start the Go API (air hot-reload)
+
+│   ├── client                # Start frontend apps (Turborepo)
+
+│   ├── web / admin           # Start a single Next.js app
+
+│   ├── expo                  # Start the Expo mobile app
+
+│   └── desktop               # Start the Wails desktop app
+
+│
+
+├── compile                   # Build desktop app executable (Wails)
+
+├── package                   # Build a distributable desktop installer
+
+│   ├── --platform <os/arch>  # Target platform (default: host)
+
+│   ├── --no-installer        # Raw binary only (skip NSIS on Windows)
+
+│   └── --clean               # Clean the build dir first
+
+│
+
+├── studio                    # Open GORM Studio database browser
+
+├── sync                      # Sync Go types → TypeScript
+
+├── migrate                   # Run database migrations
+
+│   └── --fresh               # Drop all tables first
+
+├── seed                      # Run database seeders
+
+├── backup                    # Back up the entire database
+
+│   └── -o, --output          # Write a local archive instead of uploading
+
+├── restore <backup.zip>      # Restore the database from an archive
+
+│   └── --no-migrate          # Skip migrations before restoring
+
+├── routes                    # List all registered API routes
+
+├── down                      # Enter maintenance mode (503)
+
+├── up                        # Exit maintenance mode
+
+├── deploy                    # Deploy to a remote server
+
+│   ├── --host / --port       # SSH host and port
+
+│   ├── --key                 # SSH private key
+
+│   ├── --domain              # Domain for Caddy + auto-TLS
+
+│   └── --app-port            # Port the app listens on
+
+├── upgrade                   # Upgrade project templates
+
+│   └── -f, --force           # Overwrite without prompting
+
+├── update (self-update)      # Update the CLI binary
+
+│   └── --from-release        # Pull the prebuilt GitHub binary
+
+└── version                   # Print CLI version
+
+Copy to clipboard
+
+TroubleshootingCLI Commands (Deep Dive)

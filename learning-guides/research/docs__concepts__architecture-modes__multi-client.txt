@@ -1,0 +1,379 @@
+Architecture Modes
+
+Multi-Client: API + Mobile + Desktop
+
+One Go API serving an Expo mobile app AND a Wails desktop app -- all in a single monorepo with shared types. The pattern real SaaS products use (Linear, Notion, Slack).
+
+Native clientsShared Go APIData & services
+One Go API and one shared-types package feed the mobile app, the desktop app, and an optional web client
+Added in v3.9.0 via the --desktop flag.
+
+Overview
+
+The multi-client pattern combines a Go API with two or more native clients (mobile via Expo, desktop via Wails, optionally web via Next.js or TanStack). All clients share the same packages/shared/ types and schemas, and all talk to the same API over HTTP. No code duplication across clients.
+
+This isn't a separate architecture mode -- it's a --desktop flag you combine with an existing architecture (--mobile, --triple, --double, or --api).
+
+The command that started it all
+
+grit new myapp --mobile --desktop --next
+
+Copy to clipboard
+
+Scaffolds: Go API + Next.js web + admin panel + Expo mobile + Wails desktop, all in one monorepo, all sharing types.
+
+When to Use This Pattern
+
+Pick the multi-client pattern when you're building a product that needs to live in multiple places:
+
+Native apps AND a web presence -- e.g. a Slack-style team tool with desktop, mobile, and a browser fallback
+
+A mobile-first product that also needs a power-user desktop app -- e.g. a task manager like Things or Linear
+
+Any product where customers expect to pick up where they left off across phone and laptop -- e.g. chat apps, note-takers, calendars
+
+Enterprise tools where clients specifically request a native desktop installer instead of a browser tab
+
+Don't use this for simple SaaS apps where a browser-only experience is enough -- stick with --triple. Don't use it for offline-first desktop apps either -- use grit new-desktop instead (standalone Wails + embedded Go + local SQLite).
+
+--desktop vs grit new-desktop
+
+These are two different desktop patterns. Pick the one that matches your product:
+
+grit new-desktopgrit new --desktop
+
+NetworkOffline-first, no remote APIAlways online, calls remote API
+
+BackendEmbedded in the desktop binaryShared monorepo API (Gin + GORM)
+
+DatabaseLocal SQLiteRemote PostgreSQL via API
+
+Wails bindingsFull CRUD, auth, exports (19+ methods)Only native OS (window, file dialogs, keychain)
+
+Token storageLocal-only sessionOS keychain via 99designs/keyring
+
+Works with mobile?No -- it's standaloneYes -- shares packages/shared with Expo
+
+Use caseInvoicer, notes, local utilitiesMulti-client SaaS, team tools
+
+Scaffold Combinations
+
+The --desktop flag combines with every architecture mode except --single(single apps already bundle their own frontend). Here are the common setups:
+
+1. Full multi-client SaaS (the Linear setup)
+
+grit new myapp --triple --next --desktop
+
+Copy to clipboard
+
+Scaffolds: apps/api, apps/web, apps/admin, apps/desktop, plus packages/shared. You get a web marketing site, an admin dashboard for ops, and a native desktop app -- all sharing one API.
+
+2. Mobile + desktop with a marketing site
+
+grit new myapp --triple --next --mobile --desktop
+
+Copy to clipboard
+
+Scaffolds everything above PLUS apps/expo. This is the full Slack / Notion setup: every client surface.
+
+3. Desktop + mobile, no web app
+
+grit new myapp --mobile --desktop
+
+Copy to clipboard
+
+Scaffolds apps/api, apps/expo, apps/desktop. Good for products that are native-only (no marketing page yet).
+
+4. Minimal: API + desktop only
+
+grit new myapp --api --desktop
+
+Copy to clipboard
+
+Scaffolds apps/api and apps/desktop. The leanest multi-client setup.
+
+5. Not allowed: --single --desktop
+
+# This errors out:
+
+grit new myapp --single --desktop
+
+# → --desktop is not supported with --single architecture
+
+Copy to clipboard
+
+Single-app architectures already bundle their own SPA into one Go binary. Adding a separate desktop client would be redundant. Use --triple or --api if you want a desktop app.
+
+Project Structure
+
+The shape of grit new myapp --triple --next --desktop --mobile:
+
+myapp/
+
+📂apps/
+
+📂api/Go backend (Gin + GORM + PostgreSQL)
+
+cmd/server/main.go
+
+📂internal/
+
+📂handlers/HTTP handlers
+
+📂services/Business logic
+
+📂models/GORM models
+
+📂routes/Route registration
+
+📂web/Next.js marketing/landing
+
+📂admin/Next.js admin dashboard
+
+📂expo/Expo mobile (iOS + Android)
+
+📂app/Expo Router screens
+
+📂lib/API client, auth, SecureStore
+
+📂desktop/Wails desktop (macOS/Windows/Linux)
+
+main.goWails bootstrap, frameless window
+
+app.goNative OS bindings only
+
+📂internal/
+
+keychain.goOS keychain wrapper
+
+📂frontend/
+
+📂src/
+
+📂routes/TanStack Router file-based routes
+
+📂components/Shared UI (layout, ui/, command-palette)
+
+📂lib/API client, Wails bridge, shortcuts
+
+📂hooks/useAuth, useMe, useLogout
+
+vite.config.ts
+
+📂packages/
+
+📂shared/🔑 Shared across ALL clients
+
+📂schemas/Zod schemas (login, register, user...)
+
+📂types/TypeScript types
+
+📂constants/ROUTES, ROLES
+
+docker-compose.yml
+
+turbo.json
+
+pnpm-workspace.yaml
+
+The key insight: packages/shared is the glue. Change a Zod schema there and both the Expo app and the desktop app pick it up immediately. Change a Go model, run grit sync, and the TypeScript types regenerate for every client.
+
+Development Workflow
+
+With all apps running, you get live hot-reload across everything. Onegrit start runs them all, or start each app on its own:
+
+# Terminal 1: Start infrastructure (Postgres, Redis, MinIO, Mailhog)
+
+docker compose up -d
+
+# Terminal 2: Go API (hot reload)
+
+grit start server
+
+# Terminal 3: Mobile app (Expo)
+
+grit start expo
+
+# Terminal 4: Desktop app (Wails)
+
+grit start desktop
+
+# All of these can be run together with:
+
+grit start
+
+Copy to clipboard
+
+Or start a single app from anywhere in the project:
+
+grit start            # All apps
+
+grit start server     # Just the Go API
+
+grit start web        # Just the web frontend
+
+grit start admin      # Just the admin panel
+
+grit start expo       # Just the Expo app
+
+grit start desktop    # Just the desktop app
+
+Copy to clipboard
+
+How Clients Share Code
+
+The three client patterns (web, mobile, desktop) use the same primitives but with platform-appropriate adapters:
+
+ConceptWebMobileDesktop
+
+Types/schemaspackages/shared -- identical across all three
+
+HTTP clientaxiosaxiosaxios
+
+Data fetchingTanStack QueryTanStack QueryTanStack Query
+
+Formsreact-hook-form + zodreact-hook-form + zodreact-hook-form + zod
+
+RouterNext.js App RouterExpo RouterTanStack Router
+
+Token storageHttpOnly cookies set by API (never localStorage)expo-secure-storeOS keychain (via Wails bridge)
+
+StylingTailwind + shadcn/uiNativeWindTailwind + custom primitives
+
+The useAuth hook signature is identical across all three: useMe(), useLogin(), useRegister(), useLogout(). Only the adapter (where tokens get stored) differs. Copy a feature from web to desktop and the structure stays the same.
+
+What Ships in the Desktop App
+
+The Wails desktop scaffold is intentionally minimal on the Go side and rich on the React side. Go handles only what the browser can't: window chrome, file dialogs, and OS keychain. Everything else lives in the React frontend and calls the API.
+
+Go side (minimal)
+
+main.go -- Wails bootstrap, frameless 1280x800 window (min 1000x700)
+
+app.go -- Native bindings: window controls, file dialogs, keychain, platform detection
+
+internal/keychain.go -- Cross-platform keychain via 99designs/keyring
+
+React side (TanStack Router)
+
+Custom title bar with platform-aware window controls (macOS traffic lights on the left, Windows/Linux controls on the right)
+
+Command palette (Cmd+K / Ctrl+K) with keyboard-first navigation
+
+Fixed 240px sidebar (not collapsible -- desktop windows are wide enough)
+
+Topbar with search, notifications, theme toggle, user menu
+
+Pre-built auth flow (login / register / forgot-password) using react-hook-form + zod
+
+Dashboard, Profile, Settings pages out of the box
+
+Global keyboard shortcuts via useShortcuts()
+
+Keyboard Shortcuts (Default)
+
+ShortcutAction
+
+⌘K / Ctrl+KOpen command palette
+
+⌘, / Ctrl+,Open Settings
+
+⌘L / Ctrl+LLog out
+
+EscClose modal / palette
+
+Add your own with the useShortcuts() hook:
+
+import { useShortcuts } from "@/lib/use-shortcuts";
+
+useShortcuts({
+
+"mod+n": () => createNewItem(),        // ⌘N / Ctrl+N
+
+"mod+shift+p": () => openProfile(),    // ⌘⇧P / Ctrl+Shift+P
+
+"mod+slash": () => openHelp(),         // ⌘/ / Ctrl+/
+
+});
+
+Copy to clipboard
+
+Deploying a Multi-Client App
+
+Each client ships differently. The shared API is deployed once, and the clients point to it:
+
+1. API (one-time deploy)
+
+grit deploy --host user@server.com --domain api.myapp.com
+
+Copy to clipboard
+
+Cross-compiles, uploads via SCP, configures systemd + Caddy with auto-TLS.
+
+2. Web / Admin (any time)
+
+# Deploy to Vercel (pointing NEXT_PUBLIC_API_URL=https://api.myapp.com)
+
+cd apps/web && vercel --prod
+
+cd apps/admin && vercel --prod
+
+Copy to clipboard
+
+3. Mobile (EAS Build)
+
+cd apps/expo
+
+npx eas-cli build --platform ios
+
+npx eas-cli build --platform android
+
+npx eas-cli submit --platform ios
+
+npx eas-cli submit --platform android
+
+Copy to clipboard
+
+4. Desktop (Wails build)
+
+cd apps/desktop
+
+wails build -platform darwin/amd64   # macOS Intel
+
+wails build -platform darwin/arm64   # macOS Apple Silicon
+
+wails build -platform windows/amd64
+
+wails build -platform linux/amd64
+
+# Binaries land in build/bin/
+
+Copy to clipboard
+
+Code-sign and notarize as needed (macOS) or sign with a certificate (Windows). Distribute as standalone binaries, via a download page, or through app stores.
+
+Tips & Gotchas
+
+Set VITE_API_URL in the desktop frontend's env when deploying. In dev, Vite proxies /api to localhost:8080, but once built, the frontend needs to know the full production URL.
+
+CORS matters again. Native clients don't enforce CORS the way browsers do, but your API still needs to allow the desktop origin if you proxy through one. Usually fine with Grit's default CORS middleware; check if you customize.
+
+Keep Wails bindings minimal. Resist the urge to expose CRUD methods as Wails bindings -- it creates a second API surface to maintain. Do data work over HTTP, use bindings only for window/file/keychain.
+
+Dev without Wails. You can run the desktop frontend in a regular browser with cd apps/desktop/frontend && pnpm dev (it falls back to HttpOnly cookies set by the dev API). Useful for quick UI iteration without launching the full Wails window. Tokens are never written to localStorage in either mode.
+
+Match platform expectations. macOS users expect traffic lights on the left; Windows/Linux users expect close/min/max on the right. The scaffold handles this automatically via getPlatform().
+
+Read the style guide. GRIT_STYLE_GUIDE.md §14.5 covers desktop-specific patterns: no breadcrumbs, no collapsible sidebar, 32px content padding (vs web's 24px), tighter focus rings, OS keychain only -- never localStorage.
+
+Related Pages
+
+Triple architecture -- the base you'll usually combine --desktop with
+
+Mobile architecture -- details on the Expo app
+
+API-only architecture -- for minimal API + desktop setups
+
+CLI reference -- full flag list
+
+Mobile ArchitectureCLI Reference

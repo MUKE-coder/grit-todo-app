@@ -1,0 +1,206 @@
+Backend
+Webhooks
+
+Stripe, GitHub, Twilio, WhatsApp — anything that pings you. Grit's webhooks package gives you one route, POST /webhooks/:provider, that verifies the signature, deduplicates retries, persists every delivery, and dispatches to a handler you register. Built-in verifiers cover Stripe, GitHub, and generic HMAC; adding your own is a single function.
+
+The receive pipeline
+
+The HTTP handler is already wired at POST /webhooks/:provider. It routes by the :provider path param to whatever you registered, and runs the same seven steps for every source:
+
+Signature / parse (4xx)Idempotent storeYour handler
+Verified + stored → always 200 so the provider stops retrying; handler failures replay from admin
+
+Why always 200? Once a webhook is verified and stored, the provider's job is done — retrying wouldn't help. A handler failure is recorded (status=failed) and recovered via the admin replay endpoint, not by making the provider redeliver forever. Only signature/parse failures return 4xx.
+
+Registering a provider
+
+Two calls at app boot: webhooks.Setup(db) once (already done in routes.Setup), then a webhooks.Register per source plus a webhooks.On per event you care about. A Provider is just its secret env var, a verifier, and an extractor:
+
+internal/webhooks/setup.go
+Copy to clipboard
+
+func SetupProviders() {
+
+webhooks.Register("stripe", webhooks.Provider{
+
+SecretEnv: "STRIPE_WEBHOOK_SECRET",
+
+Verify:    webhooks.StripeVerifier,
+
+Extract:   webhooks.StripeExtractor,
+
+})
+
+// Bind a handler to (provider, eventType).
+
+webhooks.On("stripe", "invoice.paid", func(ctx context.Context, e *models.WebhookEvent) error {
+
+// e.Payload is the raw JSON body — unmarshal what you need.
+
+return fulfillInvoice(ctx, e.Payload)
+
+})
+
+// "" is a catch-all: runs for any stripe event without a specific handler.
+
+webhooks.On("stripe", "", func(ctx context.Context, e *models.WebhookEvent) error {
+
+log.Printf("unhandled stripe event: %s", e.EventType)
+
+return nil
+
+})
+
+}
+
+Dispatch prefers an exact (provider, eventType) match and falls back to the catch-all "" handler. If nothing is registered the event is still persisted — it just sits at status=processed with no side effect, so you never silently lose a delivery.
+
+Built-in verifiers
+
+Signature verification is the whole point — it proves the request actually came from the provider and wasn't forged. Grit ships three verifiers and matching extractors:
+
+VerifierHeader & schemeExtractor
+
+StripeVerifierStripe-Signature: t=…,v1=…, HMAC-SHA256 of "{ts}.{body}", 5-min replay toleranceStripeExtractor
+
+GitHubVerifierX-Hub-Signature-256: sha256=…, HMAC-SHA256 of the raw bodyGitHubExtractor
+
+HMACVerifier(header)Any named header: hex HMAC-SHA256 of the raw bodyJSONFieldExtractor(t, id)
+
+The secret comes from os.Getenv(Provider.SecretEnv) at request time — set STRIPE_WEBHOOK_SECRET, GITHUB_WEBHOOK_SECRET, etc. in your environment. An empty secret is a hard verification error, so a misconfigured deploy fails closed rather than accepting unsigned traffic.
+
+internal/webhooks/verifiers.go (StripeVerifier, excerpt)
+Copy to clipboard
+
+// Stripe-Signature is "t=<unix>,v1=<hex>"; v1 = HMAC-SHA256 of
+
+// "<timestamp>.<payload>". 5-minute tolerance guards against replay.
+
+signed := strconv.FormatInt(ts, 10) + "." + string(body)
+
+mac := hmac.New(sha256.New, []byte(secret))
+
+mac.Write([]byte(signed))
+
+expected := hex.EncodeToString(mac.Sum(nil))
+
+for _, s := range sigs {
+
+if hmac.Equal([]byte(s), []byte(expected)) {
+
+return nil // valid
+
+}
+
+}
+
+return fmt.Errorf("webhooks: stripe signature mismatch")
+
+Deduplication
+
+Providers retry — Stripe redelivers until it gets a 2xx, GitHub pings on every config save. The ExternalID (the provider's own event id) is the idempotency key. A partial unique index on (provider, external_id) makes a duplicate INSERT fail, which the handler catches and turns into an immediate status=skipped 200 — the handler never runs twice.
+
+internal/models/webhook_event.go
+Copy to clipboard
+
+type WebhookEvent struct {
+
+ID           string         `gorm:"primarykey;size:36" json:"id"`
+
+Provider     string         `gorm:"size:50;index;not null" json:"provider"`
+
+EventType    string         `gorm:"size:100;index" json:"event_type"`
+
+ExternalID   string         `gorm:"size:255;index" json:"external_id"` // provider's event id
+
+Payload      datatypes.JSON `gorm:"type:jsonb" json:"payload"`
+
+Status       string         `gorm:"size:20;index;not null;default:pending" json:"status"`
+
+HandlerError string         `gorm:"type:text" json:"handler_error,omitempty"`
+
+RetryCount   int            `gorm:"not null;default:0" json:"retry_count"`
+
+ProcessedAt  *time.Time     `json:"processed_at,omitempty"`
+
+CreatedAt    time.Time      `gorm:"index" json:"created_at"`
+
+}
+
+// Composite unique index → idempotent receipt.
+
+// CREATE UNIQUE INDEX ... ON webhook_events(provider, external_id) WHERE external_id <> ''
+
+The status field tracks a delivery through its life: pending (verified, handler not yet run) → processed (handler returned nil) or failed (handler errored — HandlerError holds the message), with skipped for a deduped retry.
+
+Admin list & replay
+
+Every delivery is inspectable under /api/admin/webhooks (admin role). When a handler fails — a transient outage, or a bug you've since deployed a fix for — replay re-runs it against the stored payload without asking the provider to redeliver:
+
+Method & pathDoes
+
+GET /api/admin/webhooksList deliveries; filter by ?provider= & ?status=
+
+POST /api/admin/webhooks/:id/replayRe-dispatch the stored event; increments retry_count
+
+Replay bumps retry_count atomically with gorm.Expr("retry_count + ?", 1), so two concurrent replays of the same event each add one instead of clobbering each other, then records the new processed/failed outcome.
+
+Adding a custom verifier
+
+A verifier is just a VerifyFunc — func(secret string, body []byte, headers map[string]string) error — returning nil when the signature is valid. For a provider whose scheme isn't covered, write one and register it. For a simple hex-HMAC provider you don't even need to: reach for HMACVerifier("X-Signature").
+
+internal/webhooks/setup.go
+Copy to clipboard
+
+// A partner that base64-encodes the HMAC in "X-Partner-Signature".
+
+func partnerVerify(secret string, body []byte, headers map[string]string) error {
+
+got := headers["X-Partner-Signature"]
+
+if got == "" {
+
+return fmt.Errorf("missing X-Partner-Signature")
+
+}
+
+mac := hmac.New(sha256.New, []byte(secret))
+
+mac.Write(body)
+
+expected := base64.StdEncoding.EncodeToString(mac.Sum(nil))
+
+if !hmac.Equal([]byte(got), []byte(expected)) {
+
+return fmt.Errorf("signature mismatch")
+
+}
+
+return nil
+
+}
+
+func init() {
+
+webhooks.Register("partner", webhooks.Provider{
+
+SecretEnv: "PARTNER_WEBHOOK_SECRET",
+
+Verify:    partnerVerify,
+
+Extract:   webhooks.JSONFieldExtractor("type", "id"), // reads body.type + body.id
+
+})
+
+webhooks.On("partner", "order.created", handlePartnerOrder)
+
+}
+
+Extractors decide idempotency. ExtractFunc returns (eventType, externalID). The event type drives handler dispatch; the external id drives dedupe. Header-based providers (GitHub reads X-GitHub-Event + X-GitHub-Delivery) use a custom extractor; JSON-envelope providers use JSONFieldExtractor.
+
+Go deeper
+
+Build a production Stripe webhook receiver from scratch — signature verification, idempotent fulfilment, failure replay, and testing with the Stripe CLI.
+Course: Building a Webhook Receiver →
+
+Feature FlagsRealtime (WebSockets)

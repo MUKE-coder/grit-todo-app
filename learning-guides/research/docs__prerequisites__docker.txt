@@ -1,0 +1,514 @@
+Prerequisites
+Docker for Grit Developers
+
+A practical guide to Docker for developers who want to use Grit. You don't need to be a Docker expert — just understand enough to start and stop the infrastructure services that power your Grit project.
+
+What is Docker?
+
+Think of Docker like a shipping container for software. Just as shipping containers let you move goods between ships, trucks, and warehouses without repacking, Docker containers let you run software on any computer without worrying about what's already installed there.
+
+Without Docker, setting up a database like PostgreSQL means downloading an installer, configuring paths, managing versions, and troubleshooting OS-specific quirks. With Docker, you run a single command and get a fully working database in seconds — identical on every developer's machine.
+
+This eliminates the "works on my machine" problem entirely. Every developer on your team gets the exact same PostgreSQL version, the exact same Redis configuration, and the exact same MinIO file storage — guaranteed.
+
+In Grit
+
+Docker runs your database (PostgreSQL), cache and job queue (Redis), file storage (MinIO), and email testing server (Mailhog). Your Go API and Next.js apps run natively on your machine for faster development — only the infrastructure services live in Docker containers.
+
+Installing Docker
+
+Docker Desktop is the easiest way to get started on Windows and macOS. It bundles the Docker engine, Docker Compose, and a graphical interface for managing containers. On Linux, you install Docker Engine and Docker Compose separately.
+
+macOS
+
+Download Docker Desktop from docker.com/products/docker-desktop and run the installer. Or use Homebrew:
+
+Windows
+
+Download Docker Desktop from docker.com/products/docker-desktop. Enable WSL 2 when prompted (recommended). Restart your computer after installation.
+
+Linux (Ubuntu/Debian)
+
+Install Docker Engine and the Compose plugin from the official repository.
+
+macOS (Homebrew)
+
+terminal
+
+$ brew install --cask docker
+
+Linux (Ubuntu/Debian)
+
+# Install Docker Engine
+
+$ curl -fsSL https://get.docker.com | sh
+
+# Add your user to the docker group (avoids needing sudo)
+
+$ sudo usermod -aG docker $USER
+
+# Log out and back in, then verify
+
+$ docker --version
+
+Copy to clipboard
+
+Verify your installation
+
+$ docker --version
+
+Docker version 27.x.x, build abcdef0
+
+$ docker compose version
+
+Docker Compose version v2.x.x
+
+Copy to clipboard
+
+In Grit
+
+Docker must be installed and running before you run grit new. The scaffolded project includes a docker-compose.yml that requires Docker Compose V2 (the docker compose command without the hyphen).
+
+Images & Containers
+
+An image is a blueprint — a read-only template that contains everything needed to run a piece of software: the operating system, the application, its dependencies, and configuration. Think of it like a recipe.
+
+A container is a running instance of an image — the actual dish you cook from the recipe. You can run multiple containers from the same image, and each one is isolated from the others. When you stop a container, it's like throwing away the dish, but the recipe (image) remains for next time.
+
+# Pull the official PostgreSQL image
+
+$ docker pull postgres:16-alpine
+
+# Run a container from that image
+
+$ docker run -d \
+
+--name my-postgres \
+
+-e POSTGRES_USER=grit \
+
+-e POSTGRES_PASSWORD=grit \
+
+-e POSTGRES_DB=myapp \
+
+-p 5432:5432 \
+
+postgres:16-alpine
+
+Copy to clipboard
+
+In Grit
+
+Grit uses official images from Docker Hub: postgres:16-alpine for PostgreSQL, redis:7-alpine for Redis, minio/minio for file storage, and mailhog/mailhog for email testing. The "alpine" variants are smaller, lightweight images based on Alpine Linux.
+
+Dockerfile Basics
+
+A Dockerfile is a text file with instructions for building a custom image. Each line is a step: choose a base image, copy files, install dependencies, and specify how to start the application. Here are the key instructions:
+
+FROM — Sets the base image (e.g., golang:1.21-alpine)
+
+WORKDIR — Sets the working directory inside the container
+
+COPY — Copies files from your machine into the image
+
+RUN — Executes a command during the build (e.g., installing dependencies)
+
+EXPOSE — Documents which port the app listens on
+
+CMD — The command that runs when a container starts
+
+A multi-stage build uses multiple FROM statements. The first stage compiles your code with all build tools, then the final stage copies only the compiled binary into a tiny base image. This keeps production images small and secure.
+
+apps/api/Dockerfile
+Copy to clipboard
+
+# ---------- Build stage ----------
+
+FROM golang:1.21-alpine AS builder
+
+WORKDIR /app
+
+# Download dependencies first (cached layer)
+
+COPY go.mod go.sum ./
+
+RUN go mod download
+
+# Copy source and build
+
+COPY . .
+
+RUN CGO_ENABLED=0 GOOS=linux go build -o /app/server ./cmd/server
+
+# ---------- Run stage ----------
+
+FROM alpine:3.19
+
+RUN apk --no-cache add ca-certificates tzdata
+
+WORKDIR /app
+
+COPY --from=builder /app/server .
+
+EXPOSE 8080
+
+CMD ["./server"]
+
+In Grit
+
+Grit scaffolds two Dockerfiles: apps/api/Dockerfile builds the Go binary using a multi-stage build (final image is under 20MB), and apps/web/Dockerfile builds the Next.js app with standalone output. These are used by the production compose file, not during everyday development.
+
+Docker Compose
+
+Running individual docker run commands for each service gets tedious fast. Docker Compose solves this by letting you define all your services in a single docker-compose.yml file. One command starts everything.
+
+A compose file defines services (containers to run), their images, port mappings, environment variables, volumes for data persistence, and dependencies between services. It's like a blueprint for your entire infrastructure.
+
+docker-compose.yml (simplified example)
+Copy to clipboard
+
+services:
+
+postgres:
+
+image: postgres:16-alpine
+
+ports:
+
+- "5432:5432"
+
+environment:
+
+POSTGRES_USER: grit
+
+POSTGRES_PASSWORD: grit
+
+POSTGRES_DB: myapp
+
+volumes:
+
+- postgres-data:/var/lib/postgresql/data
+
+volumes:
+
+postgres-data:
+
+In Grit
+
+Every Grit project has a docker-compose.yml at the project root that defines all four infrastructure services. There's also a docker-compose.prod.yml for production that additionally builds and runs the Go API, web app, and admin panel as containers.
+
+Grit's Docker Services
+
+When you scaffold a new Grit project, the generated docker-compose.yml includes four services. Here's what each one does and why it's there:
+
+PostgreSQL (port 5434)
+
+Your primary relational database. Stores users, resources, and all application data. Grit uses GORM to auto-migrate your Go models into PostgreSQL tables. Default credentials: grit / grit.
+
+Redis (port 6380)
+
+An in-memory data store used for two things: caching API responses (via the cache middleware) and processing background jobs (via the asynq job queue). No authentication required in development.
+
+MinIO (ports 9002 / 9003)
+
+An S3-compatible object storage server. Handles file uploads like user avatars, documents, and images. Port 9002 is the API endpoint your Go code talks to. Port 9003 is a web console where you can browse files, create buckets, and manage storage. Login: the MINIO_ACCESS_KEY and MINIO_SECRET_KEY from .env.
+
+Mailhog (ports 1025 / 8025)
+
+A fake SMTP server that catches all outgoing emails. Port 1025 receives emails from your Go API. Port 8025 is a web interface where you can view every email your app sent &mdash; perfect for testing password resets, welcome emails, and notifications without sending real mail.
+
+docker-compose.yml (generated by grit new)
+Copy to clipboard
+
+services:
+
+# --- Primary Database ---
+
+postgres:
+
+image: postgres:16-alpine
+
+container_name: myapp-postgres
+
+restart: unless-stopped
+
+ports:
+
+- "5434:5432"
+
+environment:
+
+POSTGRES_USER: grit
+
+POSTGRES_PASSWORD: grit
+
+POSTGRES_DB: myapp
+
+volumes:
+
+- postgres-data:/var/lib/postgresql/data
+
+healthcheck:
+
+test: ["CMD-SHELL", "pg_isready -U grit"]
+
+interval: 5s
+
+timeout: 5s
+
+retries: 5
+
+# --- Cache & Job Queue ---
+
+redis:
+
+image: redis:7-alpine
+
+container_name: myapp-redis
+
+restart: unless-stopped
+
+ports:
+
+- "6380:6379"
+
+volumes:
+
+- redis-data:/data
+
+healthcheck:
+
+test: ["CMD", "redis-cli", "ping"]
+
+interval: 5s
+
+timeout: 5s
+
+retries: 5
+
+# --- S3-Compatible File Storage ---
+
+minio:
+
+image: minio/minio
+
+container_name: myapp-minio
+
+restart: unless-stopped
+
+ports:
+
+- "9002:9000"
+
+- "9003:9001"
+
+environment:
+
+MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:?set MINIO_ACCESS_KEY in .env}
+
+MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:?set MINIO_SECRET_KEY in .env}
+
+volumes:
+
+- minio-data:/data
+
+command: server /data --console-address ":9001"
+
+# --- Email Testing ---
+
+mailhog:
+
+image: mailhog/mailhog
+
+container_name: myapp-mailhog
+
+restart: unless-stopped
+
+ports:
+
+- "1025:1025"
+
+- "8025:8025"
+
+volumes:
+
+postgres-data:
+
+redis-data:
+
+minio-data:
+
+In Grit
+
+Start all four services with docker compose up -d. They'll run in the background. Your Go API connects to them via localhost and the ports listed above. All connection strings are pre-configured in the .env file.
+
+Essential Commands
+
+You only need a handful of Docker commands for day-to-day Grit development. Here's your cheat sheet:
+
+CommandWhat It Does
+
+docker compose up -dStart all services in the background (detached mode)
+
+docker compose downStop and remove all containers (data is preserved in volumes)
+
+docker compose logsShow logs from all services
+
+docker compose logs -f postgresFollow (stream) logs for a specific service
+
+docker psList all running containers
+
+docker compose restart redisRestart a specific service
+
+docker compose down -vStop everything AND delete all data volumes (fresh start)
+
+docker compose psShow the status of all compose services
+
+# Start your infrastructure
+
+$ docker compose up -d
+
+# Check that everything is running
+
+$ docker compose ps
+
+# When you're done for the day
+
+$ docker compose down
+
+Copy to clipboard
+
+In Grit
+
+In practice, you mainly need two commands: docker compose up -d to start your infrastructure at the beginning of a coding session, and docker compose down when you're done. Everything else is for troubleshooting.
+
+Volumes & Data Persistence
+
+By default, when you stop and remove a container, all its data disappears. Volumes solve this by storing data outside the container on your machine's filesystem. When you restart the container, the volume is re-attached and all your data is still there.
+
+Docker supports two types of storage: named volumes (managed by Docker, recommended) and bind mounts (map a specific folder on your machine). Grit uses named volumes for all services because they're simpler and work the same on every operating system.
+
+docker-compose.yml (volumes section)
+Copy to clipboard
+
+volumes:
+
+postgres-data:    # Database files
+
+redis-data:       # Cache snapshots
+
+minio-data:       # Uploaded files
+
+VolumeStoresSurvives Restart?
+
+postgres-dataAll your database tables, rows, and indexesYes
+
+redis-dataCached data and job queue stateYes
+
+minio-dataUploaded files and bucket metadataYes
+
+In Grit
+
+Your PostgreSQL data persists across container restarts thanks to the postgres-data volume. If you need a completely fresh start (e.g., your schema is out of sync), run docker compose down -v to delete all volumes, then docker compose up -d to recreate everything from scratch. GORM will auto-migrate your tables on the next API startup.
+
+Port Mapping
+
+Containers run in their own isolated network. To access a service from your machine, you create a port mapping that connects a port on your computer (the host) to a port inside the container. The syntax is HOST:CONTAINER.
+
+For example, "5434:5432" means "when something connects to port 5434 on my machine, route it to port 5432 inside the container." Your Go API code uses localhost:5434 to talk to PostgreSQL, and Docker transparently routes the traffic to the container.
+
+port mapping explained
+Copy to clipboard
+
+ports:
+
+- "5434:5432"   # HOST:CONTAINER
+
+#    ^     ^
+
+#    |     |
+
+#    |     +-- Port inside the container
+
+#    +-------- Port on your machine (localhost)
+
+# Your Go API connects to localhost:5434
+
+# which Docker routes to the container's port 5432
+
+ServiceMappingAccess From Your Code
+
+PostgreSQL5434:5432localhost:5434
+
+Redis6380:6379localhost:6380
+
+MinIO API9002:9000localhost:9002
+
+MinIO Console9003:9001localhost:9003 (browser)
+
+Mailhog SMTP1025:1025localhost:1025
+
+Mailhog UI8025:8025localhost:8025 (browser)
+
+Port busy? If a port is already in use, change the host side of the mapping. For example, change "5434:5432" to "5435:5432" and update the POSTGRES_PORT in your .env file to use port 5435.
+
+In Grit
+
+The .env file generated by grit new contains all connection strings pre-configured to point at these default ports. If you change a port mapping in docker-compose.yml, update the corresponding environment variable in .env to match.
+
+Troubleshooting
+
+Docker is generally reliable, but things can go wrong. Here are the most common issues and how to fix them:
+
+Container won’t start
+
+Check the logs to see what went wrong. Run docker compose logs <service> (e.g., docker compose logs postgres). Common causes include corrupted data or missing environment variables. If the logs mention data corruption, try docker compose down -v && docker compose up -d for a clean start.
+
+Port already in use
+
+Another process is using the port. On macOS/Linux, find it with lsof -i :5432 and kill it, or change the host port in docker-compose.yml (e.g., "5433:5432") and update your .env file. On Windows, use netstat -ano | findstr :5432 to find the process ID.
+
+Out of disk space
+
+Docker images and volumes accumulate over time. Run docker system prune to remove unused containers, networks, and dangling images. Add the -a flag to also remove unused images. Add --volumes to remove unused volumes (caution: this deletes data).
+
+WSL issues on Windows
+
+Docker Desktop on Windows requires WSL 2. If you see WSL-related errors, open PowerShell as admin and run wsl --update. Make sure WSL 2 is the default: wsl --set-default-version 2. Restart Docker Desktop after any WSL changes.
+
+Permission errors on Linux
+
+If you see "permission denied" when running docker commands, add your user to the docker group: sudo usermod -aG docker $USER. Then log out and back in (or run newgrp docker) for the change to take effect.
+
+Docker daemon not running
+
+On macOS/Windows, make sure Docker Desktop is open and running (check for the whale icon in your system tray). On Linux, start the daemon with sudo systemctl start docker. To make it start automatically: sudo systemctl enable docker.
+
+terminal — common troubleshooting commands
+Copy to clipboard
+
+# View logs for a specific service
+
+$ docker compose logs postgres
+
+# Follow logs in real-time
+
+$ docker compose logs -f redis
+
+# Check what's using a port (macOS/Linux)
+
+$ lsof -i :5432
+
+# Clean up unused Docker resources
+
+$ docker system prune
+
+# Nuclear option: remove everything and start fresh
+
+$ docker compose down -v && docker compose up -d
+
+In Grit
+
+For more detailed troubleshooting tips specific to Grit projects, see the Troubleshooting page in the Getting Started section. It covers API connection issues, frontend build errors, and other common problems beyond Docker.
+
+Next.js & ReactQuick Start

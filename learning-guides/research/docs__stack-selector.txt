@@ -1,0 +1,408 @@
+Stack Selector
+Pick the right Grit stack for what you're building
+
+Grit ships eleven distinct architecture combos. This page tells you which one to pick based on what you're actually building — with exact commands, trade-offs, and a capability matrix.
+
+What is Grit?
+
+Grit is a full-stack meta-framework. One CLI scaffolds Go (Gin + GORM) backends with React frontends — Next.js or TanStack Router — plus optional Wails desktop, Expo mobile, and a Filament-like admin panel. Everything ships in a monorepo with shared Zod schemas + TypeScript types between Go and the frontends.
+
+The opinionated stack: Go backend (Gin + GORM + PostgreSQL), React frontend (Next.js or Vite + TanStack), Wails for desktop, Expo for mobile, Tailwind + shadcn/ui for styling, Zod for validation, asynq + Redis for jobs, S3-compatible for storage, Resend for email.
+
+Capabilities every project gets
+
+Regardless of which combo you pick, the API in every Grit scaffold ships with:
+
+Auth: JWT + OAuth (Google/GitHub) + 2FA TOTP
+
+Trusted devices, backup codes, password reset.
+
+Idempotency-Key middleware
+
+Safe retry on POST/PUT/PATCH/DELETE. Cached for 24h.
+
+Activity log + tamper-evident hash chain
+
+Every authenticated mutation logged + SHA-256 chain.
+
+Feature flags + A/B testing engine
+
+Sticky bucketing, percentage rollouts, realtime push.
+
+Webhook receiver framework
+
+Stripe / GitHub / HMAC verifiers shipped. Auto-dedupe.
+
+WebSocket realtime hub
+
+SendToUser / Broadcast helpers. Auto-reconnecting client.
+
+PDF generation + CSV/Excel export
+
+Per-resource auto-emitted; styled templates.
+
+Vercel AI Gateway (one key, many models)
+
+Single API key, streaming completion, chat.
+
+File storage (S3 / R2 / MinIO)
+
+Presigned URLs, image processing, progress tracking.
+
+Background jobs (asynq + Redis)
+
+Dashboard at /admin/jobs. Cron scheduler too.
+
+Sentinel security suite
+
+WAF, per-IP rate limit, brute-force lockout, geo gate.
+
+GORM Studio + gin-docs
+
+Visual DB browser at /studio + auto OpenAPI at /docs.
+
+The combo you pick determines where the code lives (one binary vs monorepo), which clients you ship (web, admin, mobile, desktop), and how users interact (online, offline-first, multi-device).
+
+The decision: what are you building?
+
+Pick the scenario closest to yours. Each section below has recommended combo, exact command, and trade-offs.
+
+A web portal / SaaS product
+
+An internal admin tool / dashboard
+
+A desktop app with offline capability
+
+A desktop app that's always online
+
+A mobile app
+
+A multi-platform product (web + mobile + desktop)
+
+An API to back an existing frontend
+
+I'm not sure yet — start simple
+
+1. A web portal / SaaS product
+
+Marketing site + dashboard + admin panel — the classic triple stack
+
+Recommended:
+
+Terminal
+Copy to clipboard
+
+$grit new my-saas --triple --next
+
+What you get: three apps in one monorepo:
+
+• apps/web — Next.js public site (marketing pages, blog, pricing, sign-up). SEO-optimized, ISR-friendly.
+
+• apps/admin — Next.js dashboard (logged-in user UI + admin operations). Filament-like resource pages.
+
+• apps/api — Go backend (Gin + GORM). Serves both frontends + any external API consumers.
+
+• packages/shared — Zod schemas + TypeScript types shared across all three apps.
+
+When this is the right call:
+
+✓ You're building a SaaS that needs a public marketing site separate from the logged-in app.
+
+✓ You expect to have admin operations (manage users, content, billing) that shouldn't live in the customer-facing app.
+
+✓ You want SEO on the marketing pages without bloating the dashboard bundle.
+
+Alternatives in this space:
+
+Double — web + API only
+grit new my-saas --double --next
+Drops the admin panel. Pick when you're early-stage and don't need a separate ops UI yet — you can always add it later.
+
+Single (Next.js) — one app, embedded API
+grit new my-saas --single --next
+One Next.js app with the Go API embedded into a single binary. Pick for SEO-heavy products where marketing + dashboard share routing. Deploys as one process.
+
+Single (Vite SPA) — fastest dev loop
+grit new my-saas --single --vite
+Go binary serves a Vite SPA. No SSR, no SEO. Pick for dashboard-only products, MVPs, and internal tools where you'd otherwise reach for Laravel.
+
+2. An internal admin tool / dashboard
+
+No public site, no SEO — just a fast, login-gated workbench
+
+Recommended:
+
+Terminal
+Copy to clipboard
+
+$grit new my-tool --single --vite
+
+What you get: one Go binary that serves the Vite-built React SPA at / and the API at /api. The frontend uses TanStack Router (file-based) and TanStack Query. Compiles to a single executable.
+
+When this is the right call:
+
+✓ The audience is staff or a small group of authenticated users.
+
+✓ You don't need SEO — the app is behind a login.
+
+✓ You want the fastest possible dev loop and the simplest possible deploy.
+
+✓ You're coming from Laravel and want a familiar "one app does everything" structure.
+
+Trade-offs:
+
+✗ No SSR — initial page load is a blank shell + JS hydration.
+
+✗ One frontend means marketing + app share the same bundle (rarely a problem for internal tools).
+
+3. A desktop app with offline capability
+
+Local-first writes + manual Sync + field-level conflict resolution
+
+Two paths — pick based on whether your data is shared:
+
+Path A: Standalone offline-first (single user, no server)
+
+Terminal
+Copy to clipboard
+
+$grit new-desktop my-app
+
+Pure Wails app with local SQLite. No server, no cloud, no auth — the user IS the data owner. The classic shape: a tax filing tool, a personal CRM, a journaling app, an inventory tracker for a single shop.
+
+Pros: simplest path. One binary. No server costs. Works on a plane forever. Cons: no multi-device sync. No cloud backup unless you build one yourself.
+
+Path B: Multi-user offline with cloud sync (most common)
+
+Terminal
+Copy to clipboard
+
+$grit new my-app --triple --vite --desktop
+
+Full triple stack plus a Wails desktop client that syncs to the server via Grit's built-in offline engine (v3.14+). Local SQLite mirror, outbox with squash semantics, manual Sync button, field-level conflict dialog when the server moved on. Read the offline-first guide for the full mental model.
+
+Pros: best of both worlds — works on a plane, syncs in the office. Multi-device. Multi-user. Field-level merge UX. Cons: more moving parts. Needs a server.
+
+The big differentiator: most desktop apps in 2026 use the second path. Pure offline-only is rarer — usually only for productivity tools where the data genuinely doesn't need to leave the user's machine.
+
+4. A desktop app that's always online
+
+Native UI, native window, but every action hits the server
+
+Recommended:
+
+Terminal
+Copy to clipboard
+
+$grit new my-app --triple --vite --desktop
+
+Same scaffold as the offline path, but you skip the sync engine — the desktop frontend talks directly to the API over HTTP just like the web client does. The user gets a native window, a system tray, OS keychain for tokens, and the command palette — but data is always live.
+
+When this is the right call:
+
+✓ Your users are always on stable internet (office workers, support agents).
+
+✓ The product is conceptually a web app, but you want a desktop experience for branding / focus / OS integrations.
+
+✓ You want command palette + native menus + system notifications.
+
+✓ Examples: Linear's desktop app, Slack's desktop app, a custom CRM that "feels native".
+
+5. A mobile app (iOS + Android)
+
+Expo + React Native client, sharing types with the API
+
+Recommended (mobile-only):
+
+Terminal
+Copy to clipboard
+
+$grit new my-app --mobile
+
+What you get: Go API + Expo React Native app sharing types via packages/shared. NativeWind (Tailwind for RN), TanStack Query, Expo Router, expo-secure-store for tokens.
+
+When this is the right call:
+
+✓ Mobile-first product (fitness tracker, social app, on-demand delivery).
+
+✓ You don't need a marketing website yet — App Store / Play Store listings are enough.
+
+If you also need a web presence:
+
+Terminal
+Copy to clipboard
+
+$grit new my-app --triple --mobile
+
+Adds web + admin to the mobile-only setup. The mobile app and the web app share the same Go API + shared package.
+
+6. Multi-platform — web + mobile + desktop
+
+The kitchen sink. Every device, one API, shared types.
+
+Recommended:
+
+Terminal
+Copy to clipboard
+
+$grit new my-app --triple --vite --mobile --desktop
+
+What you get: four apps in one monorepo — apps/web (public marketing), apps/admin (dashboard), apps/expo (mobile), apps/desktop (Wails) — all talking to the same Go API and sharing types via packages/shared.
+
+When this is the right call:
+
+✓ Serious B2B / B2C product where users genuinely use the app across devices.
+
+✓ The classic Linear / Notion / Slack / Cursor pattern.
+
+✓ You have the team capacity to maintain multiple frontends.
+
+Trade-offs:
+
+✗ The most complex setup — four frontends to maintain.
+
+✗ More CI / CD work — App Store, Play Store, Wails builds, web deploys.
+
+✓ But: types stay in sync via packages/shared, so a backend change propagates automatically.
+
+7. An API to back an existing frontend
+
+No frontend at all — Go API + admin endpoints, you bring your own client
+
+Recommended:
+
+Terminal
+Copy to clipboard
+
+$grit new my-api --api
+
+What you get: just the Go API folder. Auth, models, handlers, all the batteries — but no React, no Next.js. Use this when you have an existing iOS / Flutter / Vue / Angular app that just needs a backend.
+
+When this is the right call:
+
+✓ You already have a frontend codebase you don't want to migrate.
+
+✓ You're building a public API product (developers are your users).
+
+✓ You're scaffolding a microservice in a polyglot system.
+
+8. I'm not sure yet — start simple
+
+The default path is intentionally the right call for most projects
+
+Recommended:
+
+Terminal
+Copy to clipboard
+
+$grit new my-app --single --vite
+
+The single-binary Vite SPA is the lowest-friction starting point. One process, one deploy, one frontend, full Grit batteries. If you outgrow it, every Grit upgrade path is well-documented:
+
+→ Need SEO / public site? Migrate to --double.
+
+→ Need admin operations? Migrate to --triple.
+
+→ Need mobile? Add --mobile.
+
+→ Need desktop? Add --desktop.
+
+Capability matrix
+
+What each combo gives you out of the box. Use this when an AI assistant or teammate asks "does Grit do X?".
+
+Capability--single (vite)--single (next)--double--triple--api--mobile+ --desktopnew-desktop
+
+Go API serverembedded
+
+Public marketing site
+
+Admin dashboard
+
+Mobile (Expo) client+ flag+ flag+ flag
+
+Desktop (Wails) client+ flag+ flag+ flag
+
+Offline-first sync engine+ desktop+ desktopalways
+
+JWT auth + 2FA + OAuthlocal
+
+Activity log + hash chain
+
+Feature flags + A/B
+
+Webhook receiver
+
+Realtime WebSocket hub
+
+PDF + CSV/Excel export
+
+Background jobs (asynq)
+
+File storage (S3/R2/MinIO)
+
+Email (Resend + templates)
+
+Sentinel (WAF + rate limit)
+
+GORM Studio + gin-docs
+
+Single-binary deploy
+
+SEO / SSR
+
+Shared types via packages/shared
+
+For AI assistants — a quick lookup table
+
+If you're an AI helping someone choose, here's the one-liner answer for the most common requests:
+
+User says...You recommend
+
+A SaaS product (marketing + dashboard)grit new app --triple --next
+
+An internal tool / staff dashboardgrit new app --single --vite
+
+A desktop app, offline, single usergrit new-desktop app
+
+A desktop app for field staff with syncgrit new app --triple --vite --desktop
+
+A native desktop wrapper for our SaaSgrit new app --triple --vite --desktop
+
+A mobile-first product (fitness, social)grit new app --mobile
+
+Mobile + web (cross-platform SaaS)grit new app --triple --mobile
+
+Web + mobile + desktop (Linear/Slack-style)grit new app --triple --vite --mobile --desktop
+
+Just an API for an existing frontendgrit new app --api
+
+A blog / content sitegrit new app --double --next
+
+An MVP, lowest frictiongrit new app --single --vite
+
+A POS / inventory tool, single-shopgrit new-desktop app
+
+A multi-tenant SaaS with org-scopinggrit new app --triple --next
+
+An e-commerce storegrit new app --triple --next
+
+A dev tool with web UI + CLIgrit new app --single --vite
+
+Frontend choice — Vite or Next.js?
+
+For combos that include a web frontend, you can pick: --vite (TanStack Router + Vite) or --next (Next.js App Router). The default depends on the architecture; you can override.
+
+Pick Next.js when you need SEO, server components, ISR, edge rendering, or you're already deep in the Next.js ecosystem.
+
+Pick Vite (TanStack Router) when SEO doesn't matter (everything's behind login), you want faster dev start-up, file-based routing with full type safety, and a smaller bundle.
+
+The desktop scaffold (--desktop) always uses Vite — Next.js doesn't make sense inside a Wails webview.
+
+Still stuck?
+
+If you're genuinely unsure after reading this, run grit new app --single --vite and start building. You can always migrate to a richer architecture later — every combo upgrade path is documented, and the file structure is consistent across them.
+
+For deeper reading on each architecture mode, see Architecture Modes. For the offline-first specifics, see Offline-First Desktop Apps. For the desktop scaffold itself, see Desktop Overview.
+
+Quick StartArchitecture Modes

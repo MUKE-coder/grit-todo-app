@@ -1,0 +1,126 @@
+Security
+
+Enterprise SSO
+
+Social login and enterprise SSO look similar and are different products. Social login is one provider you configure once. SSO is one connection per customer, added at runtime, routed by email domain, with their users provisioned on first login and their access governed by groups in their directory. Grit ships the second one at /system/sso.
+
+What works
+
+Any identity provider with an OpenID Connect discovery document — which is all of the current ones: Okta, Microsoft Entra ID (Azure AD), Auth0, Keycloak, Google Workspace, Ping, OneLogin. You need three things from the customer's IdP admin: an issuer URL, a client ID, and a client secret.
+
+SAML 2.0 is supported too. Pick the protocol per connection: use OIDC unless the customer's provider only speaks SAML, which still happens in enterprise procurement. Everything after the identity is verified — provisioning, identity linking, group-to-role mapping — is shared between the two, so the choice only affects how the customer configures their side.
+
+Adding a connection
+
+System → Single sign-on → New connection. The fields that matter:
+
+Slug — appears in the callback URL and can't change later.
+
+Email domains: comma-separated. Anyone signing in with an address at these domains is sent to this provider, and these are the only addresses the provider is trusted for. A sign-in whose IdP asserts any other address is refused, even when an account with that address exists, so a connection with no domains can sign nobody in.
+
+Issuer URL — discovery is fetched from /.well-known/openid-configuration beneath it.
+
+Client ID / secret — issued by the IdP. The secret is encrypted at rest and never returned by the API, so when you edit a connection later the field is blank and leaving it blank keeps the stored value.
+
+Give the customer's IdP admin the callback URL (there's a copy button on each row). It is deliberately unversioned:
+
+https://your-app.com/api/auth/sso/<slug>/callback
+
+Copy to clipboard
+
+That string gets registered in their IdP console — a value they control. If it carried the API version, bumping to /api/v2 would break every customer's login at once, which is the exact failure the version prefix exists to prevent.
+
+Saving a connection makes it live immediately — no restart. A connection whose discovery fails is logged and skipped rather than taking the others down, so one customer's misconfigured IdP can't stop everyone else signing in.
+
+SAML connections
+
+Choose SAML 2.0 as the protocol and give it the IdP's metadata — either a URL, or the XML pasted in. Pasted XML wins when both are set: a pasted document is pinned, where a URL can start serving something different tomorrow. There is no client secret; trust rides on the signing certificate inside that metadata.
+
+Give the customer's IdP admin two URLs (the IdP URLs button copies both):
+
+ACS URL:      https://your-app.com/api/auth/saml/<slug>/acs
+
+SP metadata:  https://your-app.com/api/auth/saml/<slug>/metadata
+
+Copy to clipboard
+
+The metadata endpoint publishes this application's entity ID, its ACS endpoint, and its certificate. The keypair behind it is generated automatically the first time a SAML connection is saved — self-signed is correct here, because the IdP trusts it by virtue of the customer's admin uploading that exact certificate, not because a public CA vouched for it. The private key is encrypted at rest and never leaves the server. Authentication requests are signed with it (RSA-SHA256), so providers configured to require signed requests work without extra setup.
+
+IdP-initiated sign-in
+
+Enabled by default. It lets someone start from their provider's app tile — which is how most enterprise users actually sign in — rather than requiring every login to begin at your login page. The assertion is still signature-checked, audience-restricted and time-bounded; what's relaxed is only the requirement that we started the exchange. Turn it off if your threat model requires every login to originate here: each sign-in that starts here remembers its request, and the response has to answer that request.
+
+Attributes
+
+SAML carries claims as named attributes and every provider names them differently. Leave the attribute fields blank and Grit tries the conventional names — email, mail, the Microsoft claim URIs, groups, memberOf — or pin an exact name if your IdP uses something unusual. The subject comes from the assertion's NameID, the SAML equivalent of OIDC's sub.
+
+What the user sees
+
+The login page offers Sign in with SSO. The user types their work address; the server decides where it belongs and redirects them. Two consequences worth knowing:
+
+You never publish a list of your customers on a public login page — the mapping lives server-side.
+
+An address with no connection falls through to the normal password form. That is a normal answer, not an error — most users of most apps aren't SSO users.
+
+Provisioning and roles
+
+On a successful sign-in Grit resolves the account in this order:
+
+By the IdP's subject (sub), via the user_identities table. The subject is the only identifier a provider guarantees is stable — email addresses get renamed and reassigned. Matching on it first means someone who changes their email at the IdP keeps their account and their data instead of silently getting a second one.
+
+By email, which links the identity on first use, and only for an address at one of the connection's domains. This is also how an existing password user is adopted the day their company turns SSO on. Without the domain check, one customer's IdP could assert your administrator's address and be signed in as them.
+
+Create the account, if just-in-time provisioning is on. Turn it off for customers who pre-create their users — then a successful authentication with no local account is refused rather than silently onboarding somebody.
+
+Mapping groups to roles
+
+Set Groups claim to whichever claim the provider puts groups in (groups for Okta and Keycloak, roles for Entra ID app roles), then map them to role names:
+
+Group to role mapping
+Copy to clipboard
+
+{
+
+"it-admins": "ADMIN",
+
+"engineering": "EDITOR"
+
+}
+
+Mapped roles are re-applied on every login, replacing what was there. That is the point: removing somebody from a group in the customer's directory revokes their role here the next time they sign in, without anyone touching your admin. Someone in none of the mapped groups drops to the connection's default role, or to USER when it has none. Connections with no mapping configured are left alone, so manual grants survive.
+
+Group mapping is access control. A mapping that grants ADMIN hands your admin panel to whoever the customer puts in that group. Map to the least-privileged role that works, and remember the customer's directory admin — not you — decides who is in it.
+
+The endpoints
+
+POST /api/v1/auth/sso/discover        {"email": "bob@acme.com"}
+
+# OIDC
+
+GET  /api/v1/auth/sso/:slug            → redirect to the provider
+
+GET  /api/v1/auth/sso/:slug/callback   → the return trip
+
+# SAML
+
+GET  /api/v1/auth/saml/:slug           → redirect with a signed AuthnRequest
+
+GET  /api/v1/auth/saml/:slug/metadata  → SP metadata for the IdP admin
+
+POST /api/v1/auth/saml/:slug/acs       → the IdP posts the signed assertion here
+
+GET    /api/v1/sso/connections       admin only
+
+POST   /api/v1/sso/connections
+
+PUT    /api/v1/sso/connections/:id
+
+DELETE /api/v1/sso/connections/:id
+
+Copy to clipboard
+
+PUT changes only the fields it is sent; leaving a field out keeps its value. The client secret works the same way.
+
+The callback issues exactly the same session cookies a password login does, so everything downstream — refresh, server-side sessions, revoke-all, the activity log — works unchanged.
+
+Roles & PermissionsPrivacy & Compliance

@@ -1,0 +1,188 @@
+Desktop (Wails)
+Resource Generation
+
+Generate full-stack CRUD resources for desktop apps. One command creates Go models, services, React pages, and injects code into 10 locations.
+
+Generated filesWired into 10 places
+One command generates the model, service, and React pages — and wires them into 10 places
+
+Generate a Resource
+
+The same grit generate resource command works for both web and desktop projects. Grit auto-detects the project type.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Product --fields "name:string,price:float,published:bool"
+
+Files Created
+
+Five new files are generated:
+
+internal/models/product.go
+GORM model struct with ID, fields, timestamps, soft delete
+
+internal/service/product.go
+Service with List, ListAll, GetByID, Create, Update, Delete
+
+frontend/src/routes/_layout/products.index.tsx
+List route with search, pagination, PDF/Excel export, edit/delete
+
+frontend/src/routes/_layout/products.new.tsx
+Create form route with field-type-based inputs
+
+frontend/src/routes/_layout/products.$id.edit.tsx
+Edit form route with pre-filled fields
+
+Automatic Injections
+
+In addition to new files, code is injected into 10 locations in existing files using grit: markers:
+
+FileMarkerWhat
+
+db.go// grit:modelsModel in AutoMigrate
+
+main.go// grit:service-initService initialization
+
+main.go/* grit:app-args */Service passed to NewApp
+
+app.go// grit:fieldsService field on App struct
+
+app.go/* grit:constructor-params */Constructor parameter
+
+app.go/* grit:constructor-assign */Field assignment
+
+app.go// grit:methods7 bound methods (CRUD + export)
+
+types.go// grit:input-typesInput struct
+
+cmd/studio/main.go// grit:studio-modelsModel in Studio
+
+sidebar.tsx// grit:nav-icons + navNav icon + item
+
+Supported Field Types
+
+TypeGo TypeForm Input
+
+stringstringText input
+
+textstringTextarea
+
+richtextstringTextarea
+
+intintNumber input
+
+uintuintNumber input
+
+floatfloat64Number input
+
+boolboolToggle switch
+
+datetime.TimeDate picker
+
+datetimetime.TimeDateTime picker
+
+slugstringAuto-generated from source field
+
+belongs_touintRelationship picker (searchable select that loads related rows)
+
+filefiles.FileRefNative upload → FileRef via the embedded /api/uploads
+
+files[]files.FileRefMulti-file native upload → FileRef[] via /api/uploads
+
+Example: Article with Slug
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Article --fields "title:string,slug:slug:source=title,content:richtext,published:bool"
+
+The slug field type auto-generates a URL-friendly slug from the source field (title) via a BeforeCreate GORM hook. Slug fields are excluded from forms and input structs.
+
+Remove a Resource
+
+To remove a previously generated resource, deleting files and reversing all injections:
+
+Terminal
+Copy to clipboard
+
+$grit remove resource Product
+
+This deletes the model, service, and route files, and removes all injected code from existing files. The grit: markers remain intact for future generation.
+
+How Route Files Work (TanStack Router)
+
+Grit Desktop uses TanStack Router with file-based routing. Each generated resource creates three route files that are automatically discovered by the TanStack Router Vite plugin — no centralized route registry needed.
+
+routes/_layout/products.index.tsx
+Route path: /_layout/products/
+
+The list route. Exports Route via createFileRoute. Uses useQuery to fetch data and renders a DataTable with search, pagination, and export buttons.
+
+routes/_layout/products.new.tsx
+Route path: /_layout/products/new
+
+The create form route. Uses useNavigate() for navigation after successful creation. No params needed.
+
+routes/_layout/products.$id.edit.tsx
+Route path: /_layout/products/$id/edit
+
+The edit form route. Uses Route.useParams() to get the typed $id parameter. Fetches the existing record and pre-fills the form.
+
+Route File Structure
+
+Every generated route file follows this pattern:
+
+routes/_layout/products.index.tsx
+Copy to clipboard
+
+import { createFileRoute } from "@tanstack/react-router";
+
+export const Route = createFileRoute("/_layout/products/")({
+
+component: ProductsPage,
+
+});
+
+function ProductsPage() {
+
+// ... list page with DataTable, search, pagination
+
+}
+
+For the edit route, Route.useParams() provides type-safe access to the $id parameter:
+
+routes/_layout/products.$id.edit.tsx
+Copy to clipboard
+
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+
+export const Route = createFileRoute("/_layout/products/$id/edit")({
+
+component: EditProductPage,
+
+});
+
+function EditProductPage() {
+
+const { id } = Route.useParams();
+
+const navigate = useNavigate();
+
+// Fetch product by ID, pre-fill form
+
+// On save: navigate({ to: "/products" })
+
+}
+
+Key differences from React Router:
+
+No centralized routes — route files are auto-discovered by the Vite plugin. Adding a resource just creates files.
+
+Type-safe params — Route.useParams() returns typed params scoped to the current route, not a generic useParams().
+
+Object-based navigate — use navigate({ to: "/products" }) instead of navigate("/products").
+
+Hash history — desktop apps use createHashHistory() so routing works from disk without a web server.
+
+Download Desktop Handbook (PDF)Complete offline reference for Grit Desktop development

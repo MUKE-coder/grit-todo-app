@@ -1,0 +1,207 @@
+Extending Grit
+
+Plugins
+
+A Grit plugin generates code into your project. It isn't a runtime dependency you import — it writes models, routes and pages into your repo, which you then own and can edit like anything else.
+
+Using plugins
+
+grit plugin list                       # what's available
+
+grit plugin info multitenant           # what it does
+
+grit plugin add multitenant            # install a built-in
+
+grit plugin add ./plugins/my-plugin    # install one of your own
+
+grit plugin remove multitenant
+
+Copy to clipboard
+
+Why generated code, not a library
+
+Grit is a code generator. grit new emits a Go + React app that has no dependency on Grit afterwards — there is no runtime framework object for a plugin to hook into. So plugins write code instead.
+
+That trade is deliberate, and it cuts both ways:
+
+You own the code. Read it, edit it, delete it. No digging through a vendor directory to work out what a plugin does.
+
+No automatic upgrades. A plugin that ships a fix won't update code already in your repo. Remove and re-add to take a new version, and review the diff.
+
+Removal is exact
+
+Installation records every file written and every snippet injected in .grit/plugins.lock.json. Removal replays that record backwards. Commit the lockfile — it's how your teammates know what's installed.
+
+This is the part worth understanding if you write a plugin: there is no uninstall code to write. You describe what to install; removal is derived. A separate hand-maintained removal list is exactly how this kind of tooling drifts and starts leaving projects that don't compile.
+
+Edited code is never overwritten
+
+If you change an injected block, removal reports it and leaves it alone rather than guessing. You'll be told which file to tidy by hand.
+
+Writing a plugin
+
+A plugin is a value describing files, injections and dependencies:
+
+plugin.Plugin{
+
+Name:    "audit-trail",
+
+Version: "1.0.0",
+
+Summary: "Records who changed what",
+
+// Requires other plugins be installed first.
+
+Requires: []string{},
+
+Files: func(ctx plugin.Context) map[string]string {
+
+return map[string]string{
+
+"apps/api/internal/audit/audit.go": auditSource(ctx),
+
+}
+
+},
+
+Injections: func(ctx plugin.Context) []plugin.Injection {
+
+return []plugin.Injection{{
+
+File:   "apps/api/internal/routes/routes.go",
+
+Marker: "// grit:routes:protected",
+
+Code:   "\t\tprotected.GET(\"/audit\", auditHandler.List)",
+
+}}
+
+},
+
+NextSteps: []string{"Run migrations: go run cmd/migrate/main.go"},
+
+}
+
+Copy to clipboard
+
+Files and Injections are functions, not data, so a plugin can adapt to the project. ctx carries the module path, architecture and frontend — a --triple app needs admin pages an --api project does not.
+
+Injections
+
+Code is inserted on the line before a marker comment. The markers a scaffolded project provides:
+
+// grit:models                AutoMigrate registry
+
+// grit:handlers              handler construction
+
+// grit:imports               imports in routes.go
+
+// grit:middleware:protected  request middleware, after auth
+
+// grit:routes:public         API-key routes
+
+// grit:routes:protected      authenticated routes
+
+// grit:routes:admin          admin-only routes
+
+// grit:routes:custom         unauthenticated routes
+
+// grit:seeders               seed registration
+
+// grit:cron-tasks            scheduled tasks
+
+// grit:nav:system            a System entry in the admin sidebar
+
+// grit:icons:import          an icon import in the admin
+
+// grit:icons:map             that icon in the admin's iconMap
+
+Copy to clipboard
+
+An icon needs both of its markers. getIcon falls back to a document icon for a key it does not know rather than failing, so a sidebar entry with only the import renders the wrong icon and nothing reports it.
+
+Mark an injection Optional when the target legitimately may not exist — a frontend file in an --api project. A missing marker is then a warning instead of a failed install.
+
+Rules the installer enforces
+
+Never overwrites an existing file. Removal would otherwise delete something your plugin didn't create.
+
+A missing marker fails the install unless the injection is optional. A silent partial install is worse than a clear error.
+
+Installing twice is refused — remove first.
+
+Requirements are enforced both ways. You can't install without dependencies, or remove something still depended on.
+
+Writing one you can install
+
+The value above is how the built-in plugins are written, and they are compiled into the CLI. Yours does not have to be: the same shape, described in JSON, installs from a directory.
+
+my-plugin/
+
+plugin.json          the manifest
+
+files/               the file bodies it installs
+
+Copy to clipboard
+
+{
+
+"name": "product-reviews",
+
+"version": "1.0.0",
+
+"summary": "Customer reviews with a moderation queue",
+
+"files": [
+
+{ "from": "files/review_model.go", "to": "{{API_ROOT}}/internal/models/review.go" }
+
+],
+
+"injections": [
+
+{
+
+"file": "{{API_ROOT}}/internal/models/user.go",
+
+"marker": "// grit:models",
+
+"code": "		&Review{},"
+
+},
+
+{
+
+"file": "{{API_ROOT}}/internal/routes/routes.go",
+
+"marker": "// grit:routes:public",
+
+"code": "		publicAPI.GET("/products/:key/reviews", reviewHandler.ForProduct)",
+
+"when": { "architecture": ["triple", "double", "full"] }
+
+}
+
+],
+
+"nextSteps": ["Run the migration:  grit migrate"]
+
+}
+
+Copy to clipboard
+
+from is relative to the plugin directory, to to the project root. File bodies and paths get {{MODULE}}, {{PROJECT}} and {{API_ROOT}} substituted, so a plugin does not need to know the module path of the project installing it, or whether that project keeps its Go code in apps/api or at the root.
+
+when limits a file or injection to certain projects, by architecture and frontend. It is data rather than an expression language on purpose: a plugin that needs real logic is better written in Go and contributed upstream, and a half-implemented expression parser is a support burden nobody asked for.
+
+Nothing else changes.
+
+A directory plugin is recorded in .grit/plugins.lock.json exactly like a built-in, and grit plugin remove replays that record backwards the same way. The installer refuses the same things: an existing file, a missing marker that is not optional, a second install, a dirty git tree. Paths that climb out of the project are refused at load time, because a plugin is somebody else's code and "to": "../../.ssh/authorized_keys" is a file write rather than an install.
+
+Only an explicit path is read as a directory: ./plugins/x, ../x or an absolute path. A bare name is always a built-in, so a folder cannot shadow one by sharing its name.
+
+A worked example
+
+The multitenant plugin is the reference implementation: models, a GORM callback, middleware, an API, and tests — five files and three injections. Read it in internal/plugin/multitenant.go.
+
+DocsMulti-tenancy

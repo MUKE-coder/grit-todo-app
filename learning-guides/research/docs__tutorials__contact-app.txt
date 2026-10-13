@@ -1,0 +1,392 @@
+Tutorial
+Your First App
+
+Build a contact manager from scratch using Grit. You will create two resources — Group and Contact — generate them with a single CLI command each, and explore the admin panel, GORM Studio, and API docs that Grit gives you for free.
+
+GenerateAdmin · Studio · docs
+Generate two resources and get an admin panel, GORM Studio, and API docs for free
+
+Prerequisites
+
+✓Go 1.26.6+ installed (an older Go downloads it)
+
+✓Node.js 18+ and pnpm installed
+
+✓Docker and Docker Compose installed
+
+✓Grit CLI installed — see /docs/getting-started/installation (one-line install script)
+
+1
+
+Create the project
+
+Scaffold a new Grit monorepo called contact-app. This creates the Go API, Next.js web app, admin panel, shared package, and Docker configuration in one shot.
+
+Terminal
+Copy to clipboard
+
+$grit new contact-app
+
+$cd contact-app
+
+Grit prints an ASCII art logo, creates the folder structure, initializes go.mod, and prints the next steps. Your project is ready.
+
+2
+
+Install dependencies
+
+Install all Node.js packages for the web app, admin panel, and shared package. Grit uses pnpm workspaces so everything installs from the project root.
+
+Terminal
+Copy to clipboard
+
+$pnpm install
+
+3
+
+Start Docker services
+
+Spin up PostgreSQL, Redis, MinIO (local S3), and Mailhog. These run in the background and persist data across restarts.
+
+Terminal
+Copy to clipboard
+
+$docker compose up -d
+
+4
+
+Check for port conflicts
+
+Docker needs port 5432 (PostgreSQL), 6379 (Redis), 9000/9001 (MinIO), and 1025/8025 (Mailhog). If any of these are already in use, you will see an error.
+
+The most common conflict is port 5432 — if you have PostgreSQL installed locally it's already listening there. Check what's using the port:
+
+windows
+Copy to clipboard
+
+# Find the process using port 5432
+
+$netstat -ano | findstr :5432
+
+# Stop the local PostgreSQL service (Run as administrator)
+
+$net stop postgresql-x64-16
+
+macOS / Linux
+Copy to clipboard
+
+# Find the process using port 5432
+
+$lsof -i :5432
+
+# Stop local PostgreSQL (macOS with Homebrew)
+
+$brew services stop postgresql@16
+
+You have three options:
+
+Stop the local service — run net stop postgresql-x64-16 (Windows) or brew services stop postgresql@16 (macOS). This frees the port so Docker can use it.
+
+Uninstall local PostgreSQL — if you only use Docker for databases, remove the local installation entirely to avoid future conflicts.
+
+Change the port — update docker-compose.yml to map a different host port:
+ports: "5433:5432"
+
+Then update DATABASE_URL in .env to use port 5433.
+
+Run docker compose ps to verify all four services are running and healthy.
+
+5
+
+Run migrations
+
+Create the database tables. Grit uses GORM AutoMigrate, which reads your Go models and creates/updates the corresponding PostgreSQL tables automatically.
+
+Terminal
+Copy to clipboard
+
+$grit migrate
+
+6
+
+Seed the database
+
+Populate the database with an admin user and sample blog data. The default admin credentials are admin@example.com / password.
+
+Terminal
+Copy to clipboard
+
+$grit seed
+
+7
+
+Start the API server
+
+Open a terminal and start the Go API. This compiles and runs the server on http://localhost:8080.
+
+terminal 1
+Copy to clipboard
+
+$grit start server
+
+8
+
+Start the frontend
+
+Open a second terminal and start both Next.js apps (web + admin) using Turborepo. The web app runs on localhost:3000 and the admin panel on localhost:3001.
+
+terminal 2
+Copy to clipboard
+
+$grit start client
+
+9
+
+Create a user and log in
+
+Open http://localhost:3000 in your browser. You will see the login page. Click Register to create a new account, then log in.
+
+For the admin panel at http://localhost:3001, use the seeded admin credentials:
+
+Email: admin@example.com
+
+Password: password
+
+After logging in to the admin panel, you will see the dashboard with stats cards, a chart, and the Users resource in the sidebar. The blog example is also available — click Posts in the sidebar to see the seeded blog data.
+
+10
+
+Explore the built-in tools
+
+Grit ships with powerful development tools out of the box. Open these URLs while your server is running:
+
+http://localhost:8080/studio— GORM Studio — visual database browser to inspect tables, run queries, and see relationships
+
+http://localhost:8080/docs— API Documentation — auto-generated interactive docs for every endpoint
+
+http://localhost:8080/sentinel/ui— Sentinel — security dashboard with WAF, rate limiting, and threat monitoring
+
+http://localhost:8080/pulse— Pulse — observability dashboard with request tracing, database monitoring, and runtime metrics
+
+http://localhost:8025— Mailhog — catches all emails sent during development
+
+http://localhost:9001— MinIO Console — browse uploaded files (login: the MINIO_ACCESS_KEY and MINIO_SECRET_KEY from .env)
+
+11
+
+Generate the Group resource
+
+A contact belongs to a group (e.g. Friends, Family, Work). Generate the Group resource first since Contact will reference it. The slug:slug:name field automatically generates a URL-friendly slug from the group name.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Group --fields "name:string,slug:slug:name"
+
+The generator creates these files:
+
+generated files
+Copy to clipboard
+
+apps/api/internal/models/group.go        # GORM model
+
+apps/api/internal/handlers/group.go      # CRUD handler
+
+apps/api/internal/services/group.go      # Business logic
+
+packages/shared/schemas/group.ts         # Zod validation
+
+packages/shared/types/group.ts           # TypeScript types
+
+apps/web/hooks/use-groups.ts             # React Query hooks (web)
+
+apps/admin/hooks/use-groups.ts           # React Query hooks (admin)
+
+apps/admin/app/resources/groups/page.tsx # Admin page
+
+apps/admin/resources/groups.ts           # Resource definition
+
+Here is the generated Go model:
+
+apps/api/internal/models/group.go
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"gorm.io/gorm"
+
+)
+
+type Group struct {
+
+ID        uint           `gorm:"primarykey" json:"id"`
+
+Name      string         `gorm:"size:255;not null" json:"name" binding:"required"`
+
+Slug      string         `gorm:"size:255;uniqueIndex;not null" json:"slug"`
+
+CreatedAt time.Time      `json:"created_at"`
+
+UpdatedAt time.Time      `json:"updated_at"`
+
+DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+
+}
+
+12
+
+Generate the Contact resource
+
+Now generate the Contact resource with all the fields: name, email, phone, country, image (as a string array for multiple photos), and a belongs_to relationship to Group.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Contact --fields "name:string,email:string,phone:string,country:string,image:string_array,group:belongs_to:Group"
+
+The generated Contact model includes a GroupID foreign key and a Group relation. The Image field is a JSON array that stores multiple image URLs:
+
+apps/api/internal/models/contact.go
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"gorm.io/datatypes"
+
+"gorm.io/gorm"
+
+)
+
+type Contact struct {
+
+ID        uint                        `gorm:"primarykey" json:"id"`
+
+Name      string                      `gorm:"size:255;not null" json:"name" binding:"required"`
+
+Email     string                      `gorm:"size:255;not null" json:"email" binding:"required"`
+
+Phone     string                      `gorm:"size:255;not null" json:"phone" binding:"required"`
+
+Country   string                      `gorm:"size:255;not null" json:"country" binding:"required"`
+
+Image     datatypes.JSONSlice[string] `gorm:"type:json" json:"image"`
+
+GroupID   uint                        `gorm:"index;not null" json:"group_id" binding:"required"`
+
+Group     Group                       `gorm:"foreignKey:GroupID" json:"group,omitempty"`
+
+CreatedAt time.Time                   `json:"created_at"`
+
+UpdatedAt time.Time                   `json:"updated_at"`
+
+DeletedAt gorm.DeletedAt              `gorm:"index" json:"deleted_at,omitempty"`
+
+}
+
+Note: The string_array field type uses datatypes.JSONSlice[string] from gorm.io/datatypes. The generator automatically runs go get to install this dependency for you.
+
+13
+
+Rebuild the API
+
+The generator injected new code into your Go API — models, handlers, routes, and GORM Studio registration. Build the API to make sure everything compiles:
+
+Terminal
+Copy to clipboard
+
+$cd apps/api && go build ./...
+
+If the build succeeds with no output, everything is wired correctly. If you see errors, check that both group.go and contact.go models exist in apps/api/internal/models/.
+
+14
+
+Restart and check the admin panel
+
+Stop the API server (Ctrl+C in terminal 1) and restart it. GORM will automatically create the groups and contacts tables in PostgreSQL.
+
+terminal 1
+Copy to clipboard
+
+$grit start server
+
+Open the admin panel at http://localhost:3001. You will see Groups and Contacts in the sidebar alongside Users and Posts. The admin panel reads from the resource registry at runtime — no manual sidebar configuration needed.
+
+15
+
+Create groups and contacts
+
+In the admin panel, go to Groups and create a few groups:
+
+friendsFriends
+
+familyFamily
+
+workWork
+
+Then go to Contacts and create some contacts. When you click Create, the form will show a dropdown to select the group — this is the belongs_to relationship in action. Fill in the name, email, phone, country, and optionally upload images.
+
+Tip: Open GORM Studio at http://localhost:8080/studio to see your groups and contacts in the database. You can browse the tables, see the relationships, and even run raw SQL queries.
+
+16
+
+Explore the API
+
+Every resource you generate gets a full REST API. Try these endpoints in your browser or with a tool like Postman:
+
+GET /api/groups— List all groups with pagination
+
+GET /api/groups/:id— Get a single group
+
+POST /api/groups— Create a new group
+
+GET /api/contacts— List all contacts with pagination
+
+GET /api/contacts/:id— Get a single contact with its group
+
+POST /api/contacts— Create a new contact
+
+All endpoints support ?page=1&page_size=20 for pagination, ?sort=name&order=asc for sorting, and ?search=john for full-text search. Check the interactive API docs at http://localhost:8080/docs for the complete reference.
+
+What you've built
+
+✓A full-stack contact manager with Go API and Next.js frontend
+
+✓Group and Contact resources generated with a single CLI command each
+
+✓A BelongsTo relationship between Contacts and Groups
+
+✓An admin panel with sortable tables, forms, and group selection
+
+✓A JSON array field (image) for storing multiple images per contact
+
+✓REST API with pagination, sorting, and search out of the box
+
+✓GORM Studio for visual database browsing
+
+✓Auto-generated API documentation
+
+✓Docker-based PostgreSQL, Redis, MinIO, and Mailhog running locally
+
+Next steps
+
+Now that you have a working contact manager, here are some ideas to extend it:
+
+Add tags — generate a Tag resource and create a many-to-many relationship so contacts can have multiple tags like "VIP" or "Newsletter".
+
+Role-based access — use grit add role MANAGER and the --roles flag on generate to restrict who can manage contacts.
+
+Export contacts — add a custom Go handler that exports contacts as a CSV file.
+
+Send emails — use the built-in Resend email service to send a welcome email when a new contact is created.
+
+Build the web frontend — create a public contacts page in the web app using the generated React Query hooks.
+
+Quick StartBuild a Blog

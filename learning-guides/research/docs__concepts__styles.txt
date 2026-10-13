@@ -1,0 +1,239 @@
+Core Concepts
+Style Variants
+
+Grit ships with 5 admin panel style variants so every scaffolded project doesn't look identical. Choose a style when you create your project and it applies to both the auth screens and the dashboard.
+
+Choosing a Style
+
+Pass the --style flag when creating a new project:
+
+terminal
+
+$ grit new my-app --style modern
+
+If you omit the flag, the default style is used.
+
+One flag themes both the auth pages and the dashboard — chosen once, at creation
+
+Available Styles
+
+Each style applies a different visual treatment to the auth pages (login, sign-up, forgot password) and the admin dashboard. All styles share the same functionality, API calls, form validation, and component library — only the layout and Tailwind classes differ.
+
+StyleAuth PagesDashboard
+
+defaultSplit-screen with branding panelStats grid + resource cards + quick links
+
+modernCentered card on gradient backgroundBento grid with varied card sizes
+
+minimalClean full-width form (Vercel/Linear style)Compact data-dense with table layout
+
+glassFrosted-glass card with backdrop blurHero banner with gradient mesh
+
+centeredSingle centered card on radial gradient (Linear school)Uses default dashboard
+
+default
+
+The original Grit layout. Auth pages use a split-screen design with a branded gradient panel on the left and the form on the right. The dashboard shows a welcome banner, stats widgets, resource cards, and quick links in a clean grid.
+
+terminal
+
+$ grit new my-app
+
+# or explicitly:
+
+$ grit new my-app --style default
+
+Auth layout
+
+Left panel: accent gradient background with Grit logo, tagline, and branding text
+
+Right panel: centered form with React Hook Form + Zod validation
+
+Responsive: left panel hidden on mobile, form fills the screen
+
+Dashboard layout
+
+Welcome banner with gradient background and user greeting
+
+Stats widgets from resource definitions (or fallback stats)
+
+Two-column grid: resource cards on the left, quick links on the right
+
+modern
+
+A centered card layout inspired by contemporary SaaS products. Auth pages place a single card on a subtle gradient background with decorative blurred orbs. The dashboard uses a bento grid with varying card sizes.
+
+terminal
+
+$ grit new my-app --style modern
+
+Auth layout
+
+Full-screen gradient background (from-accent/5 via-background to-background)
+
+Decorative blurred accent orbs for visual depth
+
+Single centered card with rounded-2xl, shadow, and border
+
+Grit logo centered at the top of the card
+
+Dashboard layout
+
+Full-width welcome banner with accent gradient
+
+Bento-style grid: 2-column stats + 1-column system status card
+
+Resource cards in a large panel, quick links in a compact sidebar
+
+minimal
+
+Inspired by Vercel and Linear — clean, sparse, and information-first. No decorative backgrounds, no cards on auth pages. Just the form on a flat background with generous whitespace. The dashboard trades visual flair for a compact, data-dense table view.
+
+terminal
+
+$ grit new my-app --style minimal
+
+Auth layout
+
+Flat bg-background — no cards, no gradients, no panels
+
+Narrow form area (max-w-sm) centered on the page
+
+Subtle text logo at the top, tight vertical spacing
+
+Tighter label spacing and smaller heading sizes
+
+Dashboard layout
+
+No welcome banner — just a heading and subtitle
+
+Stats in a compact 4-column row
+
+Resources displayed as a table (icon, name, endpoint, “Manage” link)
+
+Quick links as horizontal pill buttons instead of stacked cards
+
+glass
+
+The most visually striking variant. Auth pages use a layered gradient background with a frosted-glass card (backdrop-blur-2xl). The dashboard features a large hero banner with decorative SVG mesh patterns and floating blurred orbs.
+
+terminal
+
+$ grit new my-app --style glass
+
+Auth layout
+
+Multi-layer gradient background with radial gradients for depth
+
+Frosted card: bg-bg-secondary/60 backdrop-blur-2xl border-white/10
+
+Inputs use bg-white/5 and border-white/10 for consistency
+
+Softer label colors (text-foreground/80)
+
+Dashboard layout
+
+Large hero section with layered gradients, SVG mesh overlay, and floating orbs
+
+Inline glass stats cards embedded in the hero
+
+Resource cards use glass styling (backdrop-blur-xl border-white/5)
+
+Quick links in a 4-column glass panel at the bottom
+
+centered
+
+Linear / Vercel school auth pages. A single centered card (~420px wide) floats on a subtle radial gradient background. No split-screen branding panel. Minimal chrome, generous whitespace. The dashboard uses the default layout — only the auth pages change. Added in v3.8.0.
+
+terminal
+
+$ grit new my-app --style centered
+
+Auth layout
+
+Full-screen container: flex items-center justify-center
+
+Card: max-w-[420px] rounded-2xl p-10 shadow-sm
+
+Grit logo mark (purple squircle with white “G”) centered at top
+
+44px input height, 44px button height, 20px field gap
+
+Subtle radial glow at top of background (rgba(108, 92, 231, 0.10))
+
+OAuth buttons in a 2-column grid with “or continue with” divider
+
+Dashboard layout
+
+Uses the same dashboard as default. Only the auth pages change. Good fit when you want Linear-feeling onboarding but a standard dashboard experience.
+
+How the Style is Persisted
+
+The selected style is saved in your project's grit.config.ts file:
+
+grit.config.ts
+Copy to clipboard
+
+// Grit Framework Configuration
+
+export default {
+
+name: "my-app",
+
+style: "modern",
+
+api: {
+
+port: 8080,
+
+prefix: "/api",
+
+},
+
+// ...
+
+};
+
+When you run grit upgrade, the CLI reads this value and regenerates the auth pages and dashboard using the correct style variant. Your choice is preserved across upgrades.
+
+What Changes Between Styles
+
+Style variants only affect the visual layout. Everything else stays the same:
+
+ChangesStays the same
+
+JSX layout structureForm validation (React Hook Form + Zod)
+
+Tailwind CSS classesAPI endpoints and data fetching
+
+Background / gradient effectsAuthentication hooks (useLogin, useRegister)
+
+Card / panel arrangementsShared schemas and types
+
+Dashboard widget layoutAll other admin components (tables, forms, sidebar)
+
+The sidebar, navbar, data table, form builder, resource pages, and system pages are identical across all styles. Only the 4 files below change:
+
+app/(auth)/login/page.tsx
+
+app/(auth)/sign-up/page.tsx
+
+app/(auth)/forgot-password/page.tsx
+
+app/(dashboard)/dashboard/page.tsx
+
+Customizing After Scaffolding
+
+The generated pages are plain React components with Tailwind CSS. After scaffolding, you own the code and can modify anything:
+
+Change colors, gradients, or spacing in the Tailwind classes
+
+Add your own logo or branding images
+
+Mix elements from different styles (e.g., use the glass auth with the minimal dashboard)
+
+Add new fields to auth forms by updating the Zod schemas in packages/shared
+
+Keep in mind that running grit upgrade will overwrite these 4 files with the latest framework version of your chosen style. If you've heavily customized them, back them up before upgrading.
+
+Naming ConventionsModels & Database

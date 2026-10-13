@@ -1,0 +1,233 @@
+Tech Kit
+Single — Go + embedded SPA
+
+One binary. Your React frontend is embedded into the Go server via go:embed.
+
+The smallest possible Grit deploy. grit new --single scaffolds a single Go module with the React frontend bundled into the same binary. No CORS, no reverse proxy, no separate front-end server — drop the binary on a box, run it, done.
+
+Single Go binary; production deploy = one file
+
+React (Next.js) frontend embedded via //go:embed
+
+SPA fallback with the redirect-loop-safe pattern wired
+
+Auth, jobs, storage, AI, Pulse + Sentinel — all the same batteries
+
+Quick install
+Copy to clipboard
+
+$grit new my-app --single
+
+Get started Architecture deep-dive  Source
+
+my-app.com
+
+My Applocalhost:8080
+
+USERS
+
+1,284
+
+RPS
+
+42.1
+
+What's included
+
+Every batteries-included primitive the framework ships, wired into this kit by default.
+
+One binary
+
+Go server + embedded React bundle. Single file deploy.
+
+Auth + 2FA
+
+JWT, OAuth (Google, GitHub), TOTP, trusted devices.
+
+GORM + Postgres
+
+Production DB by default; SQLite for local dev.
+
+Sentinel + Pulse
+
+In-app Security + Observability admin pages.
+
+AI Gateway
+
+100+ models, streaming, one API key.
+
+Background jobs
+
+Asynq queue, cron, webhook receiver, idempotency.
+
+Code generator
+
+grit generate resource → model + service + handler + admin page.
+
+Audit log
+
+Tamper-evident SHA-256 hash chain on every mutation.
+
+Docker + deploy
+
+Multi-stage Dockerfile + grit deploy --domain.
+
+Starter prompt for claude.ai
+
+Plan this kit with an AI
+
+Paste this into claude.ai with your idea. Claude returns four planning files (project-description.md, project-phases.md, design-style-guide.md, prompt.md) that you feed to Claude Code with the grit new my-app --single command.
+
+Customize with the wizard
+
+prompt, Single — Go + embedded SPA
+Copy prompt
+
+I want to build the project below using the **Grit framework**.
+
+## What Grit is
+
+Grit is a full-stack meta-framework that scaffolds production-ready apps in one command. It pairs a **Go (Gin + GORM)** backend with React on the front and ships every battery — auth, payments, jobs, mail, file storage, AI, observability, security WAF, and a Filament-style admin panel — out of the box.
+
+- Docs: https://gritframework.dev/docs
+- Repo: https://github.com/MUKE-coder/grit
+
+## The kit I want to use — `Single — Go + embedded SPA`
+
+I'm using the **single** kit, which produces:
+
+- A single Go binary (no separate frontend server)
+- Next.js (App Router) frontend embedded into the Go binary via `//go:embed`
+- Postgres in prod, SQLite for local dev (GORM)
+- Tailwind CSS + shadcn/ui
+- JWT + OAuth (Google, GitHub) + TOTP 2FA
+- Asynq background jobs + cron scheduler
+- S3-compatible file storage (R2, MinIO, S3)
+- Resend email + HTML templates
+- AI Gateway (100+ models, one API key, streaming)
+- In-app **Sentinel** (security WAF) + **Pulse** (observability) admin pages
+- Audit log with tamper-evident SHA-256 hash chain
+
+The scaffold command I'll run is:
+
+```
+grit new my-app --single
+```
+
+Reference docs for this kit:
+
+- https://gritframework.dev/docs/tech-kits/single
+- https://gritframework.dev/docs/concepts/architecture-modes/single
+- https://gritframework.dev/docs/getting-started/quick-start
+
+## What I need from you
+
+Generate exactly **four files** I'll save to my project root before scaffolding.
+
+### 1. `project-description.md` — the full project briefing
+
+A complete, opinionated brief on the project. Cover:
+
+- One-line positioning (what it is in 12 words)
+- Target users (3–5 concrete personas with names and motivations)
+- The core problem and why existing alternatives fall short
+- Top 5 features ranked by importance, with one sentence each on the user value
+- Non-goals (what we are NOT building — anti-scope is as important as scope)
+- Success metrics (3 concrete numbers we'd judge success against)
+- Inspirations / references (apps to learn from + what to copy / avoid)
+- Tech-stack alignment — explain how each Grit battery (auth, jobs, mail, storage, AI, admin) maps to the project's needs
+
+### 2. `project-phases.md` — the phased build plan
+
+A sequenced roadmap with checkbox tasks. Use this structure:
+
+```
+## Phase 1 — Scaffold & Skeleton
+- [ ] Run `grit new my-app --single`
+- [ ] Configure `.env` (database, JWT, SMTP, S3, ...)
+- ...
+
+## Phase 2 — Core Data Model
+- [ ] Define User model extensions
+- [ ] `grit generate resource Order`
+- ...
+
+## Phase 3 — Authentication & RBAC
+## Phase 4 — Core User Flows
+## Phase 5 — Admin Panel (or mobile screens / desktop pages — match the kit)
+## Phase 6 — Payments / Webhooks (if applicable)
+## Phase 7 — Polish & UX
+## Phase 8 — Deploy
+```
+
+Rules for the phases doc:
+
+- Each phase has 5–12 checkbox tasks
+- Tasks must be small enough to complete in <30 minutes each
+- Reference Grit CLI commands (`grit generate ...`, `grit migrate`, `grit sync`) where appropriate
+- Each phase ends with a "Verify" step listing what should work before moving on
+
+### 3. `design-style-guide.md` — visual design system
+
+Opinionated and specific. Cover:
+
+- Brand voice (3 adjectives + tagline)
+- Color palette — **all with hex codes** — in both dark and light mode: bg primary/secondary/tertiary/elevated, border, text primary/secondary/muted, accent (primary brand color), success, danger, warning, info
+- Typography: UI font + code font (specific Google Fonts), type scale (xs through 4xl with px values)
+- Spacing scale (4-px base)
+- Border radius scale
+- Key component patterns: buttons (primary, ghost, outline), cards (elevated, flat), data tables, forms, toasts, modals
+- Page-level patterns: navbar, sidebar, dashboard layout, empty states, loading states
+- Animation principles (durations, easings)
+- Reference apps (e.g., "navbar feels like Linear; tables feel like Vercel dashboard")
+
+### 4. `prompt.md` — the Claude Code prompt
+
+This is the file I'll paste into Claude Code. It should:
+
+- Open with a one-paragraph project recap
+- Tell Claude Code to **read** `project-description.md`, `project-phases.md`, and `design-style-guide.md` **first** and hold those as load-bearing context
+- Reference the Grit docs URLs above
+- Tell Claude Code to scaffold with `grit new my-app --single` if the project directory doesn't exist yet
+- Tell Claude Code to work through `project-phases.md` **one phase at a time**, checking off boxes as it goes, and to **stop and report** at the end of each phase for review before starting the next
+- Specify code conventions: snake_case Go files, kebab-case TS files, no `any` type, every error handled in Go, business logic lives in services not handlers, all data fetching through React Query / TanStack Query
+- Specify the Grit API response shape it must use (`{ data, meta }` for lists, `{ data, message }` for single, `{ error: { code, message, details } }` for errors)
+- Tell Claude Code to run `grit sync` after every Go model change
+- Tell Claude Code to lean on `design-style-guide.md` for any UI work — never invent colors or spacing on the fly
+
+## Critical instructions for you (planning Claude)
+
+- Do NOT write Go or React code. You are planning only.
+- Be opinionated. If I gave you a vague idea, make concrete choices and explain them in one sentence.
+- For every feature you propose, ask yourself "what specific Grit primitive ships this?" and name it.
+- If the idea really needs a separate admin panel for non-engineering staff, recommend the `--triple` kit instead.
+- Output the four files as separate fenced code blocks, each with a `filename:` annotation, in order: project-description.md → project-phases.md → design-style-guide.md → prompt.md.
+
+## My idea
+
+[YOUR IDEA — replace this block with a detailed paragraph describing what your app does, who it's for, the core user flows, and any reference apps or inspirations you'd like to draw from.]
+
+1
+Copy
+
+Hit Copy prompt above.
+
+2
+Paste in claude.ai
+
+Replace [YOUR IDEA] with a paragraph about your project.
+
+3
+Feed Claude Code
+
+Save the 4 files Claude returns to your project root, then run prompt.md in Claude Code.
+
+Open claude.ai in a new tab
+
+Ready to build?
+
+One command, your app online in 30 seconds. Read the quick-start guide for the rest of the wiring.
+
+Read docs Explore all kits
+
+All Tech KitsSingle + Vite

@@ -1,0 +1,777 @@
+Getting Started
+Configuration
+
+A complete reference for every environment variable in your Grit project. All configuration is done through the .env file at the project root.
+
+One .env fileTyped config struct
+Every setting lives in .env, parsed once into a typed Config that wires each service
+
+Environment Files
+
+Every Grit project includes three environment files:
+
+.env -- Your actual configuration, generated at scaffold time with strong random secrets (JWT, Postgres, Pulse, Sentinel). This file is gitignored and never committed.
+
+.env.example -- Documented template with all variables and sensible defaults. Committed to git.
+
+.env.cloud.example -- Template for cloud-only setups (Neon, Upstash, R2/B2) when you do not have Docker.
+
+The Go API loads these variables at startup using godotenv and parses them into a typed Config struct. Environment variables are read once at startup and are available throughout the application.
+
+Application
+
+General application settings that control the server behavior.
+
+.env
+Copy to clipboard
+
+# App — General application settings
+
+APP_NAME=myapp              # Application name (used in emails, logs)
+
+APP_ENV=development         # Environment: development, staging, production
+
+APP_PORT=8080               # API server port
+
+APP_URL=http://localhost:8080
+
+APP_NAMEProject name
+
+Used as the application title in email templates, log entries, and the admin panel header. Set to your project name during scaffolding.
+
+APP_ENVproduction
+
+development or production. Unset means production, the strict mode: rate limits on, the WAF blocking, GORM Studio and /docs off. Anywhere but development the API refuses to start with a JWT secret under 32 characters or a dashboard password that is short or a known default, and names the settings to fix. A scaffolded .env sets development.
+
+API_DOCS_PUBLICfalse
+
+Serve the API reference at /docs in production too. It maps every route, admin ones included, with a console that calls them, so it is off in production unless this is true. Development always serves it.
+
+APP_PORT8080
+
+The port the Go API server listens on. The frontend apps proxy API requests to this port.
+
+APP_URLhttp://localhost:8080
+
+The full URL of the API server. Used for generating absolute URLs in emails and file storage signed URLs.
+
+Database
+
+Grit uses PostgreSQL as its primary database, connected through GORM. Rather than a single connection string, the scaffold treats the POSTGRES_* parts as the single source of truth -- both docker-compose.yml and the Go API read them. The Go API builds the connection DSN from these parts automatically when DATABASE_URL is left empty.
+
+.env
+Copy to clipboard
+
+# Database (Postgres) — single source of truth
+
+# Edit ONLY the POSTGRES_* values below. docker-compose.yml reads them via
+
+# ${VAR} substitution and the Go API builds the DSN from these parts when
+
+# DATABASE_URL is empty.
+
+POSTGRES_USER=grit
+
+POSTGRES_PASSWORD=change-me          # generated per-scaffold; MUST change in production
+
+POSTGRES_DB=myapp
+
+POSTGRES_HOST=localhost              # "postgres" inside docker-compose.prod.yml
+
+POSTGRES_PORT=5434                   # host port; 5432 inside the docker network
+
+# Override the connection string ONLY for external Postgres (Neon, Supabase,
+
+# RDS) or SQLite. When set, this wins over the POSTGRES_* parts above.
+
+#   DATABASE_URL=postgres://user:pass@host:5432/db?sslmode=require
+
+#   DATABASE_URL=sqlite:./app.db           # pure-Go driver, no CGO
+
+#   DATABASE_URL=sqlite::memory:           # gone on restart, great for tests
+
+# DATABASE_URL=
+
+POSTGRES_USERgrit
+
+Postgres role the API connects as. Matches the user created by docker-compose.yml.
+
+POSTGRES_PASSWORD(generated)
+
+Password for the Postgres role. grit new generates a strong random value per project so a fresh scaffold runs without editing. Change it in production.
+
+POSTGRES_DBProject name
+
+Name of the database to connect to. Defaults to your project name.
+
+POSTGRES_HOSTlocalhost
+
+Database host. Stays localhost for local Docker; docker-compose.prod.yml overrides it to "postgres" (the service name) for inter-container traffic.
+
+POSTGRES_PORT5434
+
+Host port for Postgres. Grit uses 5434 (not the default 5432) to avoid collisions with a Postgres you may already run locally. The container still listens on 5432 inside the Docker network.
+
+DATABASE_URLoptional
+
+Optional full connection string. Leave commented to build the DSN from the POSTGRES_* parts. Set it to point at an external Postgres (postgres://... with sslmode=require) or to use SQLite (sqlite:./app.db or sqlite::memory:). When set, it wins over the POSTGRES_* parts.
+
+JWT Authentication
+
+Grit uses JWT tokens for authentication with separate access and refresh tokens. The access token is short-lived (15 minutes) and the refresh token lasts 7 days.JWT_SECRET is generated at scaffold time.
+
+.env
+Copy to clipboard
+
+# JWT — generated at scaffold time. Rotate with: openssl rand -hex 32
+
+JWT_SECRET=change-me-in-production
+
+JWT_ACCESS_EXPIRY=15m        # Access token lifetime
+
+JWT_REFRESH_EXPIRY=168h      # Refresh token lifetime (7 days)
+
+JWT_SECRET(generated)
+
+The secret key used to sign and verify JWT tokens. Generated per-scaffold (openssl rand -hex 32). Rotate it in production. Both access and refresh tokens use this same secret.
+
+JWT_ACCESS_EXPIRY15m
+
+How long access tokens are valid. Uses Go duration format: 15m (15 minutes), 1h (1 hour), etc. Keep short for security. The frontend automatically refreshes expired tokens.
+
+JWT_REFRESH_EXPIRY168h
+
+How long refresh tokens are valid. 168h is 7 days. Users must re-login after this period.
+
+OAuth & Social Login
+
+Grit ships with Google and GitHub OAuth2 sign-in. The OAuth API routes are always registered server-side; SOCIAL_AUTH_ENABLED only controls whether the social buttons render on the auth pages. Leave the client IDs and secrets empty to run without social login.
+
+.env
+Copy to clipboard
+
+# OAuth2 — Social Login (Google + GitHub)
+
+# Google: https://console.cloud.google.com/apis/credentials
+
+GOOGLE_CLIENT_ID=                    # Google OAuth 2.0 Client ID
+
+GOOGLE_CLIENT_SECRET=                # Google OAuth 2.0 Client Secret
+
+# GitHub: https://github.com/settings/developers
+
+GITHUB_CLIENT_ID=                    # GitHub OAuth App Client ID
+
+GITHUB_CLIENT_SECRET=                # GitHub OAuth App Client Secret
+
+OAUTH_FRONTEND_URL=http://localhost:3001  # Where to redirect after OAuth
+
+# Toggle the social buttons + "or continue with" divider on auth pages.
+
+# Mirrored to the browser bundle as NEXT_PUBLIC_SOCIAL_AUTH_ENABLED.
+
+SOCIAL_AUTH_ENABLED=true
+
+GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET(your keys)
+
+Google OAuth 2.0 credentials. Create them in the Google Cloud Console under APIs & Services > Credentials.
+
+GITHUB_CLIENT_ID / GITHUB_CLIENT_SECRET(your keys)
+
+GitHub OAuth App credentials. Create an OAuth App under GitHub Settings > Developers.
+
+OAUTH_FRONTEND_URLhttp://localhost:3001
+
+The frontend URL the API redirects back to after a successful OAuth exchange. Defaults to the admin panel dev port.
+
+SOCIAL_AUTH_ENABLEDtrue
+
+Show or hide the Google/GitHub buttons on auth pages. Set to false to remove them and the "or continue with" divider. The OAuth routes stay registered either way. Mirrored to the browser as NEXT_PUBLIC_SOCIAL_AUTH_ENABLED.
+
+Redis
+
+Redis is used for response caching and background job queues (via Asynq). A single Redis instance handles both use cases.
+
+.env
+Copy to clipboard
+
+# Redis: cache and job queue
+
+REDIS_PORT=6380                  # the host port docker-compose publishes
+
+# REDIS_URL=redis://localhost:6380   # unset: built from REDIS_PORT
+
+REDIS_URLbuilt from REDIS_PORT
+
+Redis connection URL. Leave it unset locally and the API connects to localhost on REDIS_PORT, so moving the port moves the connection with it; a URL left pointing at the old port reaches whichever project holds it now, and the API warns at startup when the two disagree. Set it to empty to run without Redis. For cloud Redis (Upstash), use the rediss:// protocol (with double s) and include the password: rediss://default:password@endpoint:6379.
+
+Frontend & Public URLs
+
+URLs baked into the Next.js web and admin bundles at build time. These tell the clients where to reach the API and the admin panel.
+
+.env
+Copy to clipboard
+
+# Public API URL — baked into Next.js bundles at build time
+
+API_URL=http://localhost:8080
+
+# Admin panel URL — surfaced in the web app's navbar + landing-page dev links.
+
+# Set to your production admin origin (e.g. https://admin.example.com) before shipping.
+
+NEXT_PUBLIC_ADMIN_URL=http://localhost:3001
+
+API_URLhttp://localhost:8080
+
+The public API base URL baked into the Next.js bundles at build time. Point it at your deployed API origin (e.g. https://api.example.com) for production builds.
+
+NEXT_PUBLIC_ADMIN_URLhttp://localhost:3001
+
+The admin panel URL surfaced in the web app navbar and landing-page dev links. Defaults to the admin dev port; set to your production admin origin before shipping.
+
+File Storage
+
+Grit supports four S3-compatible storage providers: MinIO (local development), AWS S3, Cloudflare R2, and Backblaze B2. The STORAGE_DRIVER variable controls which provider is active -- only the variables for the active driver need to be set.
+
+.env
+Copy to clipboard
+
+# Storage — Which provider to use: minio, s3, r2, b2
+
+STORAGE_DRIVER=minio
+
+# MinIO: local S3-compatible storage (default for development)
+
+# MINIO_ENDPOINT=http://localhost:9002   # unset: built from MINIO_PORT
+
+MINIO_ACCESS_KEY=<generated per project>
+
+MINIO_SECRET_KEY=<generated per project>
+
+MINIO_BUCKET=myapp-uploads
+
+MINIO_REGION=us-east-1
+
+MINIO_USE_SSL=false
+
+# AWS S3 (used when STORAGE_DRIVER=s3)
+
+# Leave S3_ENDPOINT empty to use the AWS regional default. S3_ACCESS_KEY /
+
+# S3_SECRET_KEY / S3_REGION fall back to AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY
+
+# / AWS_REGION, so an IAM role on your EC2 / ECS / Lambda Just Works.
+
+S3_ENDPOINT=
+
+S3_ACCESS_KEY=
+
+S3_SECRET_KEY=
+
+S3_BUCKET=
+
+S3_REGION=us-east-1
+
+# Cloudflare R2 (used when STORAGE_DRIVER=r2)
+
+R2_ENDPOINT=
+
+R2_ACCESS_KEY=               # R2 Access Key ID
+
+R2_SECRET_KEY=               # R2 Secret Access Key
+
+R2_BUCKET=
+
+R2_REGION=auto               # Always "auto" for R2
+
+# Backblaze B2 (used when STORAGE_DRIVER=b2)
+
+B2_ENDPOINT=
+
+B2_ACCESS_KEY=               # B2 keyID
+
+B2_SECRET_KEY=               # B2 applicationKey
+
+B2_BUCKET=
+
+B2_REGION=us-west-004        # Must match your bucket region
+
+STORAGE_DRIVERminio
+
+Which storage provider to use. Options: minio (local dev with Docker), s3 (AWS S3), r2 (Cloudflare R2), b2 (Backblaze B2). Only the variables for the active driver need to be set.
+
+MINIO_ENDPOINTbuilt from MINIO_PORT
+
+MinIO server URL. Unset, the API uses localhost on MINIO_PORT (9002 by default, with the console on MINIO_CONSOLE_PORT), so moving the port moves the endpoint. Set it only for a MinIO somewhere else.
+
+MINIO_ACCESS_KEY / MINIO_SECRET_KEYgenerated
+
+MinIO root credentials, generated per project into .env. Both compose files read them from there and refuse to start without them, and a production API refuses a default or short MinIO secret.
+
+S3_ENDPOINT(empty)
+
+AWS S3 endpoint. Leave empty to use the AWS regional default (s3.<region>.amazonaws.com) with virtual-hosted-style addressing. Only used when STORAGE_DRIVER=s3.
+
+S3_ACCESS_KEY / S3_SECRET_KEY / S3_REGION(IAM fallback)
+
+AWS credentials and region. Fall back to AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION, so leaving them empty lets an attached IAM role supply the credentials automatically.
+
+R2_ENDPOINT(your account)
+
+Cloudflare R2 endpoint. Format: https://ACCOUNT_ID.r2.cloudflarestorage.com. Only used when STORAGE_DRIVER=r2.
+
+R2_ACCESS_KEY / R2_SECRET_KEY(your keys)
+
+Cloudflare R2 API credentials. Create an API token in the Cloudflare Dashboard under R2 > Manage R2 API Tokens. R2_REGION is always "auto".
+
+B2_ENDPOINT(your region)
+
+Backblaze B2 S3-compatible endpoint. Format depends on your bucket region. B2_ACCESS_KEY is the keyID and B2_SECRET_KEY is the applicationKey. Only used when STORAGE_DRIVER=b2.
+
+Email
+
+Grit uses Resend for transactional emails -- welcome emails, password resets, and notifications. In development, emails are caught by Mailhog (accessible at http://localhost:8025).
+
+.env
+Copy to clipboard
+
+# Email — Resend integration
+
+RESEND_API_KEY=re_your_api_key
+
+MAIL_FROM=noreply@myapp.dev
+
+# Support inbox — every ticket opened in /system/support is emailed here
+
+# (when RESEND_API_KEY is set). Leave empty in dev to skip email-out.
+
+SUPPORT_EMAIL=
+
+RESEND_API_KEYre_your_api_key
+
+Your Resend API key. Get one at resend.com/api-keys. In development, emails are sent to Mailhog regardless of this key.
+
+MAIL_FROMnoreply@myapp.dev
+
+The sender email address for all outgoing emails. Must be a verified domain in your Resend account for production use.
+
+SUPPORT_EMAIL(empty)
+
+Destination inbox for support tickets opened in /system/support. Tickets are emailed here when RESEND_API_KEY is set. Leave empty in dev to skip sending.
+
+CORS
+
+Cross-Origin Resource Sharing configuration. The Go API needs to know which frontend origins are allowed to make requests. The Wails desktop webview does not need an entry -- its origin is matched by host (wails.localhost) on any port.
+
+.env
+Copy to clipboard
+
+# CORS — Allowed frontend origins (comma-separated)
+
+CORS_ORIGINS=http://localhost:3000,http://localhost:3001
+
+CORS_ORIGINShttp://localhost:3000,http://localhost:3001
+
+Comma-separated list of allowed origins. In development, port 3000 is the web app and port 3001 is the admin panel. In production, set this to your actual domain names (e.g., https://myapp.com,https://admin.myapp.com).
+
+GORM Studio
+
+The embedded visual database browser. Accessible at /studio on the API server, behind its own basic-auth login.
+
+.env
+Copy to clipboard
+
+# GORM Studio — Visual database browser
+
+GORM_STUDIO_ENABLED=true
+
+GORM_STUDIO_USERNAME=admin              # Login username for the Studio UI
+
+GORM_STUDIO_PASSWORD=studio             # Login password for the Studio UI
+
+GORM_STUDIO_READ_ONLY=false             # Refuse every write from Studio
+
+GORM_STUDIO_DISABLE_SQL=false           # Turn off the raw SQL editor
+
+GORM_STUDIO_ENABLEDtrue
+
+Enable or disable GORM Studio outside production. In production it is ignored, because .env files get copied to servers whole: Studio stays off there unless GORM_STUDIO_IN_PRODUCTION is true.
+
+GORM_STUDIO_IN_PRODUCTIONfalse
+
+Turn Studio on in production. Even then it is read-only with no SQL editor, whatever GORM_STUDIO_READ_ONLY and GORM_STUDIO_DISABLE_SQL say.
+
+GORM_STUDIO_USERNAMEadmin
+
+Login username for the Studio UI.
+
+GORM_STUDIO_PASSWORDstudio
+
+Login password for the Studio UI. Change it if you keep Studio enabled outside local development.
+
+GORM_STUDIO_READ_ONLYfalse
+
+Refuse every create, update and delete from Studio, on every table. Browsing still works.
+
+GORM_STUDIO_DISABLE_SQLfalse
+
+Turn off the raw SQL editor. It sends statements straight to the database, past every GORM callback, which is why the production template sets it to true. Append-only tables are protected by a trigger either way.
+
+AI Integration
+
+Grit ships with built-in AI support via Vercel AI Gateway (one key, hundreds of models). The AI service provides text completion and streaming endpoints.
+
+.env
+Copy to clipboard
+
+# AI — Vercel AI Gateway (one key, hundreds of models)
+
+AI_GATEWAY_API_KEY=                           # Get from vercel.com/ai-gateway
+
+AI_GATEWAY_MODEL=anthropic/claude-sonnet-4-6  # provider/model format
+
+AI_GATEWAY_URL=https://ai-gateway.vercel.sh/v1
+
+AI_GATEWAY_API_KEY(your key)
+
+Your Vercel AI Gateway API key. Get one at vercel.com/ai-gateway. A single key gives you access to all providers (Anthropic, OpenAI, Google, and more). Leave empty if you do not use AI features.
+
+AI_GATEWAY_MODELanthropic/claude-sonnet-4-6
+
+The model to use, in provider/model format. Examples: anthropic/claude-sonnet-4-6, openai/gpt-5.4, google/gemini-2.5-pro.
+
+AI_GATEWAY_URLhttps://ai-gateway.vercel.sh/v1
+
+The Vercel AI Gateway endpoint URL. This is the same for all providers and models. You should not need to change this.
+
+Two-Factor Authentication
+
+Grit supports TOTP-based two-factor authentication. The issuer name appears in authenticator apps (e.g., Google Authenticator, Authy) alongside the user's account.
+
+.env
+Copy to clipboard
+
+# Two-Factor Authentication (TOTP)
+
+TOTP_ISSUER=myapp
+
+TOTP_ISSUERmyapp
+
+The issuer name displayed in authenticator apps when users set up 2FA. Set this to your application or company name.
+
+Observability (Pulse)
+
+Pulse is Grit's built-in performance monitoring, request-tracing, and error-tracking dashboard. Its password is generated at scaffold time -- Pulse refuses to mount in APP_ENV=production while the password is still the literal default pulse.
+
+.env
+Copy to clipboard
+
+# Observability — Pulse performance monitoring dashboard
+
+PULSE_ENABLED=true                   # Set to "false" to disable Pulse entirely
+
+PULSE_USERNAME=admin                 # Dashboard login username
+
+PULSE_PASSWORD=pulse                 # Generated per-scaffold. Rotate: openssl rand -hex 16
+
+PULSE_ENABLEDtrue
+
+Turn the Pulse dashboard on or off. Set to false to disable Pulse entirely.
+
+PULSE_USERNAMEadmin
+
+Login username for the Pulse dashboard.
+
+PULSE_PASSWORD(generated)
+
+Login password for the Pulse dashboard. Generated per-scaffold so the production gate is satisfied out of the box. Rotate with openssl rand -hex 16.
+
+Security (Sentinel)
+
+Sentinel is Grit's built-in WAF, rate limiter, and threat-detection layer with its own dashboard. Like Pulse, it refuses to mount in production while its credentials are still the defaults. Both SENTINEL_PASSWORD andSENTINEL_SECRET_KEY are generated at scaffold time.
+
+.env
+Copy to clipboard
+
+# Security — Sentinel WAF, rate limiting, threat detection
+
+SENTINEL_ENABLED=true                # Set to "false" to disable Sentinel entirely
+
+SENTINEL_USERNAME=admin              # Dashboard login username
+
+SENTINEL_PASSWORD=sentinel           # Generated per-scaffold. Rotate: openssl rand -hex 16
+
+SENTINEL_SECRET_KEY=change-me        # Generated per-scaffold (>=32 bytes). Rotate: openssl rand -hex 32
+
+SENTINEL_AUDIT_KEY=change-me         # Generated per-scaffold. Keys the audit log hash chain
+
+SENTINEL_ENABLEDtrue
+
+Turn Sentinel on or off. Set to false to disable the WAF, rate limiting, and threat detection entirely.
+
+SENTINEL_USERNAMEadmin
+
+Login username for the Sentinel dashboard.
+
+SENTINEL_PASSWORD(generated)
+
+Login password for the Sentinel dashboard. Generated per-scaffold. Rotate with openssl rand -hex 16.
+
+SENTINEL_SECRET_KEY(generated)
+
+Secret used to sign the Sentinel dashboard JWT sessions. Needs at least 32 bytes of entropy; generated per-scaffold. Rotate with openssl rand -hex 32.
+
+SENTINEL_AUDIT_KEY(generated)
+
+Keys the Sentinel audit log hash chain, so an entry edited by someone with database access but not this key fails verification. Keep it: entries written under one key verify only with that key.
+
+Theme
+
+Picks the visual identity for the auth pages and dashboard. The value is mirrored into NEXT_PUBLIC_THEME for the web and admin clients innext.config, so server components render the right theme without a flash of unstyled content.
+
+.env
+Copy to clipboard
+
+# Theme — visual identity for auth pages + dashboard
+
+#   atlas  — split-screen, team/organisation, Inter (default)
+
+#   aurora — centered Clerk-style, consumer SaaS, Geist
+
+#   pulse  — split-screen with carousel, ecommerce/brand, Onest + DM Serif
+
+THEME=atlas
+
+THEMEatlas
+
+Chosen with --theme at scaffold time (defaults to atlas). Options: atlas (split-screen, team/organisation, Inter), aurora (centered Clerk-style, consumer SaaS, Geist), and pulse (split-screen with carousel, ecommerce/brand, Onest + DM Serif). Mirrored to the clients as NEXT_PUBLIC_THEME.
+
+Local Service Ports
+
+The services started by Docker Compose and the dev servers each bind their own host port. Grit shifts the infrastructure ports off their defaults (Postgres, Redis, MinIO) to avoid colliding with services you may already run locally.
+
+ServiceDev URLHost Port
+
+Go APIhttp://localhost:80808080
+
+GORM Studiohttp://localhost:8080/studio8080
+
+Web App (Next.js)http://localhost:30003000
+
+Admin Panel (Next.js)http://localhost:30013001
+
+PostgreSQLlocalhost:54345434
+
+Redislocalhost:63806380
+
+MinIO (API)http://localhost:90029002
+
+MinIO Consolehttp://localhost:90039003
+
+Mailhoghttp://localhost:80258025
+
+Complete .env Reference
+
+Here is every environment variable in a single block for quick copy-paste:
+
+.env.example
+Copy to clipboard
+
+# App
+
+APP_NAME=myapp
+
+APP_ENV=development
+
+APP_PORT=8080
+
+APP_URL=http://localhost:8080
+
+# Database (Postgres) — edit these; DATABASE_URL is optional
+
+POSTGRES_USER=grit
+
+POSTGRES_PASSWORD=change-me
+
+POSTGRES_DB=myapp
+
+POSTGRES_HOST=localhost
+
+POSTGRES_PORT=5434
+
+# DATABASE_URL=postgres://user:pass@host:5432/db?sslmode=require
+
+# DATABASE_URL=sqlite:./app.db
+
+# DATABASE_URL=sqlite::memory:
+
+# JWT
+
+JWT_SECRET=change-me-in-production
+
+JWT_ACCESS_EXPIRY=15m
+
+JWT_REFRESH_EXPIRY=168h
+
+# OAuth2 — Social Login (Google + GitHub)
+
+GOOGLE_CLIENT_ID=
+
+GOOGLE_CLIENT_SECRET=
+
+GITHUB_CLIENT_ID=
+
+GITHUB_CLIENT_SECRET=
+
+OAUTH_FRONTEND_URL=http://localhost:3001
+
+SOCIAL_AUTH_ENABLED=true
+
+# Redis (built from REDIS_PORT unless set)
+
+# REDIS_URL=redis://localhost:6380
+
+# Frontend & Public URLs
+
+API_URL=http://localhost:8080
+
+NEXT_PUBLIC_ADMIN_URL=http://localhost:3001
+
+# Storage — minio, s3, r2, b2
+
+STORAGE_DRIVER=minio
+
+# MinIO (local dev; built from MINIO_PORT unless set)
+
+# MINIO_ENDPOINT=http://localhost:9002
+
+MINIO_ACCESS_KEY=<generated per project>
+
+MINIO_SECRET_KEY=<generated per project>
+
+MINIO_BUCKET=myapp-uploads
+
+MINIO_REGION=us-east-1
+
+MINIO_USE_SSL=false
+
+# AWS S3
+
+S3_ENDPOINT=
+
+S3_ACCESS_KEY=
+
+S3_SECRET_KEY=
+
+S3_BUCKET=
+
+S3_REGION=us-east-1
+
+# Cloudflare R2
+
+R2_ENDPOINT=
+
+R2_ACCESS_KEY=
+
+R2_SECRET_KEY=
+
+R2_BUCKET=
+
+R2_REGION=auto
+
+# Backblaze B2
+
+B2_ENDPOINT=
+
+B2_ACCESS_KEY=
+
+B2_SECRET_KEY=
+
+B2_BUCKET=
+
+B2_REGION=us-west-004
+
+# Email
+
+RESEND_API_KEY=re_your_api_key
+
+MAIL_FROM=noreply@myapp.dev
+
+SUPPORT_EMAIL=
+
+# CORS
+
+CORS_ORIGINS=http://localhost:3000,http://localhost:3001
+
+# GORM Studio
+
+GORM_STUDIO_ENABLED=true
+
+GORM_STUDIO_USERNAME=admin
+
+GORM_STUDIO_PASSWORD=studio
+
+# AI (Vercel AI Gateway)
+
+AI_GATEWAY_API_KEY=
+
+AI_GATEWAY_MODEL=anthropic/claude-sonnet-4-6
+
+AI_GATEWAY_URL=https://ai-gateway.vercel.sh/v1
+
+# Two-Factor Authentication (TOTP)
+
+TOTP_ISSUER=myapp
+
+# Observability (Pulse)
+
+PULSE_ENABLED=true
+
+PULSE_USERNAME=admin
+
+PULSE_PASSWORD=pulse
+
+# Security (Sentinel)
+
+SENTINEL_ENABLED=true
+
+SENTINEL_USERNAME=admin
+
+SENTINEL_PASSWORD=sentinel
+
+SENTINEL_SECRET_KEY=change-me
+
+# Theme — atlas, aurora, pulse
+
+THEME=atlas
+
+Production Checklist
+
+Before deploying to production, make sure you have addressed these configuration items:
+
+Change JWT_SECRET to a strong random string (at least 32 characters)
+
+Set APP_ENV=production to disable debug logging and GORM Studio
+
+Set GORM_STUDIO_ENABLED=false (or change its username/password) to lock down the database browser
+
+Change POSTGRES_PASSWORD (or set DATABASE_URL to your managed Postgres with sslmode=require)
+
+Update CORS_ORIGINS to your production domain names
+
+Set STORAGE_DRIVER to s3, r2, or b2 and configure the cloud credentials
+
+Set RESEND_API_KEY with your production API key, verify your sender domain, and set SUPPORT_EMAIL
+
+Update REDIS_URL to your production Redis instance
+
+Set API_URL and NEXT_PUBLIC_ADMIN_URL to your production origins
+
+Rotate PULSE_PASSWORD, SENTINEL_PASSWORD, and SENTINEL_SECRET_KEY off the literal defaults (they gate mounting in production)
+
+Fill in OAuth credentials if you use social login, or set SOCIAL_AUTH_ENABLED=false
+
+Set APP_URL to your production API domain
+
+Project StructureArchitecture Overview

@@ -1,0 +1,456 @@
+Architecture Modes
+
+Single Architecture: One Binary
+
+One Go binary serves both the API and the frontend. No monorepo tooling, no separate deployments. Build it, ship one file, done.
+
+Overview
+
+The single architecture is the most different from the other Grit modes. Instead of a Turborepo monorepo with separate apps, you get a flat project where a single Go binary serves both the REST API and the compiled React frontend using go:embed. Think of it like Laravel or an embedded Next.js app -- one deployment unit that handles everything.
+
+There is no Turborepo, no pnpm-workspace.yaml, no turbo.json. The Go module path is just myapp (not myapp/apps/api). Schemas and types live directly in frontend/src/ -- there is no pnpm workspace, so no shared package.
+
+One SPA, four sections, each with a layout of its own: routes/_site is the public site with the navbar and footer, routes/admin the panel, routes/_auth the sign-in pages and routes/account the signed-in customer area. The names starting with an underscore are pathless, so none of this changes a URL. Run grit add web-auth to get the last two: login, registration, password reset, and an account dashboard behind them (v3.238.0).
+
+The admin panel is in there too, as a section of the same SPA at /admin/dashboard (v3.236.0). Same dashboard, resource CRUD, system hub, settings and account security a three-app project has: 35 screens, its own layout and sidebar, and the site's navbar steps aside for it. One binary still serves all of it.
+
+Scaffold command
+
+grit new myapp --single --vite
+
+Copy to clipboard
+
+Or the same thing with Next.js
+
+--single --next gives you everything on this page with Next.js in place of Vite, and it is one binary too. Next builds with output: "export", the export is copied into api/web, and the binary embeds it exactly as it embeds the Vite build.
+
+One thing differs, and it is visible in the URLs. An export has to have a file for every address it serves, and a dynamic segment cannot be built: its values are rows in a database the build never sees. So a record is at /resources/users/view?id=... rather than /resources/users/123. Same screen, same component, a URL the build can produce. The Vite single keeps path segments, because a SPA resolves them in the browser.
+
+There is also no middleware.ts: an export has no server to run one. The panel's own auth redirects a signed-out visitor, and every endpoint behind it is checked by the API, which is the check that matters.
+
+Scaffold command
+
+grit new myapp --single --next
+
+Copy to clipboard
+
+Embedded React buildGo binaryData
+One binary, one port — serves both the JSON API and the React build via go:embed
+
+Key Characteristics
+
+PropertySingle Architecture
+
+BinaryOne Go binary serves API + frontend
+
+MonorepoNone -- flat project, no Turborepo, no pnpm workspaces
+
+Module pathmyapp
+
+FrontendReact + Vite + TanStack Router (embedded via go:embed)
+
+Shared typesMirrored into frontend/src/shared/ (no packages/shared)
+
+Admin panelA section of the same SPA at /admin/dashboard, code under frontend/src/admin-panel/
+
+DeploymentUpload one binary + .env file
+
+Full Folder Structure
+
+The entire project is flat. Go code lives in internal/, The app owns the project root, the way a Vite or Next.js project is laid out anywhere else, and the Go API sits in api/ with its own go.mod. Open the folder and it is a web project with a Go API beside it, which is what it has always been.
+
+myapp/
+
+package.jsonThe app's own: pnpm dev, pnpm build
+
+vite.config.tsBuilds into api/web, which the binary embeds
+
+index.html
+
+tsconfig.json
+
+biome.jsoncLint and format rules
+
+.envRead by the API from api/, one level up
+
+.env.example
+
+.gitignore
+
+docker-compose.ymlPostgreSQL, Redis, MinIO, Mailhog
+
+grit.jsonarchitecture: "single", frontend: "tanstack"
+
+Makefilemake dev, make build, make deploy
+
+📂srcThe app: this is a Vite project
+
+main.tsx
+
+📂routesTanStack Router file-based routes
+
+__root.tsxAn outlet: every section owns its layout
+
+📁_siteThe public site: navbar + footer
+
+📁_authLogin and registration (grit add web-auth)
+
+📁accountThe signed-in customer area, guarded
+
+📁adminThe panel's routes, at /admin/*
+
+...
+
+📁components
+
+📁hooks
+
+📁lib
+
+📁admin-panelThe admin panel's pages, components and resources (@admin)
+
+📁sharedZod schemas + TS types (aliased as @repo/shared)
+
+📂apiThe Go API, module myapp
+
+main.goEntry point, with go:embed all:web
+
+go.modModule: myapp (not myapp/apps/api)
+
+go.sum
+
+📁webThe built SPA. //go:embed cannot read above api/, so Vite writes here
+
+📁cmdmigrate and seed entrypoints
+
+📂internalALL Go backend code
+
+config/config.go
+
+database/db.go
+
+📁models// grit:models
+
+📁handlers
+
+📁services
+
+📁middleware
+
+routes/routes.go// grit:handlers, grit:routes:*
+
+📁mail
+
+📁storage
+
+📁jobs
+
+📁cache
+
+📁ai
+
+auth/totp.go
+
+📁packages/uploadThe shared upload client
+
+📂.claude/skills/grit
+
+SKILL.mdTailored to single architecture
+
+reference.md
+
+Directory Breakdown
+
+main.go -- Entry Point
+
+The root main.go file is where everything starts. It uses Go's embed package to bundle the compiled frontend into the Go binary. In production, this means you get a single executable that can serve both the API and the static frontend files.
+
+main.go
+Copy to clipboard
+
+package main
+
+import (
+
+"embed"
+
+"io/fs"
+
+"net/http"
+
+"myapp/internal/config"
+
+"myapp/internal/database"
+
+"myapp/internal/routes"
+
+)
+
+//go:embed frontend/dist/*
+
+var frontendFS embed.FS
+
+func main() {
+
+cfg := config.Load()
+
+db := database.Connect(cfg)
+
+// Serve API routes
+
+r := routes.Setup(db, cfg)
+
+// Serve embedded frontend
+
+dist, _ := fs.Sub(frontendFS, "frontend/dist")
+
+r.NoRoute(gin.WrapH(http.FileServer(http.FS(dist))))
+
+r.Run(":" + cfg.Port)
+
+}
+
+The //go:embed frontend/dist/* directive tells the Go compiler to include the entire frontend/dist/ directory inside the compiled binary. The NoRoute handler serves the frontend for any path that doesn't match an API route.
+
+internal/ -- Go Backend
+
+Identical structure to the other architectures. Contains config, database connection, models, handlers, services, middleware, mail, storage, jobs, cache, and AI integration. The only difference is import paths: you import "myapp/internal/models" instead of "myapp/apps/api/internal/models". The routes/routes.go file contains the same code markers (// grit:handlers, // grit:routes:*) for code generation.
+
+frontend/ -- React SPA
+
+A standard React + Vite + TanStack Router application. File-based routing lives in src/routes/. Unlike the triple or double architecture, there is no packages/shared/ directory. The Zod schemas and TypeScript types that other architectures publish as a workspace package are mirrored into src/shared/ instead, and tsconfig.json aliases @repo/shared/* onto them. Import paths therefore read the same in every architecture -- everything is self-contained within the frontend directory.
+
+grit.json -- Project Config
+
+Tells the Grit CLI which architecture this project uses. Code generation reads this file to determine where to place generated files and which templates to use.
+
+grit.json
+Copy to clipboard
+
+{
+
+"architecture": "single",
+
+"frontend": "tanstack",
+
+"go_module": "myapp"
+
+}
+
+Data Flow
+
+The data flow differs between development and production. In development, you run two processes: Go on port 8080 and Vite on port 5173. Vite proxies API requests to Go. In production, there is only one process: the Go binary serves everything.
+
+Production
+
+production data flow
+Copy to clipboard
+
+Browser → Go binary (:8080)
+
+├── /api/*        → Gin router → handlers → services → database
+
+└── everything else → serves frontend/dist/ (HTML, JS, CSS)
+
+Development
+
+development data flow
+Copy to clipboard
+
+Browser → Vite dev server (:5173)
+
+├── /api/*  → proxied to Go (:8080) → handlers → services → database
+
+└── other   → Vite HMR (instant refresh)
+
+The Vite proxy is configured in vite.config.ts to forward any request starting with /api to the Go server running on port 8080.
+
+Development Workflow
+
+One command runs the whole single app — the Go API (with hot reload) and the Vite frontend together. Press Ctrl+C to stop both.
+
+grit start
+
+Copy to clipboard
+
+Need just the Go API? Use grit start server. The generated Makefile also exposes the same workflow if you prefer make:
+
+grit start server   # API only
+
+make dev            # equivalent: runs Go + Vite concurrently
+
+Copy to clipboard
+
+Vite Proxy Config
+
+The Vite config proxies API requests so the frontend can call /api/users without worrying about CORS or port differences during development.
+
+frontend/vite.config.ts
+Copy to clipboard
+
+import { defineConfig } from 'vite'
+
+import react from '@vitejs/plugin-react'
+
+import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
+
+export default defineConfig({
+
+plugins: [TanStackRouterVite(), react()],
+
+server: {
+
+port: 5173,
+
+proxy: {
+
+'/api': {
+
+target: 'http://localhost:8080',
+
+changeOrigin: true,
+
+},
+
+},
+
+},
+
+})
+
+Production Build
+
+Building for production is a two-step process: build the frontend, then build the Go binary. The Go compiler embeds the compiled frontend assets into the binary at compile time.
+
+build steps
+Copy to clipboard
+
+# Step 1: Build the frontend
+
+cd frontend && pnpm build
+
+# This creates frontend/dist/ with optimized HTML, JS, and CSS
+
+# Step 2: Build the Go binary
+
+cd .. && go build -o myapp main.go
+
+# The binary now contains the embedded frontend
+
+# Step 3: Deploy
+
+scp myapp server:/opt/myapp/
+
+scp .env server:/opt/myapp/
+
+# That's it. One binary + one .env file.
+
+No Node.js runtime needed on the production server. No npm install, no pnpm, no build tools. Just the binary and your environment variables.
+
+Code Generation
+
+When you run grit generate resource in a single-architecture project, the CLI creates files in different locations compared to the monorepo architectures.
+
+Generated FileLocation
+
+Go modelinternal/models/post.go
+
+Go serviceinternal/services/post_service.go
+
+Go handlerinternal/handlers/post_handler.go
+
+Route injectioninternal/routes/routes.go
+
+React Query hooks + typesfrontend/src/hooks/use-posts.ts
+
+With no packages/shared/ to publish to, the generated hook declares its own Post interface inline rather than importing one -- a single-binary app has exactly one consumer, so there is nothing to keep in sync.
+
+Deployment
+
+Deploying a single-architecture app is as simple as it gets. You only need to transfer two files to your server: the compiled binary and your .env file.
+
+Docker
+
+Dockerfile
+Copy to clipboard
+
+FROM node:20-alpine AS frontend
+
+WORKDIR /app/frontend
+
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+
+RUN corepack enable && pnpm install --frozen-lockfile
+
+COPY frontend/ ./
+
+RUN pnpm build
+
+FROM golang:1.21-alpine AS backend
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+
+RUN go mod download
+
+COPY . .
+
+COPY --from=frontend /app/frontend/dist ./frontend/dist
+
+RUN CGO_ENABLED=0 go build -o server main.go
+
+FROM alpine:3.19
+
+WORKDIR /app
+
+COPY --from=backend /app/server .
+
+EXPOSE 8080
+
+CMD ["./server"]
+
+Direct Deploy (no Docker)
+
+# Build locally for your server's OS/arch
+
+GOOS=linux GOARCH=amd64 go build -o myapp main.go
+
+# Transfer and run
+
+scp myapp .env yourserver:/opt/myapp/
+
+ssh yourserver 'cd /opt/myapp && ./myapp'
+
+Copy to clipboard
+
+When to Choose Single
+
+Good fit
+
+-Solo developers who want the simplest deploy story
+
+-Laravel or Rails developers who like one-app-does-everything
+
+-Internal tools and admin dashboards
+
+-Microservices where each service has its own UI
+
+-Apps where SSR and SEO are not critical (SPA is fine)
+
+Not ideal for
+
+-SEO-heavy public sites that need server-side rendering
+
+-Large teams that need separate frontend and backend deploys
+
+-Teams that deploy the admin panel separately from the app, on its own domain or behind its own network rules (use triple)
+
+-Apps that share types with multiple frontend clients
+
+Example Project
+
+The Job Portal example built with the single architecture demonstrates all the patterns described above: go:embed, Vite proxy, TanStack Router, and production Dockerfile.
+View Job Portal (Single + Vite) on GitHub →
+
+Double ArchitectureAPI Only Architecture

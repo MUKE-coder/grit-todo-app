@@ -1,0 +1,62 @@
+Build with AI
+Generate a Grit prompt for your
+
+AI coding agent
+
+Building with Claude Code, Cursor, Lovable, Bolt, or another AI tool? Pick the clients you need, choose your stack and any plugins, and we'll generate a complete brief that teaches your agent Grit from zero to one hundred: the exact scaffold command, the conventions, code generation, batteries, and pitfalls. Copy it, or download it as a Markdown file.
+
+Works with:Claude CodeCursorWindsurfLovablev0BoltReplitGitHub CopilotAiderCline
+
+The fast way
+
+One prompt, no questions. It installs the Grit skill, sets out the build in nine steps, links every concept your agent needs, and tells it to ask you what you are building before it scaffolds anything.
+
+Build with AI
+
+Let your AI build it
+
+One prompt that installs the Grit skill, teaches your agent the framework, and links every concept it needs. Works in Claude Code, Cursor, Codex, Windsurf, Copilot or any chat.
+
+Copy prompt to build with AI
+
+Or tailor it
+
+Pick your clients, stack and plugins, and the brief is narrowed to them.
+
+1
+Clients
+
+2
+Stack
+
+3
+Plugins
+
+4
+Prompt
+
+What are you building?
+
+Pick every surface you need. The API is the base; the rest are clients that share it. Select as many as apply.
+
+API
+
+Go backend (Gin + GORM), the base every client talks to.
+
+Website
+
+Public web frontend: marketing, storefront, SaaS, dashboard.
+
+Admin panel
+
+Generated Filament-like dashboard: tables, forms, roles.
+
+Mobile app
+
+Expo / React Native: iOS + Android, shared API.
+
+Desktop app
+
+Native Wails window: offline-first with local SQLite.
+
+BackNext

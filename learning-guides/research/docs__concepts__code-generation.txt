@@ -1,0 +1,527 @@
+Core Concepts
+Code Generation
+
+The Grit code generator creates full-stack CRUD resources from a single command. It generates 9 new files and injects code into 10 existing files, wiring everything together automatically so your resource is immediately usable.
+
+How the Generator Works
+
+When you run grit generate resource, the CLI goes through four stages:
+
+1
+
+Detect project root
+
+Walks up from the current directory looking for docker-compose.yml or turbo.json. Reads the Go module path from apps/api/go.mod.
+
+2
+
+Parse definition
+
+Reads the resource definition from --fields, --from (YAML), or -i (interactive). Validates all field names and types. A YAML file may also set owned_by, tree, public, append_only and tenant_owned; a flag adds to those, and never removes one the file set.
+
+3
+
+Generate new files
+
+Creates 8 new files using string template replacement. Each template uses placeholders like {{Pascal}}, {{plural}}, {{MODULE}} that get replaced with the actual resource names.
+
+4
+
+Inject into existing files
+
+Finds marker comments in existing files (e.g., // grit:models) and injects code at those locations. This wires up routes, imports, model registration, and more.
+
+Files Created (9 New Files)
+
+For a resource named "Post", the generator creates the following 9 files. Each file is complete, ready to use, and follows Grit's conventions.
+
+grit generate resource Post
+
+--fields "title:string, content:text, published:bool"
+
+fans out to 9 files
+
+Go backend · apps/api/
+
+models/post.go
+
+GORM struct
+
+services/post.go
+
+business logic
+
+handlers/post.go
+
+Gin CRUD
+
+handlers/post_import.go
+
+CSV import
+
+Shared · packages/shared/
+
+schemas/post.ts
+
+Zod Create/Update
+
+types/post.ts
+
+TS interface
+
+Frontend · apps/web + apps/admin
+
+web/hooks/use-posts.ts
+
+React Query
+
+admin/resources/posts.ts
+
+resource def
+
+admin/…/posts/page.tsx
+
+CRUD page
+
+grit command
+
+Go backend
+
+Shared package
+
+Frontend
+
+FileContains
+
+apps/api/internal/models/post.goGORM struct with all fields, tags, timestamps, soft delete
+
+apps/api/internal/services/post.goBusiness logic: List (paginated), GetByID, Create, Update, Delete
+
+apps/api/internal/handlers/post.goGin handlers: List, GetByID, Create, Update, Delete with validation
+
+apps/api/internal/handlers/post_import.goBulk CSV import handler for the resource
+
+packages/shared/schemas/post.tsCreatePostSchema, UpdatePostSchema with Zod validators
+
+packages/shared/types/post.tsTypeScript interface with all fields, id, created_at, updated_at
+
+apps/web/hooks/use-posts.tsReact Query hooks: usePosts, useGetPost, useCreatePost, useUpdatePost, useDeletePost
+
+apps/admin/resources/posts.tsResource definition: columns, form fields, filters, dashboard widget
+
+apps/admin/app/(dashboard)/resources/posts/page.tsxAdmin page component that renders the resource using ResourcePage
+
+Generated Code Examples
+
+Here is what the generator produces for grit g resource Post --fields "title:string,content:text,published:bool":
+
+Go Model
+
+apps/api/internal/models/post.go
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"gorm.io/gorm"
+
+)
+
+// Post represents a post in the system.
+
+type Post struct {
+
+ID        uint           `gorm:"primarykey" json:"id"`
+
+Title     string         `gorm:"size:255" json:"title" binding:"required"`
+
+Content   string         `gorm:"type:text" json:"content"`
+
+Published bool           `json:"published"`
+
+CreatedAt time.Time      `json:"created_at"`
+
+UpdatedAt time.Time      `json:"updated_at"`
+
+DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+
+}
+
+Zod Schema
+
+packages/shared/schemas/post.ts
+Copy to clipboard
+
+import { z } from "zod";
+
+export const CreatePostSchema = z.object({
+
+title: z.string().min(1, "Required"),
+
+content: z.string(),
+
+published: z.boolean(),
+
+});
+
+export const UpdatePostSchema = z.object({
+
+title: z.string().min(1, "Required").optional(),
+
+content: z.string().optional(),
+
+published: z.boolean().optional(),
+
+});
+
+export type CreatePostInput = z.infer<typeof CreatePostSchema>;
+
+export type UpdatePostInput = z.infer<typeof UpdatePostSchema>;
+
+TypeScript Interface
+
+packages/shared/types/post.ts
+Copy to clipboard
+
+export interface Post {
+
+id: number;
+
+title: string;
+
+content: string;
+
+published: boolean;
+
+created_at: string;
+
+updated_at: string;
+
+}
+
+Admin Resource Definition
+
+apps/admin/resources/posts.ts
+Copy to clipboard
+
+import { defineResource } from "@/lib/resource";
+
+export const postResource = defineResource({
+
+name: "Post",
+
+slug: "posts",
+
+endpoint: "/api/posts",
+
+icon: "FileText",
+
+label: { singular: "Post", plural: "Posts" },
+
+table: {
+
+columns: [
+
+{ key: "id", label: "ID", sortable: true, width: "80px" },
+
+{ key: "title", label: "Title", sortable: true, searchable: true },
+
+{ key: "content", label: "Content", searchable: true },
+
+{ key: "published", label: "Published", format: "boolean" },
+
+{ key: "created_at", label: "Created", sortable: true, format: "relative" },
+
+],
+
+filters: [
+
+{ key: "published", label: "Published", type: "boolean" },
+
+],
+
+defaultSort: { key: "created_at", direction: "desc" },
+
+searchable: true,
+
+pageSize: 20,
+
+},
+
+form: {
+
+fields: [
+
+{ key: "title", label: "Title", type: "text", required: true },
+
+{ key: "content", label: "Content", type: "textarea" },
+
+{ key: "published", label: "Published", type: "toggle" },
+
+],
+
+},
+
+});
+
+Files Modified (10 Injection Points)
+
+In addition to creating new files, the generator injects code into existing files to wire everything together. Each injection uses a marker comment that was placed during project scaffolding.
+
+#InjectionFile
+
+1Add model to AutoMigrate listmodels/user.go
+
+2Add model to GORM Studio mountroutes/routes.go
+
+3Initialize handler structroutes/routes.go
+
+4Register protected routes (list, get, create, update)routes/routes.go
+
+5Register admin routes (delete)routes/routes.go
+
+6Export Zod schemas from indexschemas/index.ts
+
+7Export TypeScript types from indextypes/index.ts
+
+8Add API route constantsconstants/index.ts
+
+9Import resource definitionresources/index.ts
+
+10Register resource in the registry arrayresources/index.ts
+
+The Marker System
+
+Grit uses special marker comments in scaffolded files to know where to inject new code. These markers are placed during project creation and should not be removed. The generator finds each marker and inserts new code on the line before it.
+
+MarkerFilePurpose
+
+// grit:modelsmodels/user.goAdd new model to AutoMigrate
+
+/* grit:studio */routes/routes.goAdd model to GORM Studio (inline)
+
+// grit:handlersroutes/routes.goInitialize handler struct
+
+// grit:routes:protectedroutes/routes.goRegister authenticated API routes
+
+// grit:routes:adminroutes/routes.goRegister admin-only routes
+
+// grit:schemasschemas/index.tsExport Zod schemas
+
+// grit:typestypes/index.tsExport TypeScript types
+
+// grit:api-routesconstants/index.tsAdd API route constants
+
+// grit:resourcesresources/index.tsImport resource definition
+
+// grit:resource-listresources/index.tsRegister in resources array
+
+Important: Never remove marker comments from your files. If a marker is missing, the generator will skip that injection and print a warning. You can safely add your own code above or below the markers.
+
+How Injection Works
+
+There are two injection modes used by the generator:
+
+injectBefore (line-based)
+
+Most markers use this mode. The generator finds the marker comment, then inserts the new code on the line immediately before it. This is used for model registration, route definitions, exports, and resource imports.
+
+injectInline (same-line)
+
+The GORM Studio marker uses this mode. The generator inserts code directly before the marker on the same line. This produces clean output like: &models.Post{}, /* grit:studio */
+
+YAML Definition Format
+
+For complex resources, use a YAML file to define the fields. This gives you more control over field properties like required, unique, and default values.
+
+invoice.yaml
+Copy to clipboard
+
+name: Invoice
+
+fields:
+
+- name: number
+
+type: string
+
+required: true       # adds binding:"required" in Go, .min(1) in Zod
+
+unique: true         # adds gorm:"uniqueIndex"
+
+- name: description
+
+type: text           # maps to gorm:"type:text", optional by default
+
+- name: amount
+
+type: float
+
+- name: status
+
+type: string
+
+default: "pending"   # adds gorm:"default:pending"
+
+- name: quantity
+
+type: uint           # unsigned integer, z.number().int().nonnegative()
+
+- name: due_date
+
+type: date           # maps to *time.Time, gorm:"type:date"
+
+- name: paid
+
+type: bool
+
+default: "false"     # adds gorm:"default:false"
+
+YAML Field Properties
+
+PropertyTypeDefaultEffect
+
+namestring(required)Field name, auto-converted to PascalCase/snake_case
+
+typestring(required)One of: string, text, richtext, int, uint, float, bool, toggle, select, radio, check, datetime, date, slug, belongs_to, many_to_many, string_array, file, files
+
+requiredbooltrue for stringAdds Go binding tag and Zod .min(1) validator
+
+uniqueboolfalseAdds gorm:"uniqueIndex" tag
+
+defaultstring(none)Adds gorm:"default:value" tag
+
+Editing a resource after generation
+
+Generated code is yours to edit — Grit scaffolds it once and never overwrites it. Two common follow-ups:
+
+Add a field to an existing model
+
+One command. It writes the column into the Go model, both Zod schemas, the TypeScript type, and the admin table and form:
+
+grit generate resource Post --fields "title:string,content:text,published:bool"
+
+(cd apps/api && go build ./... && go vet ./...)
+
+Copy to clipboard
+
+grit g field Product sku:string
+
+grit g field Invoice status:select:draft=Draft|sent=Sent|paid=Paid
+
+grit g field Invoice paid:toggle
+
+# the model is the source of truth, so the column lands on the next migrate
+
+grit migrate
+
+Copy to clipboard
+
+No migration file is written, deliberately: the Go model is what describes the schema, and GORM adds the column from it. Scalar, select and toggle types are supported.
+
+Four types it declines: relationship, file, slug and array fields. Each writes more than a column — a foreign key and a preload, an upload pipeline, a hook that fills the value on save — and half-wiring those is worse than refusing. The command says so and points you at regenerating the resource instead: grit g resource Product --fields "…including the new one". Its injections are idempotent, so existing routes and registrations are skipped.
+
+You can still edit the Go model by hand and run grit sync, which rewrites packages/shared from your structs and inserts the field between the // grit:cols:auto and // grit:fields:auto markers so hand-edited rows survive. Worth knowing, because it is the path for anything the command will not do. Note that the create and update handlers bind explicit request structs, so a hand-added field also has to be added there before the API will accept it — which is the step grit g field does for you.
+
+Change a sidebar icon
+
+Every resource declares an icon — a Lucide icon name — at the top of its resource file. The generator guesses one from the resource name; change it to any icon you like:
+
+apps/admin/resources/products.ts
+Copy to clipboard
+
+export const productsResource = defineResource({
+
+name: "Product",
+
+slug: "products",
+
+icon: "Package",   // <- any Lucide icon name, e.g. "ShoppingCart", "Tag", "Boxes"
+
+// ...
+
+});
+
+The name must exist in apps/admin/lib/icons.ts (the app's icon registry). Most common icons are already there; if you pick one that isn't, add it to that file's import, the iconMap, and the re-export, and it becomes available. System links (Roles, Security, System Hub) get their icons from the sidebar component (components/chrome/CollapsibleSidebar) rather than a resource file.
+
+Complete Field Type Mappings
+
+Each Grit field type maps to specific types and behaviors across the entire stack. This table shows the full mapping from field type to Go, GORM, TypeScript, Zod, DataTable column format, and form field type.
+
+Grit TypeGORM TagColumnFormSortableSearchable
+
+stringsize:255texttextYesYes
+
+texttype:texttexttextareaNoYes
+
+int(none)textnumberYesNo
+
+uint(none)textnumberYesNo
+
+float(none)textnumberYesNo
+
+bool(none)booleantoggleNoNo
+
+selectsize:255textselectNoNo
+
+radiosize:255textradioNoNo
+
+checktype:json—checkbox-groupNoNo
+
+datetime(none)relativedatetimeYesNo
+
+datetype:daterelativedateYesNo
+
+richtexttype:textrichtextrichtextNoYes
+
+slugsize:255;uniqueIndextext(excluded)YesYes
+
+belongs_toindextextrelationship-selectNoNo
+
+many_to_many(junction table)(hidden)multi-relationship-selectNoNo
+
+string_arraytype:jsontextimagesNoNo
+
+filetype:jsonfilefileNoNo
+
+filestype:jsonfilesfilesNoNo
+
+Auto-Generated Search
+
+The generator automatically builds search queries based on your field types. All string andtext fields are included in the search WHERE clause using PostgreSQL's ILIKE operator for case-insensitive matching.
+
+generated search query for Post
+Copy to clipboard
+
+// For --fields "title:string,content:text,published:bool"
+
+// The generator produces:
+
+query.Where("title ILIKE ? OR content ILIKE ?",
+
+"%"+search+"%", "%"+search+"%")
+
+// Notice: bool and numeric fields are NOT included in text search.
+
+// Only string and text fields participate in ILIKE search.
+
+If a resource has no string or text fields, the generator falls back to searching by ID: id::text ILIKE ?.
+
+Interactive Mode
+
+When you use the -i flag, the CLI enters interactive mode where you define fields one at a time. Each field is entered as name:type. The prompt shows all valid types and provides real-time validation.
+
+✓Invalid types are rejected immediately with a warning
+
+✓Invalid field name formats are rejected
+
+✓Each successfully added field gets a confirmation
+
+✓Press Enter on an empty line to finish defining fields
+
+✓At least one field is required
+
+CLI CommandsType System

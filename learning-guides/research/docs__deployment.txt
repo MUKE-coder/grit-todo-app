@@ -1,0 +1,132 @@
+Deployment
+Where to deploy Grit
+
+Grit produces an ordinary Docker image and an ordinary Go binary. Anything that runs either will run your app — there is no platform it is coupled to. This section is about picking well, then the specifics of each.
+
+If you have no opinion yet
+
+Shipping something today, alone or in a small team → Railway or Render. Managed database, no server to patch, running in under an hour.
+
+You want a config file in the repo rather than a dashboard → Fly.io. One fly.toml per app, deployed with flyctl and a GitHub Actions workflow.
+
+Several apps, one bill → Dokploy or Coolify. A platform you own, on one box.
+
+On-premise, or the customer owns the hardware → Dokploy on their box. It runs your real docker-compose.prod.yml almost unmodified.
+
+Every one of these is a real production answer. The wrong choice here is recoverable — moving a Grit app between them is a Dockerfile and a set of environment variables.
+
+First, four things that apply everywhere
+
+Environment variables
+
+Which are required, which are build-time, and the ones that fail silently.
+
+Database & migrations
+
+Why production does not auto-migrate, and how to run them safely.
+
+Test the production build locally
+
+Reproduce the deploy on your machine first. Most failures are visible here.
+
+Go-live checklist
+
+The things that are embarrassing to discover after launch.
+
+Side by side
+
+ProviderFromOps effortManaged DBDisk
+
+Fly.io~$5Low
+
+Railway~$5Lowest
+
+Render$0 (free tier) / ~$7 productionLowest
+
+OrbitaCost of the VPS (~$5)Low
+
+DokployCost of the VPS (~$5)Medium
+
+CoolifyCost of the VPS (~$5)Medium
+
+AWS EC2~$30 (t3.medium + ALB)High
+
+AWS Lightsail~$24 (4 GB plan)Medium
+
+How each one handles your Compose file
+
+Two of these run docker-compose.prod.yml nearly as written. The other three do not run Compose at all and need it translated into their own model, which changes how migrations are ordered and where domains are configured.
+
+Runs your Compose file?Migration handlingDomain/TLSGitHub auto-deploy
+
+Orbita — Grit fast pathNo — derives everything from grit.json; you write ~10 lines of orbita.yamlcmd/migrate under a Postgres advisory lock, gates cutoverAll three hosts from one deploy; Traefik + Let’s Encrypt, derivedBuilt-in webhook (push to redeploy)
+
+Orbita — Compose pathYes, almost unmodified (no stripping networks/labels)Native depends_on: (unchanged)One routable web service per app; Traefik + Let’s EncryptBuilt-in webhook
+
+DokployYes, almost unmodifiedNative depends_on: service_completed_successfullyTraefik labels already in the fileBuilt-in webhook toggle
+
+CoolifyYes, after removing custom networks:/labelsNative depends_on: (unchanged)UI Domains field per serviceBuilt-in webhook toggle
+
+RenderNo — translated to render.yamlpreDeployCommand on apidomains: in Blueprint + CNAMEBuilt-in (Blueprint sync + per-service auto-deploy)
+
+Fly.ioNo — one fly.toml per apprelease_command on apifly certs add + DNS recordManual — GitHub Actions workflow
+
+RailwayNo — one service per Compose servicePre-Deploy Command on apiCustom Domain + CNAMEBuilt-in (GitHub Repo connection)
+
+AWS EC2Yes, after removing labels and adding host portsNative depends_on: (unchanged)ALB + ACM certificate, host-header rulesManual — GitHub Actions over SSH
+
+AWS LightsailYes, after removing labels and adding a Caddy serviceNative depends_on: (unchanged)Caddy on the instance, automatic Let’s EncryptManual — GitHub Actions over SSH
+
+Managed platform
+
+Fly.io~$5/mo
+
+Runs the Docker image close to your users, with a real disk if you need one.
+
+Best for: A single Go binary you want in several regions without running servers. The best fit for Grit’s single-binary mode.
+
+Railway~$5/mo
+
+Push to Git, get a URL. The least ceremony of anything here.
+
+Best for: Getting something in front of people today. Postgres and Redis are one click and wire themselves into your service.
+
+Render$0 (free tier) / ~$7 production/mo
+
+Managed Postgres with real backups, and a free tier you can demo on.
+
+Best for: Teams that want managed Postgres with point-in-time recovery without thinking about it, and a blueprint file checked into the repo.
+
+Self-hosted platform
+
+OrbitaCost of the VPS (~$5)/mo
+
+A self-hosted PaaS that already knows what a Grit app is. It reads grit.json and derives the rest.
+
+Best for: Grit apps specifically. It is the only target that reads grit.json, so a three-service deploy is about ten lines of orbita.yaml rather than a Compose file, a Blueprint or three TOMLs. Multi-tenant, so one box can host several clients in isolated organisations.
+
+DokployCost of the VPS (~$5)/mo
+
+A Heroku-like panel on your own server. Grit’s own sites run on it.
+
+Best for: Running several apps on one box with a UI, automatic TLS and Git deploys: without paying per service.
+
+CoolifyCost of the VPS (~$5)/mo
+
+Open-source self-hosted PaaS. Similar shape to Dokploy, larger ecosystem.
+
+Best for: Self-hosting with a big library of one-click services alongside your app, and multi-server support once one box is not enough.
+
+Plain server
+
+AWS EC2~$30 (t3.medium + ALB)/mo
+
+A bare Linux box plus an Application Load Balancer doing TLS and host-based routing.
+
+Best for: Teams already on AWS who want the standard production pattern there: ACM certificates, ALB routing, and everything inside a VPC they control.
+
+AWS Lightsail~$24 (4 GB plan)/mo
+
+AWS at a flat monthly price, with a static IP and snapshots, fronted by Caddy for automatic HTTPS.
+
+Best for: A predictable AWS bill without the VPC and ALB assembly. Automatic daily snapshots of the whole instance disk are the lowest-effort backup baseline of any target here.

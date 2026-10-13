@@ -1,0 +1,497 @@
+Architecture Modes
+
+Triple Architecture: Web + Admin + API
+
+The default and most feature-rich architecture mode. A Turborepo monorepo with three applications (web, admin, api) sharing types and validation through a shared package.
+
+Overview
+
+Triple is the default architecture when you run grit new. It scaffolds a Turborepo monorepo containing three applications that communicate through a shared TypeScript package and a REST API. The Go backend serves as the single source of truth for data and authentication, while the two frontends serve distinct audiences: the web app faces your end users, and the admin panel provides a Filament-like dashboard for managing resources, viewing analytics, and configuring the system.
+
+scaffold command
+Copy to clipboard
+
+# Default — triple is implied
+
+grit new myapp --next
+
+# Explicit triple flag
+
+grit new myapp --triple --next
+
+# Triple with TanStack Router instead of Next.js
+
+grit new myapp --triple --vite
+
+Best suited for
+
+- SaaS products with distinct admin operations (user management, billing, analytics)
+
+- Marketplaces where sellers/admins need a separate interface from buyers
+
+- Content platforms (CMS, LMS, blog networks) where editors manage content separately
+
+- Multi-tenant applications requiring tenant administration
+
+- Any project that benefits from a dedicated admin panel with DataTable, FormBuilder, and dashboard widgets
+
+Complete Folder Structure
+
+This is the full, unabbreviated tree that grit new myapp --triple --next generates. Every file and directory is listed with its purpose.
+
+myapp/
+
+.envShared environment variables
+
+.env.exampleTemplate for other developers
+
+.gitignore
+
+biome.jsoncLint and format rules (Biome)
+
+docker-compose.ymlDev: PostgreSQL, Redis, MinIO, Mailhog
+
+docker-compose.prod.ymlProduction deployment
+
+grit.jsonProject manifest (architecture, frontend)
+
+turbo.jsonTurborepo pipeline config
+
+pnpm-workspace.yamlpnpm workspace definition
+
+package.jsonRoot scripts (dev, build, lint, format)
+
+📂.claude/
+
+📂skills/grit/
+
+SKILL.mdAI assistant guide (tailored to triple)
+
+reference.mdDetailed API conventions
+
+📂packages/
+
+📂shared/Shared between web & admin
+
+📂schemas/Zod schemas // grit:schemas
+
+index.ts// grit:schemas marker
+
+user.tsUser schema (register, login, update)
+
+📂types/TS types (grit sync ← Go structs)
+
+index.ts// grit:types marker
+
+user.tsUser type
+
+📂constants/API_ROUTES, ROLES // grit:api-routes
+
+📂themes/Shared theme tokens
+
+📂apps/
+
+📂api/Go backend
+
+DockerfileMulti-stage build (golang → alpine)
+
+go.modGo module: myapp/apps/api
+
+go.sum
+
+📂cmd/
+
+server/main.goEntry point: config, db, services, router
+
+migrate/main.goMigration runner
+
+seed/main.goDatabase seeder
+
+📂internal/
+
+config/config.goLoads .env, all env vars
+
+database/db.goGORM connection + AutoMigrate
+
+📂models/GORM models
+
+user.goUser model // grit:models marker
+
+upload.goUpload model
+
+📂handlers/HTTP handlers (thin — call services)
+
+auth.goRegister, login, refresh, me
+
+user.goUser CRUD
+
+upload.goFile upload (presigned URLs)
+
+ai.goAI completions + streaming
+
+📂services/Business logic
+
+auth_service.goJWT, bcrypt, token generation
+
+user_service.goUser queries
+
+📂middleware/Gin middleware
+
+auth.goJWT verification
+
+cors.goCORS configuration
+
+logger.goStructured logging
+
+cache.goRedis response caching
+
+maintenance.gogrit down/up support
+
+rate_limit.goSentinel rate limiting
+
+📂routes/
+
+routes.goRoute registration // grit:handlers, grit:routes:*
+
+📂mail/Email service (Resend)
+
+mailer.goSend function
+
+📂templates/HTML email templates
+
+📂storage/S3-compatible file storage
+
+📂jobs/Background jobs (asynq)
+
+📂cron/Scheduled tasks
+
+📂cache/Redis cache service
+
+📂ai/AI service (Vercel AI Gateway)
+
+📂auth/TOTP 2FA service
+
+totp.goSetup, verify, backup codes, trusted devices
+
+📂web/Public-facing frontend
+
+DockerfileNext.js standalone build
+
+package.jsonDependencies + scripts
+
+next.config.js(or vite.config.ts for --vite)
+
+tailwind.config.ts
+
+📂app/App Router (or src/routes/ for --vite)
+
+layout.tsxThe document: fonts, theme, providers
+
+📂(marketing)/Public site: navbar + footer
+
+📂(auth)/Auth pages (login, register)
+
+📂(app)/Signed-in customer area: /account
+
+📂admin/Admin panel
+
+Dockerfile
+
+package.json
+
+📂app/(or src/routes/)
+
+layout.tsxAdmin layout (sidebar, navbar)
+
+page.tsxDashboard
+
+📂resources/Resource definitions // grit:resources
+
+📂(dashboard)/Admin pages (users, system)
+
+Directory-by-Directory Breakdown
+
+Root Files
+
+The monorepo root contains configuration files that apply to all applications. Thegrit.json manifest tells the CLI which architecture mode and frontend framework the project uses, so commands likegrit generate know exactly which files to create.
+
+FilePurpose
+
+.envShared environment variables: DB connection, JWT secret, Redis URL, S3 credentials, Resend API key
+
+grit.jsonProject manifest read by the CLI. Contains architecture mode (triple), frontend framework, and project name
+
+turbo.jsonDefines Turborepo pipelines: dev, build, lint, test. Handles dependency ordering (shared builds before web/admin)
+
+pnpm-workspace.yamlDeclares apps/* and packages/* as workspace members
+
+docker-compose.ymlDevelopment infrastructure: PostgreSQL 16, Redis 7, MinIO (S3-compatible storage), Mailhog (email testing)
+
+docker-compose.prod.ymlProduction deployment: multi-stage Docker builds for API, web, and admin with Nginx reverse proxy
+
+packages/shared/
+
+The shared package is the bridge between frontend applications. Both web andadmin import from it to ensure consistent validation and types. When you run grit generate, new schemas and types are injected here automatically via marker comments.
+
+DirectoryContents
+
+schemas/Zod validation schemas. Each resource gets a file (e.g., product.ts) with CreateProductSchema, UpdateProductSchema. Re-exported from index.ts via the // grit:schemas marker.
+
+types/TypeScript interfaces inferred from Zod schemas. Each resource file exports the interface (e.g., Product). Re-exported via the // grit:types marker.
+
+constants/Shared constants including API_ROUTES (injected via // grit:api-routes) and ROLES enum.
+
+apps/api/ (Go Backend)
+
+The Go API follows a strict handler-service-model pattern. Handlers are thin HTTP layers that parse requests and call services. Services contain business logic and GORM queries. Models define the database schema. This separation makes the codebase testable and maintainable.
+
+DirectoryRole
+
+cmd/server/Application entry point. Loads config, connects to database, initializes all services, registers routes, and starts the Gin server on port 8080.
+
+cmd/migrate/Standalone migration runner. Calls GORM AutoMigrate on all registered models.
+
+cmd/seed/Seeder entrypoint. Runs every Seed<Resource> function (admin + demo users, sample blogs, plus any you generate).
+
+internal/config/Loads all environment variables from .env into a typed Config struct. Accessed throughout the application.
+
+internal/database/GORM connection setup. Opens PostgreSQL (production) or SQLite (development/testing). Runs AutoMigrate for all models.
+
+internal/models/GORM model definitions. Each model is a Go struct with gorm, json, and binding struct tags. New models are injected at the // grit:models marker.
+
+internal/handlers/Gin HTTP handlers. Each resource gets a handler file with Create, GetAll, GetByID, Update, Delete functions. Handlers parse input, call the corresponding service, and return JSON responses.
+
+internal/services/Business logic layer. Each service receives a *gorm.DB and implements CRUD operations with pagination, filtering, and error handling.
+
+internal/middleware/Gin middleware stack: JWT auth verification, CORS policy, structured request logging, Redis response caching, rate limiting (Sentinel), and maintenance mode toggle.
+
+internal/routes/Centralized route registration. Contains marker comments (// grit:handlers, // grit:routes:public, // grit:routes:protected, // grit:routes:admin) where generated routes are injected.
+
+internal/mail/Email sending via Resend API. Includes HTML templates for welcome, password reset, verification, and notification emails.
+
+internal/storage/S3-compatible file storage. Generates presigned upload URLs for direct browser-to-S3 uploads. Works with MinIO (dev), Cloudflare R2, or AWS S3 (production).
+
+internal/jobs/Background job processing with asynq + Redis. Includes workers for email delivery, image processing, and cleanup tasks.
+
+internal/cron/Scheduled tasks with asynq cron. Define recurring jobs with standard cron expressions.
+
+internal/cache/Redis cache service. Set/get/delete with TTL. Used by the cache middleware to cache entire API responses.
+
+internal/ai/AI service supporting Claude and OpenAI. Includes streaming responses for real-time completions.
+
+internal/auth/TOTP two-factor authentication. Setup flow, verification, backup code generation, and trusted device management.
+
+apps/web/ (Public Frontend)
+
+The web application is what your end users interact with. It consumes the Go API via React Query hooks and validates form inputs using the Zod schemas from the shared package. With Next.js, pages can be server-rendered for SEO. With TanStack Router (Vite), the app is a client-side SPA served as static files.
+
+PathDescription
+
+app/layout.tsxThe document and nothing else: global providers (React Query, theme), font loading, metadata. It draws no chrome, so each section below decides its own.
+
+app/(marketing)/The public site: the landing page and the blog, wrapped in the navbar and footer by the group's layout. Put your own public pages here to get the same chrome.
+
+app/(auth)/Auth route group: login, register, forgot-password pages with their own full-bleed shell (grit add web-auth)
+
+app/(app)/The signed-in customer area at /account: its own sidebar, header and guard. Overview and profile ship with it; add your product's pages alongside them (v3.237.0).
+
+apps/admin/ (Admin Panel)
+
+The admin panel is a Filament-inspired dashboard with runtime resource definitions. It provides DataTable (sorting, filtering, pagination, row selection), FormBuilder (10+ field types), multi-step forms, dashboard widgets, and system administration pages. Resources are defined declaratively using defineResource() and the admin automatically generates CRUD pages from those definitions.
+
+PathDescription
+
+app/layout.tsxAdmin layout: collapsible sidebar with Lucide icons, top navbar, dark/light theme toggle
+
+app/page.tsxDashboard: StatsCards, ChartWidgets (Recharts), ActivityWidget, WidgetGrid
+
+app/resources/Resource definition files. Each file exports a defineResource() call that configures columns, filters, search, form fields, and permissions. The // grit:resources marker is used for injection.
+
+app/(dashboard)/Admin pages: users management, system pages (Jobs, Files, Cron, Mail Preview), and generated resource pages
+
+packages/shared/ (Shared Types & Schemas)
+
+The single source of truth shared by the web app and the admin panel: TypeScript types, Zod validation schemas, shared theme tokens, and API route constants. When your Go structs change, grit sync regenerates the TypeScript types here, so both frontends stay in lock-step with the API — no drift, no hand-maintained duplicate interfaces.
+
+.claude/ (AI Skill)
+
+Every scaffolded project includes an AI skill file tailored to its architecture mode. The skill teaches Claude Code (or any LLM) the project conventions, folder structure, naming rules, available CLI commands, and code markers. This means AI assistants can generate correct Grit code without additional context.
+
+Data Flow
+
+The following diagram shows how a typical request flows through the triple architecture, from the user's browser all the way to the database and back.
+
+Frontend (React)Go APIData & services
+
+Background — asynq workers (email, image, cleanup) · cron scheduler · GORM Studio (/studio)
+
+Step-by-step for a typical API call
+
+User clicks "Save" in the admin panel form (or the web app)
+
+React Query mutation fires a POST request to /api/v3/products with the JWT in the Authorization header
+
+Gin router matches the route and passes the request through the middleware stack
+
+CORS middleware validates the origin. Rate limiter checks the IP. Auth middleware extracts and verifies the JWT, injecting the user into the Gin context.
+
+The CreateProduct handler parses the JSON body using Gin's binding tags for validation
+
+Handler calls productService.Create() which runs the GORM insert query
+
+Service returns the created product. Handler responds with 201 Created and the standard JSON envelope
+
+React Query invalidates the products list query, triggering a background refetch of the table data
+
+Shared types keep everything in sync
+
+The Go model struct tags define the API contract. When you run grit generate, matching Zod schemas and TypeScript types are created in packages/shared/. Both the web and admin apps import from the same package, so a type change in Go propagates to both frontends via grit sync.
+
+How Code Generation Works
+
+When you run a generate command, Grit creates files across all three applications and the shared package, then injects import statements and route registrations into existing files using marker comments.
+
+example command
+Copy to clipboard
+
+grit generate resource Product --fields "name:string, price:float, description:text, category_id:belongs_to, is_active:bool"
+
+Files Created
+
+Go Backend (apps/api/)
+
+- internal/models/product.go — GORM model with struct tags, belongs_to relationship to Category
+
+- internal/services/product_service.go — CRUD operations with pagination, preloaded relationships
+
+- internal/handlers/product.go — Gin handlers: Create, GetAll, GetByID, Update, Delete
+
+Shared Package (packages/shared/)
+
+- schemas/product.ts — Zod schemas: CreateProductSchema, UpdateProductSchema
+
+- types/product.ts — TypeScript interface: Product
+
+Admin Panel (apps/admin/)
+
+- resources/products.ts — Resource definition with columns, filters, search config, form fields
+
+- app/(dashboard)/products/page.tsx — Admin page with DataTable and FormBuilder, ready to use
+
+Web App (apps/web/)
+
+- hooks/use-products.ts — React Query hooks: useProducts(), useProduct(id), useCreateProduct(), useUpdateProduct(), useDeleteProduct()
+
+Marker Injections
+
+In addition to creating new files, the generator injects code into 6 existing files using marker comments. This is how routes get registered, imports get added, and types get re-exported — without manual wiring.
+
+FileMarkerWhat Gets Injected
+
+routes/routes.go// grit:handlersHandler initialization
+
+routes/routes.go// grit:routes:*Route group registration (public, protected, or admin)
+
+schemas/index.ts// grit:schemasSchema re-export line
+
+types/index.ts// grit:typesType re-export line
+
+constants/index.ts// grit:api-routesAPI route constant
+
+resources/ (admin)// grit:resourcesResource registration in the admin registry
+
+Ports & URLs
+
+During development, all services run on different ports. The CORS middleware in the Go API is configured to allow requests from all frontend origins.
+
+ServicePortURLNotes
+
+Go API8080http://localhost:8080REST endpoints + GORM Studio at /studio
+
+Web App3000http://localhost:3000Next.js dev server (or Vite :5173)
+
+Admin Panel3001http://localhost:3001Next.js dev server (or Vite :5174)
+
+Docs3002http://localhost:3002Documentation site (if running locally)
+
+PostgreSQL5434localhost:5434Docker container (host port 5434 → 5432)
+
+Redis6380localhost:6380Cache + job queue (host port 6380 → 6379)
+
+MinIO API9002http://localhost:9002S3-compatible API
+
+MinIO Console9003http://localhost:9003Web UI for managing buckets
+
+Mailhog SMTP1025localhost:1025Catches outgoing email
+
+Mailhog UI8025http://localhost:8025View caught emails in browser
+
+Deployment Options
+
+Triple architecture supports multiple deployment strategies depending on your infrastructure preferences and scale requirements.
+
+Docker Compose (Self-hosted)
+
+The scaffolded docker-compose.prod.yml builds all three apps as optimized Docker images and runs them behind an Nginx reverse proxy with automatic SSL. This is the simplest path to production on any VPS.
+
+# Build and deploy everything
+
+docker compose -f docker-compose.prod.yml up -d --build
+
+Copy to clipboard
+
+grit deploy
+
+The grit deploy command automates the deployment process. It builds Docker images, pushes them to your registry, and deploys to your configured target (VPS, Dokploy, or cloud).
+
+# Deploy to configured target
+
+grit deploy
+
+Copy to clipboard
+
+Hybrid: Vercel + VPS
+
+Deploy the Next.js frontends (web + admin) to Vercel for zero-config hosting with edge caching, and deploy the Go API to a VPS or cloud provider (Railway, Fly.io, Render). This gives you Vercel's CDN for the frontends and full control over the API infrastructure. Set the NEXT_PUBLIC_API_URL environment variable in each Vercel project to point to your API server.
+
+When to Choose Triple
+
+Triple is the right choice when your project has distinct user roles with different interfaces. Here are the decision criteria:
+
+Choose Triple when...
+
+- You need a dedicated admin panel separate from the user-facing app
+
+- Your admin needs DataTable, FormBuilder, dashboard widgets
+
+- You have non-technical admins who need a polished management UI
+
+- You want grit generate to create admin pages automatically
+
+- You are building a SaaS, marketplace, CMS, or LMS
+
+- Your team has separate frontend developers for admin and public UI
+
+Consider a simpler mode when...
+
+- Admins and users share the same interface (use Double)
+
+- You need a single binary deployment (use Single)
+
+- You only need an API with no frontend (use API Only)
+
+- You are building a mobile app (use Mobile)
+
+- Your project is a simple blog or portfolio
+
+Example Project
+
+We built a complete Job Portal using the triple architecture to demonstrate every feature. The example includes a public job board (web), an employer/admin dashboard (admin), and a Go API with authentication, file uploads, and background job processing.
+
+Job Portal — Triple + Next.js
+
+Full source code with README, .env template, step-by-step guide, and production Docker Compose.
+
+View on GitHub →
+
+Architecture ModesDouble Architecture

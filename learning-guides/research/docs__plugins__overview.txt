@@ -1,0 +1,121 @@
+Plugins
+
+Plugins
+
+A Grit plugin generates real code into your repo — models, routes, pages, migrations — not a runtime dependency that hides in node_modules. And because every install is recorded, plugins do the one thing most plugin systems can't: cleanly uninstall.
+
+What a plugin is
+
+Most frameworks extend through packages: you install one, it lives in your dependency folder, and at runtime it reaches in and registers itself. That's fine until you want to see what it did or remove it — the code isn't yours, it's behind a version number.
+
+Grit plugins work the other way around. grit plugin add multitenant writes Go models, handlers, routes, admin pages and migrations directly into apps/api, apps/admin and the rest of your project. After it runs, the code is yours: read it, edit it, step through it in a debugger. There's no hidden runtime library deciding your app's behavior.
+
+This is the same idea as code generation: grit generate resource gives you a model, a service, a handler and an admin page you own. A plugin is that, bigger and reusable — a packaged code generation.
+
+The part most systems can't do: uninstall
+
+When a plugin runs, Grit records everything it did — every file it created and every injection it made — into a lockfile:
+
+.grit/plugins.lock.json
+
+Copy to clipboard
+
+So removal isn't a second pile of code the author maintains — it's derived. grit plugin remove reads the lockfile and replays the install backwards: it deletes the files it added and reverts the injections, in reverse order. Commit the lockfile, and your plugins are as reversible as a git branch. A framework whose plugins publish migrations into your app can't cleanly reverse them — publishing is a one-way door. Grit's can, because the install is a recorded, replayable transaction.
+
+The commands
+
+grit plugin list                 # what's available
+
+grit plugin info impersonate     # what a plugin does before you run it
+
+grit plugin add impersonate      # install (refuses to run on a dirty git tree)
+
+grit plugin update impersonate   # take this CLI's version of the files it owns
+
+grit plugin update --all         # every installed plugin
+
+grit plugin remove impersonate   # replay the install backwards
+
+Copy to clipboard
+
+grit plugin add refuses to run with uncommitted changes, so the diff it produces is always clean and reviewable. Read the diff, commit it, and it's part of your app like anything else.
+
+Keeping a plugin up to date
+
+A plugin gets fixes like everything else, and until grit plugin update those fixes reached nobody: add refuses once a plugin is installed, and remove then add loses your edits and re-inserts the patches at their markers, which moves them relative to code you have written since. That is not theory. Doing it to a shop built on Grit put the payment service below the code that constructs things from it, and the API stopped compiling.
+
+So an update rewrites only what it can prove nobody has touched. Every file is fingerprinted when the plugin writes it: one whose fingerprint still matches is replaced, one that differs is left exactly as it is and named. Files the plugin has gained simply arrive, which is what most plugin releases are, and a patch already in place is never applied twice or moved. Nothing is ever deleted. grit upgrade runs this for every installed plugin, because a command nobody runs fixes nobody's project.
+
+Two things it will not do quietly. A project installed before Grit recorded fingerprints cannot be vouched for at all, and there half an update is worse than none: the file a release adds is usually the one another file has to change to use, so the update stops, changes nothing, and tells you which files it cannot judge. And a file you have edited is never overwritten. Both are the same way out:
+
+grit plugin update stripe --overwrite   # take the plugin's version of everything
+
+git diff                                # and read exactly what that did
+
+Copy to clipboard
+
+Go module plugins
+
+A second set lives at github.com/MUKE-coder/grit-plugins. These are ordinary Go modules rather than code generators, so they install with go get and you wire them into your routes yourself.
+
+go get github.com/MUKE-coder/grit-plugins/grit-websockets
+
+Copy to clipboard
+
+ModuleWhat it adds
+
+grit-websocketsRealtime hub with rooms, presence and typing indicators
+
+grit-notificationsIn-app and push notifications with a delivery log
+
+grit-searchFull-text search across resources
+
+grit-stripeSubscriptions, checkout and the webhook plumbing
+
+grit-oauthSign in with Google, GitHub and friends
+
+grit-i18nTranslated API messages and locale negotiation
+
+grit-videoVideo upload, transcode and playback
+
+grit-exportScheduled exports to CSV and XLSX
+
+grit-conferenceAudio and video rooms
+
+grit-webhooksThe library behind the webhooks plugin above
+
+grit plugin list prints these too, under a separate heading, so the command is a complete picture of what is available rather than of what it can install itself.
+
+What the installer guarantees
+
+No overwrite. A plugin can't clobber a file that already exists — it creates, or it fails loudly.
+
+A missing marker is an error. If an injection's anchor isn't found, the install stops rather than silently doing nothing.
+
+No double install. Installing an already-installed plugin is refused.
+
+Requirements both ways. A plugin's dependencies must be present to install it, and can't be removed while it's still installed.
+
+First-party plugins
+
+The built-in catalog covers the big, opinionated pieces that don't belong in every app, and the small high-value features that the best admin ecosystems treat as add-ons.
+
+multitenant
+
+Organizations, per-org roles, and automatic query scoping that fails closed.
+
+impersonate
+
+An admin signs in as another user, with an audit trail and one-click return.
+
+command-palette
+
+⌘K navigation across the admin. Frontend-only — touches no Go.
+
+saved-views
+
+Save a table's filters and sort as named, per-user views.
+
+Want to build one? See Writing a plugin. Plugins are how Grit stays small at the core and still grows: the batteries every app needs are built in, and the bigger, opinionated pieces are plugins — real code, in your repo, that you can always take back out.
+
+Turning modules offMulti-tenancy plugin

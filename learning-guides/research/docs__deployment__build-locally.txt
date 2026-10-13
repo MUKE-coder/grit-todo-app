@@ -1,0 +1,59 @@
+Deployment
+Deployment
+Test the production build locally
+
+Reproduce the deploy on your own machine first. Most deployment failures are visible here, two minutes in, instead of ten minutes into someone else's build log.
+
+Almost every failed deploy is reproducible on your own machine in two minutes. The production build differs from dev in ways that matter: it type-checks strictly, it inlines build-time environment, it tree-shakes, and it runs without the dev server's forgiving module resolution. A change that works under dev and fails in build is common, and finding that out from a platform's build log is a slow way to learn it.
+
+1. Build the API image
+
+This is the same Dockerfile every platform here uses, so if it builds locally it builds there.
+
+docker build -f apps/api/Dockerfile -t my-app-api .
+
+# Run it against your local Postgres to confirm it boots:
+
+docker run --rm -p 8080:8080   -e DATABASE_URL="postgres://user:pass@host.docker.internal:5432/mydb"   -e JWT_SECRET="$(openssl rand -base64 32)"   -e APP_ENV=production   my-app-api
+
+Copy to clipboard
+
+2. Build the frontend the way the platform will
+
+Run the real build, not the dev server. Pass the build-time variables exactly as the platform will — this is the step that catches a missing NEXT_PUBLIC_* before it ships as an empty string.
+
+cd apps/web
+
+NEXT_PUBLIC_API_URL=https://api.your-domain.com pnpm build
+
+pnpm start
+
+Copy to clipboard
+
+Do this with your .env.local temporarily renamed. Otherwise you are testing with variables the deployment does not have, and the run proves nothing about production.
+
+3. Bring up the whole stack
+
+The closest local approximation of a server: production images, no bind mounts, no exposed database port.
+
+docker compose -f docker-compose.prod.yml up --build
+
+# In another shell:
+
+curl -s localhost:8080/api/health
+
+Copy to clipboard
+
+What this catches
+
+Type errors that dev mode never surfaced, because dev does not type-check on every save.
+
+A build-time variable read at runtime — the empty-string failure that produces a green deploy and a broken app.
+
+A cgo dependency that breaks the static binary. It compiles on your machine and refuses to run in the container.
+
+Missing files in the image. A .dockerignore that excludes something the build needs fails only inside Docker.
+
+A health endpoint that is not where the platform is looking, which reads as "the deploy never finishes".
+
+Environment variablesGo-live checklist

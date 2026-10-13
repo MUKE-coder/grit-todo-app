@@ -1,0 +1,633 @@
+Admin Panel
+Custom pages and tables
+
+Bring your own table, your own form, your own page shell, and keep the URL-synced sorting, paging, filters, selection, bulk delete and toasts that the stock page already has.
+
+The short version
+
+A generated resource page is three lines, and you are allowed to replace them:
+
+apps/admin/app/(dashboard)/resources/products/page.tsx
+Copy to clipboard
+
+"use client";
+
+import { ResourcePage } from "@/components/resource/resource-page";
+
+import { productsResource } from "@/resources/products/products";
+
+export default function ProductsPage() {
+
+return <ResourcePage resource={productsResource} />;
+
+}
+
+The reason people did not replace it was everything they would lose by doing so. The data was never the problem: useResource has always been a plain hook that takes an endpoint. The problem was the rest of the page: search, sort, page and filters kept in the address bar so a refresh or a shared link rehydrates the same view, row selection, bulk delete behind a confirm, toasts, cache invalidation, and stat cards that follow the active date range instead of contradicting the table under them.
+
+That is now a hook. useResourceController returns all of it and renders nothing.
+
+apps/admin/app/(dashboard)/resources/products/page.tsx
+Copy to clipboard
+
+"use client";
+
+import { useResourceController } from "@/hooks/use-resource-controller";
+
+import { productsResource } from "@/resources/products/products";
+
+import { TemplateShell, TemplateTable, TemplatePager } from "@/components/template";
+
+export default function ProductsPage() {
+
+const c = useResourceController(productsResource);
+
+return (
+
+<TemplateShell title={c.pluralName} onAdd={c.create}>
+
+<TemplateTable
+
+rows={c.rows}
+
+columns={c.columns}
+
+loading={c.isLoading}
+
+sortKey={c.sortBy}
+
+sortDir={c.sortOrder}
+
+onSort={c.setSort}
+
+selected={c.selection}
+
+onSelect={c.setSelection}
+
+onRowClick={c.edit}
+
+/>
+
+<TemplatePager
+
+page={c.page}
+
+pages={c.totalPages}
+
+total={c.total}
+
+onChange={c.setPage}
+
+/>
+
+</TemplateShell>
+
+);
+
+}
+
+Why this is safe
+
+The stock ResourcePage is built on the same hook and contains no state of its own. If the controller could not rebuild the default page, it would be missing something, so anything the default page can do, yours can too.
+
+What the controller returns
+
+Every setter that changes the query resets to page one, because a search run from page seven should not land on an empty page seven of two results. setSort toggles direction when you pass the same key twice.
+
+the shape
+Copy to clipboard
+
+const c = useResourceController<Product>(productsResource)
+
+// data
+
+c.rows          // Product[]
+
+c.meta          // { total, page, page_size, pages } | undefined
+
+c.total         // number
+
+c.totalPages    // number
+
+c.isLoading     // boolean
+
+// query state: sort/page/filters, and the date range round-trips through the URL
+
+c.page          c.setPage(n)
+
+c.pageSize      c.setPageSize(n)
+
+c.search        c.setSearch(value)
+
+c.sortBy        c.sortOrder      c.setSort(key)    // toggles direction
+
+c.filters       c.setFilter(key, value)
+
+c.dateRange     c.setDateRange(range)
+
+// columns: visible ones, ready to render
+
+c.columns       c.allColumns     c.hiddenColumns    c.toggleColumn(key)
+
+// selection
+
+c.selection     c.setSelection(ids)                 c.clearSelection()
+
+// actions
+
+c.actions       c.can("create" | "view" | "edit" | "delete")
+
+c.create()      c.edit(row)      c.view(row)
+
+c.remove(id)    // opens the confirm dialog
+
+c.bulkRemove()  // opens the bulk confirm dialog
+
+c.isDeleting    c.isBulkDeleting
+
+// dialog state, if you render your own
+
+c.form              // { open, item, close() }
+
+c.confirmDelete     // { open, confirm(), cancel() }
+
+c.confirmBulkDelete // { open, confirm(), cancel() }
+
+c.importer          // { open, setOpen(open) }
+
+// odds and ends
+
+c.apiSearchParams   // the same query the table ran: use it for exports
+
+c.stats             // stat cards, already scoped to the active date range
+
+c.singularName      c.pluralName
+
+Replacing one piece at a time
+
+You do not have to take the whole page. Keep the stock layout and swap only the table, because c.columns and c.rows are ordinary values:
+
+keeping the toolbar, replacing the table
+Copy to clipboard
+
+const c = useResourceController(productsResource);
+
+return (
+
+<div>
+
+<PageHeader title={c.pluralName} stats={c.stats} />
+
+<TableToolbar
+
+resource={productsResource}
+
+search={c.search}
+
+onSearch={c.setSearch}
+
+selectedCount={c.selection.length}
+
+onBulkDelete={c.bulkRemove}
+
+allColumns={c.allColumns}
+
+hiddenColumns={c.hiddenColumns}
+
+onToggleColumn={c.toggleColumn}
+
+data={c.rows}
+
+dateRange={c.dateRange}
+
+onDateRangeChange={c.setDateRange}
+
+apiSearchParams={c.apiSearchParams}
+
+/>
+
+{/* your table, Grit's everything else */}
+
+<TemplateTable rows={c.rows} onSort={c.setSort} />
+
+</div>
+
+);
+
+Registering it once: the .custom.tsx file
+
+Editing the route file works, but it only customises that one route. The detail page, a relationship picker and anything else rendering the resource still get the stock components. To set it once and have every route pick it up, use the customisation file that sits next to the resource:
+
+apps/admin/resources/
+Copy to clipboard
+
+index.ts               # the registry
+
+products/
+
+products.ts          # generated: rewritten on every grit generate
+
+products.custom.tsx  # yours, created once, never touched again
+
+The split is what makes both halves safe. The config half can be regenerated freely because nothing of yours is in it. The custom half can hold components because it is a .tsx file and the generator will not overwrite it: it checks whether the file exists and leaves it alone if it does.
+
+apps/admin/resources/products/products.custom.tsx
+Copy to clipboard
+
+import type { ResourceCustomisation } from "@/lib/resource";
+
+import { DataTable } from "@/components/tables/data-table";
+
+import { StatusPill, TemplateTable } from "@/components/template";
+
+const custom: ResourceCustomisation = {
+
+// 1. Override a single cell, keep everything else
+
+columns: {
+
+status: { cell: (row) => <StatusPill value={String(row.status)} /> },
+
+price: { cell: (row) => <b>{"$" + Number(row.price).toFixed(2)}</b> },
+
+},
+
+components: {
+
+// 2. Replace the table. Same props DataTable takes, so this is a drop-in:
+
+//    header, toolbar, filters and pagination all keep working.
+
+Table: (props) => <TemplateTable rows={props.data} onSort={props.onSort} />,
+
+// 3. Or wrap the original instead of replacing it
+
+// Table: (props) => <TemplateCard><DataTable {...props} /></TemplateCard>,
+
+// 4. Replace the whole page: call useResourceController inside it
+
+// Page: MyProductsPage,
+
+},
+
+};
+
+export default custom;
+
+Typed rows
+
+The overlay is generic over the row type, and the generated stub imports it from @repo/shared/types: the same interfaces grit sync produces from your Go structs. So row in a cell renderer is a Product, not Record<string, unknown>: fields autocomplete, and renaming a column in Go turns every stale renderer into a compile error instead of a blank cell.
+
+columns and fields are patched by key, not replaced wholesale. That is deliberate: grit sync keeps adding new columns as you add fields to the Go model, and your renderers survive it. A key that does not match any generated column is simply ignored.
+
+The slots
+
+Table: receives exactly DataTable's props: columns, data, isLoading, sortBy, sortOrder, onSort, selectedRows, onSelectRows, onView, onEdit, onDelete, rowActions.
+
+Form: receives resource, item (the record being edited, or null for create) and onClose. Replaces whichever container formView would have opened.
+
+EmptyState: rendered instead of the table when the query has finished and returned nothing.
+
+Page: replaces the entire list view. Checked before anything else, so a page slot owns its own routing.
+
+Wrapping instead of replacing
+
+Because a slot receives the stock component's own props, you can render the original inside yours. That is the cheap way to restyle a shell or add something around a table without reimplementing sorting and selection:
+
+wrapping the default
+Copy to clipboard
+
+import { DataTable } from "@/components/tables/data-table";
+
+components: {
+
+Table: (props) => (
+
+<div className="rounded-2xl border border-dashed p-2">
+
+<p className="mb-2 text-xs text-muted-foreground">
+
+{props.data.length} rows on this page
+
+</p>
+
+<DataTable {...props} />
+
+</div>
+
+),
+
+}
+
+Filter presets as tabs
+
+A tab is a named set of query parameters. "Unpaid" is not a different page, it is this page with status=pending, and a tab says that more plainly than a dropdown someone has to open to discover what is in it.
+
+apps/admin/resources/orders/orders.ts
+Copy to clipboard
+
+table: {
+
+tabs: [
+
+{ key: "all",     label: "All",     count: true },
+
+{ key: "unpaid",  label: "Unpaid",  filters: { status: "pending" }, count: true },
+
+{ key: "shipped", label: "Shipped", filters: { status: "shipped" }, count: true },
+
+{ key: "refunds", label: "Refunds", filters: { status: "refunded" }, icon: "Undo2" },
+
+],
+
+}
+
+The first tab is selected on load, and a tab with no filters clears them, which is what makes "All" work without a special case. Choosing a tab resets to page one and clears the selection, because the rows underneath are not the same rows any more.
+
+Tab filters are merged under the operator's own: picking Unpaid and then filtering by customer narrows the tab rather than silently replacing it.
+
+count: true fetches that tab's total. It is per tab because each one is a request, and the badge appears when the number arrives rather than showing a zero that turns into 47 a moment later.
+
+This is config, so it lives in the resource definition. It needs the API to accept the filter, which generated handlers do through a whitelist; if your tabs render but do not filter, the resource predates v3.144.0 and needs grit generate resource to regenerate its handler.
+
+Need something a config array cannot express, like a tab whose filter depends on the signed-in user? Use the Page slot and read c.activeTab / c.setActiveTab from the controller.
+
+Bulk actions
+
+Tick some rows and a bar appears at the foot of the table. Five actions are built in, and you choose which of them a resource offers:
+
+// resources/products.ts
+table: {
+bulkActions: ["edit", "archive", "restore", "export", "delete"],
+}
+
+archive and restore need the model to carry archived_at, which every generated resource has. They never appear together: Archive shows on the Published tab, Restore on the Archived one, because offering both is how somebody archives what they meant to bring back.
+
+Anything domain-shaped is yours, and it goes in the overlay rather than the resource definition, because it holds a function:
+
+apps/admin/resources/shipments/shipments.custom.tsx
+Copy to clipboard
+
+const custom: ResourceCustomisation<Shipment> = {
+
+bulkActions: [
+
+{
+
+key: "mark-delivered",
+
+label: "Mark delivered",
+
+icon: "CheckCircle",
+
+// Omit for actions that do not need it. A confirm on everything
+
+// trains people to dismiss confirms.
+
+confirm: "Mark every selected shipment delivered?",
+
+// Hide it when it makes no sense for this selection.
+
+visible: (rows) => rows.some((row) => row.status !== "delivered"),
+
+onSelect: async (ids, rows, { refresh, clearSelection, announce }) => {
+
+await markDelivered(ids);
+
+refresh();
+
+clearSelection();
+
+announce(rows.length + " marked delivered.");
+
+},
+
+},
+
+],
+
+};
+
+The action receives the ids and the rows. Acting on what the operator ticked usually needs the data, and it is already on screen, so there is no reason to fetch it again. The third argument is what the page can do for you: refresh the list, clear the selection, and speak to the live region.
+
+announce matters more than it looks. Ticking a checkbox does not move focus, so nothing about a bulk action is noticed by a screen reader unless it is said. The built-in actions all announce themselves; yours should too.
+
+If the whole bar is wrong for your app, replace it with the BulkBar slot and call useResourceController(resource) inside for the selection, the actions and the pending state.
+
+What bulk edit does
+
+One field, one value, written to every selected row, through a single POST /api/<resource>/bulk in one transaction. Not a whole form: editing every field at once means deciding what an empty input means, and there is no good answer, since clearing destroys data nobody looked at and ignoring makes it impossible to clear anything.
+
+Unique columns are left out of the field list. Writing one SKU to forty rows is either a constraint violation or, worse, not one.
+
+A Page slot owns its dialogs
+
+The stock page renders the form container and the two confirm dialogs for you. Replace the page and that goes with it, but the state driving them does not, because it lives in the controller. So keep calling c.create, c.edit and c.remove from your own buttons, and render the stock dialogs off the controller's flags:
+
+the tail of a custom Page
+Copy to clipboard
+
+{/* c.edit(row) opened this; the stock form still knows what to do with it */}
+
+{c.form.open && (
+
+<FormSheet resource={resource} item={c.form.item} onClose={c.form.close} />
+
+)}
+
+{/* c.remove(id) opened this; confirm runs the delete and the toast */}
+
+<ConfirmModal
+
+open={c.confirmDelete.open}
+
+onConfirm={c.confirmDelete.confirm}
+
+onCancel={c.confirmDelete.cancel}
+
+title="Delete Deal"
+
+description="Are you sure? This cannot be undone."
+
+confirmLabel="Delete"
+
+variant="danger"
+
+loading={c.isDeleting}
+
+/>
+
+Two things that will bite you
+
+Tailwind has to be looking at your overlay. Projects scaffolded on v3.141.0 or later already are: ./resources/**/*.{ts,tsx} is in the admin's content array. Anything older is not, and the failure is a quiet one: the component renders, the DOM is correct, and the class simply does not exist in the stylesheet, so you get white text on a background that was never painted. Run grit upgrade, or add the glob by hand.
+
+A typed row is a promise about the API, not a guarantee. row.status is typed "active" | "draft" | "archived" because that is what the Go struct declares, but the value arriving at your renderer is whatever the database actually holds, which after an import, a migration or a hand-written UPDATE may be none of them. Indexing a lookup table with it then returns undefined and takes the page down. Give the lookup a fallback:
+
+defensive by one line
+Copy to clipboard
+
+const STATUS = {
+
+active: { label: "Active", className: "bg-emerald-700 text-white" },
+
+draft: { label: "Draft", className: "bg-gray-600 text-white" },
+
+archived: { label: "Archived", className: "bg-amber-700 text-white" },
+
+};
+
+const UNKNOWN = { label: "Unknown", className: "bg-gray-500 text-white" };
+
+columns: {
+
+status: {
+
+cell: (row) => {
+
+// Not STATUS[row.status].className: one unexpected value and the
+
+// whole table throws, in front of whoever opened the page.
+
+const s = STATUS[row.status] ?? UNKNOWN;
+
+return <span className={s.className}>{s.label}</span>;
+
+},
+
+},
+
+}
+
+The detail page
+
+Everything above is the list view. The record page has the same three tiers and its own controller, useResourceDetailController(resource, id), which returns the record, the resolved related resources, the line-item fields, and the edit, delete, print and PDF actions with their dialogs.
+
+Replace the whole page when the record is not a field list. An order with a fulfilment timeline, a customer with a billing history, a ticket with a thread:
+
+apps/admin/resources/shipments/shipments.custom.tsx
+Copy to clipboard
+
+function ShipmentDetail({ resource, id }: ResourceDetailSlotProps) {
+
+const c = useResourceDetailController<Shipment>(resource, id);
+
+if (c.isLoading) return <Spinner />;
+
+if (c.notFound) return <p>No such shipment.</p>;
+
+return (
+
+<div>
+
+<button onClick={c.back}>Back</button>
+
+<h1>{c.record?.reference}</h1>
+
+<TrackingTimeline status={c.record?.status} />
+
+<button onClick={c.edit}>Edit</button>
+
+<button onClick={c.remove}>Delete</button>
+
+{/* Owning the page means owning these. The state is still the
+
+controller's, so they are two lines rather than two dialogs. */}
+
+{c.form.open && (
+
+<FormSheet resource={resource} item={c.form.item} onClose={c.form.close} />
+
+)}
+
+<ConfirmModal
+
+open={c.confirmDelete.open}
+
+onConfirm={c.confirmDelete.confirm}
+
+onCancel={c.confirmDelete.cancel}
+
+title="Delete this shipment?"
+
+variant="danger"
+
+loading={c.isDeleting}
+
+/>
+
+</div>
+
+);
+
+}
+
+const custom: ResourceCustomisation<Shipment> = {
+
+components: { DetailPage: ShipmentDetail },
+
+};
+
+Or replace one part of it and keep the rest. DetailHeader takes the title block and its actions, DetailFields takes the field list, and DetailAside is a slot between the fields and the related tables, for a timeline or an activity feed.
+
+These three receive the controller as a prop rather than calling the hook themselves, and that difference matters. Every call to useResourceDetailController builds its own state, so a header that made its own would open an edit sheet the page around it never reads: you would press Edit and nothing would happen. Sharing one controller is what lets a part drive the page it sits in.
+
+apps/admin/resources/shipments/shipments.custom.tsx
+Copy to clipboard
+
+function ShipmentHeader({ controller: c }: ResourceDetailPartProps<Shipment>) {
+
+return (
+
+<header>
+
+<h1>Shipment {c.title}</h1>
+
+<p>{c.record?.carrier}</p>
+
+<button onClick={c.edit}>Edit</button>
+
+<button onClick={() => void c.downloadPdf()} disabled={c.isPdfBusy}>PDF</button>
+
+</header>
+
+);
+
+}
+
+components: { DetailHeader: ShipmentHeader }
+
+Column patches apply here too. A cell renderer defined in columns is used for the detail page's field list as well as the table, so a status pill written once shows up in both.
+
+Pages that are not resources
+
+Porting a whole template means analytics, settings and billing screens that are not CRUD over a table. Those do not need the controller at all: use the data hooks directly against any endpoint your API exposes:
+
+a page with no resource behind it
+Copy to clipboard
+
+import { useResource } from "@/hooks/use-resource";
+
+export default function RevenuePage() {
+
+const { data, isLoading } = useResource<Invoice>("/api/invoices", {
+
+pageSize: 100,
+
+filters: { status: "paid" },
+
+});
+
+if (isLoading) return <TemplateSkeleton />;
+
+return <TemplateRevenueChart rows={data?.data ?? []} />;
+
+}
+
+Will the generator overwrite this?
+
+No. grit generate resource writes resources/<name>.ts and the thin page wrapper. Once you have replaced the wrapper with your own component, re-running the generator for a new resource does not touch it. What the generator does keep maintaining is the resource definition, and grit sync only ever inserts into it, between the grit:cols:auto-start and grit:fields:auto-start fences, so hand-edited labels and formats survive.
+
+Re-running the generator for the same resource is the interesting case, and it is the one this design exists for: resources/products.ts is rewritten from scratch, every column back to its generated form, while products.custom.tsx is not opened at all. Your cell renderers, your table, your page are still there and still applied, because they were never in the file that got replaced.
+
+Deleting a resource is the one case where the overlay does move. grit remove resource deletes an untouched stub, and renames one you have written in to <name>.custom.tsx.bak, leaving it in place would break the build, since it imports a type the shared package no longer exports, and deleting it outright would throw away work the generator never owned.
+
+DataTableForm Builder

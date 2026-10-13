@@ -1,0 +1,170 @@
+Getting Started
+Performance & Benchmarks
+
+Grit is a compiled Go backend with a React frontend, scaffolded with production-grade performance defaults and a full set of batteries already wired. This page covers why it's fast, what ships out of the box, and how it compares to Laravel, Django, and Next.js.
+
+DefaultsBackend & frontend wins
+Production-grade performance defaults are wired in from the very first scaffold
+
+Why Grit is fast
+
+Compiled backend, production defaults, zero config
+
+The API is a single statically-linked Go binary — no interpreter, no per-request VM warm-up, low memory footprint. On top of that raw speed, every Grit project is scaffolded with performance optimisations baked into both the Go API and the Next.js frontends. Nothing to configure.
+
+Backend (Go — Gin + GORM)
+
+OptimisationWhat it does
+
+Gzip compressionEvery response compressed at BestSpeed — JSON payloads shrink 60–80%.
+
+Connection pool tuningGORM's sql pool capped and recycled (MaxOpen 100, MaxIdle 10, 30m lifetime) — no exhaustion or stale connections under load.
+
+Request-ID tracingEvery request gets an X-Request-ID echoed into logs and Pulse for trivial correlation.
+
+Cache-Control headersPublic read endpoints are CDN/edge-cacheable so requests never hit Go at all.
+
+Redis response cacheHot public endpoints served from memory in under a millisecond; auth routes skipped automatically.
+
+Presigned uploadsBinaries go straight to S3/R2/MinIO — the API never buffers large files.
+
+Async background jobsSlow work (thumbnails, emails, webhooks) pushed to an asynq queue so handlers return immediately.
+
+Sentinel rate limitingWAF + per-IP limiter sheds abusive traffic before it degrades latency for real users.
+
+Frontend (Next.js — App Router)
+
+OptimisationWhat it does
+
+Server ComponentsPages fetch on the server and stream HTML — zero JS for data fetching, no client waterfalls.
+
+ISR / revalidatePublic pages rendered once and served from the CDN edge; revalidated in the background.
+
+React Query cachingAdmin data cached in memory; back-navigation is instant and mutations auto-invalidate.
+
+next/imageAutomatic WebP/AVIF, correct sizing, lazy-load, CDN caching.
+
+Turborepo cacheHashed build outputs replayed in milliseconds — cuts a typical CI build from 4+ min to under 30s on the second run.
+
+Automatic code splittingJS bundle split per route; heavy admin components dynamically imported.
+
+Measured on a real runThe stateless-service load test walks through scaffolding an --api project and load-testing the tiny /api/health endpoint with k6, capturing p50 / p95 / p99. In the walkthrough's example run (Gin in release mode, SQLite, k6 co-located on one box) the endpoint returns at roughly p50 ~2.8 ms, p95 ~7.8 ms, p99 ~18 ms at ~165 req/s — illustrative numbers for a local machine, not a hardware-normalised benchmark. See that page for the full methodology and how to reproduce it against your own deployment.
+
+For the code behind each of these — middleware snippets, the connection-pool config, the presigned-upload flow — see the deep dive in Core Concepts → Performance.
+
+Batteries included
+
+Everything below is wired the moment you scaffold
+
+The list of things you'd normally spend the first month wiring — auth, an admin panel, uploads, jobs, email, security — is treated as already solved. Every one of these ships in the API of a fresh Grit project. Click through for the full docs on each.
+
+Authentication
+
+JWT login/register/refresh, bcrypt hashing, OAuth (Google/GitHub), TOTP 2FA, RBAC.
+
+RBAC
+
+ADMIN / EDITOR / USER roles, RequireRole middleware, role-restricted routes.
+
+File storage
+
+S3-compatible (AWS S3 / Cloudflare R2 / MinIO) with presigned uploads + image processing.
+
+Email
+
+Resend transactional sender with HTML templates — welcome, reset, verify, notify.
+
+Background jobs
+
+Redis-backed asynq queue with email / image / cleanup workers + admin dashboard.
+
+Cron scheduler
+
+Recurring tasks via asynq scheduler, cron expressions, admin monitoring.
+
+Redis caching
+
+Cache service + response-cache middleware; hot public reads served in under a millisecond.
+
+AI Gateway
+
+Vercel AI Gateway — one key, many models — with streaming completion and chat.
+
+Security (Sentinel)
+
+Built-in WAF, per-IP rate limiting, brute-force lockout, anomaly + geo gating.
+
+Pulse observability
+
+Self-hosted request tracing, DB + runtime metrics, error tracking, Prometheus export.
+
+GORM Studio
+
+Visual database browser embedded at /studio — browse and edit rows, no external tool.
+
+Feature flags
+
+FeatureFlag engine: percentage rollouts, allow/block lists, sticky bucketing, A/B variants.
+
+Webhooks
+
+Universal receiver with Stripe / GitHub / HMAC verifiers, idempotent dedupe, admin replay.
+
+Realtime
+
+WebSocket hub with JWT handshake, SendToUser vs Broadcast, multi-device fan-out.
+
+One code generator drives all of itEvery one of these batteries is available to any resource you scaffold. grit generate resource Product emits the Go model, service, handler, routes, Zod schema, TypeScript types, React Query hooks, and an admin page — all type-safe and consistent, with the batteries above already available to it.
+
+How Grit compares
+
+Grit vs Laravel, Django, Next.js, Rails, T3
+
+Every framework below is excellent. The difference is what you have to add versus what's already there. Grit's bet: a compiled Go backend, a generated admin panel, and types shared across the language boundary — batteries in the core, not in a marketplace of add-ons.
+
+✓ built-in~ add-on / partial— not applicable
+
+CapabilityGritLaravelDjangoNext.jsRailsT3
+
+Compiled single-binary deploy✓—————
+
+Generated admin panel✓~✓—~—
+
+End-to-end types (backend ↔ frontend)✓——✓—✓
+
+Full-stack code generator✓✓~—✓—
+
+Built-in auth (JWT / session)✓✓✓~~✓
+
+2FA + OAuth out of the box✓~~~~~
+
+File storage (S3 / R2)✓✓✓—✓—
+
+Background jobs + scheduler✓✓~—✓—
+
+Type-safe API hooks generated✓——~—✓
+
+Built-in WAF / rate-limit / observability✓~~—~—
+
+Single-language stack———✓—✓
+
+Ratings reflect what ships in a default install: e.g. Django's admin is core, but Laravel's admin (Filament/Nova) and Rails' (ActiveAdmin) are add-ons; Next.js and T3 are single-language TypeScript stacks, so end-to-end types are native but there's no compiled server binary. Add-ons can close most gaps — the column just shows what you get before installing anything.
+
+When NOT to reach for GritGrit is a two-language stack (Go + TypeScript). If your team is all-in on a single language, a native option is a better fit — a pure-TypeScript app (Next.js / T3) or a Python/PHP/Ruby team staying in Django / Laravel / Rails. Grit also assumes you want a generated admin panel and the batteries above; if you need a bespoke architecture or a runtime other than Go, the opinionated defaults will fight you more than they help. It shines when you want one CLI to scaffold a hardened, type-safe Go + React product fast — not when you want a blank slate.
+
+Frequently asked questions
+
+Are these benchmark numbers hardware-normalised?
+No — the latency figures are illustrative local-machine results from the load-test walkthrough, not an independent benchmark. Run the k6 suite on your own hardware for real numbers.
+Do I have to use every battery?
+No. They ship configured but are opt-in — use what you need, ignore the rest. See Batteries Included.
+Is the comparison table fair?
+It compares built-in capabilities, not raw performance. Every framework here can be extended to match — Grit just ships more of it by default. The "when not to use Grit" note above is deliberate.
+
+Something wrong, unclear, or missing on this page?
+
+Open an issue: your feedback shapes Grit, and we fix docs fast.
+
+Raise an issue on GitHub
+
+PhilosophyPerformance (deep dive)

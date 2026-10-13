@@ -1,0 +1,782 @@
+Admin Panel
+Relationships
+
+Generate resources with relationships — belongs_to for foreign keys and many_to_many for junction tables. The code generator handles the Go model, API handlers with eager loading, Zod schemas, TypeScript types, and admin form components automatically.
+
+belongs_tomany_to_manyAdmin UI picker
+Declare a relationship — Grit builds the columns, eager loading, and the searchable picker
+
+belongs_to
+
+The belongs_to field type creates a foreign key relationship. When you add a belongs_to field to a resource, the code generator automatically creates:
+
+A foreign key column (category_id) with a GORM index
+
+A GORM association struct field with foreignKey tag
+
+Preload calls in all handler queries for eager loading
+
+A searchable relationship select dropdown in admin forms
+
+Dot notation column display in the DataTable
+
+Syntax
+
+You can either let the generator infer the related model from the field name, or specify it explicitly when the field name differs from the model:
+
+terminal
+
+# Infer related model from field name
+
+$ grit generate resource Product --fields "name:string,category:belongs_to,price:float"
+
+# Explicit related model (when FK name differs)
+
+$ grit generate resource Post --fields "title:string,author:belongs_to:User,content:text"
+
+category:belongs_to — infers the related model Category from the field name.
+
+author:belongs_to:User — explicitly sets the related model to User, since "author" doesn't match a model name directly.
+
+Generated Go Model
+
+The code generator produces a Go struct with both the foreign key column and the association field:
+
+apps/api/internal/models/product.go
+Copy to clipboard
+
+type Product struct {
+
+ID         uint           `gorm:"primarykey" json:"id"`
+
+Name       string         `gorm:"size:255" json:"name" binding:"required"`
+
+CategoryID uint           `gorm:"index" json:"category_id" binding:"required"`
+
+Category   Category       `gorm:"foreignKey:CategoryID" json:"category"`
+
+Price      float64        `json:"price"`
+
+CreatedAt  time.Time      `json:"created_at"`
+
+UpdatedAt  time.Time      `json:"updated_at"`
+
+DeletedAt  gorm.DeletedAt `gorm:"index" json:"-"`
+
+}
+
+Handler with Preload
+
+The generated handler uses GORM's Preload to automatically eager-load the related model in every query. This means the API response always includes the full related object, not just the foreign key ID:
+
+apps/api/internal/handlers/product_handler.go
+Copy to clipboard
+
+// List with eager loading
+
+db.Preload("Category").Find(&products)
+
+// Get by ID
+
+db.Preload("Category").First(&product, id)
+
+// After create/update — reload to include related data in response
+
+db.Preload("Category").First(&product, product.ID)
+
+Admin Form — Relationship Select
+
+The form generates a relationship-select field that fetches options from the related resource's API endpoint:
+
+Relationship select field definition
+Copy to clipboard
+
+{
+
+key: "category_id",
+
+label: "Category",
+
+type: "relationship-select",
+
+required: true,
+
+relatedEndpoint: "/api/categories",
+
+displayField: "name",
+
+}
+
+Auto-fetches all categories via React Query
+
+Searchable dropdown with loading state
+
+Displays the name field (configurable via displayField)
+
+DataTable — Dot Notation
+
+In the resource definition, the table column uses dot notation to display the related model's name:
+
+Column definition with dot notation
+Copy to clipboard
+
+{ key: "category.name", label: "Category", sortable: false }
+
+This accesses row.category.name from the API response, which includes the Preloaded data. Because the related data comes from a join, sorting on dot notation columns is disabled by default.
+
+many_to_many
+
+The many_to_many field type creates a junction table relationship. GORM handles the junction table automatically — you don't need to create or manage it yourself. The code generator produces the Go model annotation, association management in handlers, and a multi-select component in the admin form.
+
+Syntax
+
+For many_to_many, the related model is always required (unlike belongs_to where it can be inferred):
+
+terminal
+
+$ grit generate resource Product --fields "name:string,category:belongs_to,tags:many_to_many:Tag,price:float"
+
+Generated Go Model
+
+The many2many GORM tag tells GORM to create and manage the junction table automatically. The table name follows the convention model_field (e.g., product_tags):
+
+apps/api/internal/models/product.go
+Copy to clipboard
+
+type Product struct {
+
+// ...other fields...
+
+Tags []Tag `gorm:"many2many:product_tags" json:"tags"`
+
+}
+
+Handler — Association Management
+
+Many-to-many associations require special handling in create and update operations. The generated handler uses GORM's Association API to attach and replace related records by their IDs:
+
+apps/api/internal/handlers/product_handler.go
+Copy to clipboard
+
+// Create — attach tags by IDs
+
+if len(req.TagIDs) > 0 {
+
+var tags []models.Tag
+
+h.DB.Where("id IN ?", req.TagIDs).Find(&tags)
+
+h.DB.Model(&item).Association("Tags").Replace(tags)
+
+}
+
+// Update — replace tags (pointer to detect omission)
+
+if req.TagIDs != nil {
+
+var tags []models.Tag
+
+h.DB.Where("id IN ?", *req.TagIDs).Find(&tags)
+
+h.DB.Model(&item).Association("Tags").Replace(tags)
+
+}
+
+The Replace method removes any existing associations and replaces them with the new set. In the update handler, a pointer (*req.TagIDs) is used to distinguish between "not provided" (nil) and "explicitly set to empty" (empty slice), enabling partial updates.
+
+Admin Form — Multi-Select
+
+The form generates a multi-relationship-select field that allows selecting multiple related records:
+
+Multi-relationship select field definition
+Copy to clipboard
+
+{
+
+key: "tag_ids",
+
+label: "Tags",
+
+type: "multi-relationship-select",
+
+relatedEndpoint: "/api/tags",
+
+displayField: "name",
+
+relationshipKey: "tags",
+
+}
+
+Shows removable badge chips for selected items
+
+Searchable dropdown with multi-select support
+
+relationshipKey maps to the API response field for extracting existing selections in edit mode
+
+one_to_one
+
+A belongs_to whose foreign key is unique. Declared on the side that holds the key, because that is the only side the constraint can live on: a passport declares its user, not the other way round.
+
+grit g resource Passport --fields "user:one_to_one:User,number:string,expires_at:date"
+
+Copy to clipboard
+
+apps/api/internal/models/passport.go
+Copy to clipboard
+
+type Passport struct {
+
+UserID string `gorm:"size:36;uniqueIndex" json:"user_id" binding:"required"`
+
+User   User   `gorm:"foreignKey:UserID" json:"user"`
+
+// ...
+
+}
+
+uniqueIndex is the whole difference. Everything else, the foreign key column, the eager loading, the searchable picker in the admin, the CSV import, is identical to belongs_to, and that is deliberate: one_to_one is the same relationship with a constraint, so it reuses the same machinery rather than a parallel implementation.
+
+Without the unique index, "one to one" would be a comment. The database would accept a second passport pointing at the same user, and nothing would notice until somebody asked which one was real. With it, the second insert is refused:
+
+UNIQUE constraint failed: passports.user_id
+
+Copy to clipboard
+
+Worth planning for in the UI: the second attempt fails at the database, so a form that lets somebody pick an already-taken parent will surface a constraint error rather than a friendly one. Filter the picker, or catch the duplicate and say which record already holds it.
+
+has_one & has_many (Inverse Side)
+
+has_one and has_many are the inverse of belongs_to. They don't need generator field types because:
+
+The foreign key lives on the child model (the one with belongs_to)
+
+When you generate Product with category:belongs_to, the Category model automatically has many Products via GORM conventions
+
+You can add the association manually to your parent model if you need to query from the parent side
+
+apps/api/internal/models/category.go
+Copy to clipboard
+
+// Add to your Category model manually
+
+type Category struct {
+
+// ...existing fields...
+
+Products []Product `gorm:"foreignKey:CategoryID" json:"products,omitempty"`
+
+}
+
+This is a manual step — the generator does not add inverse associations automatically, since not every parent model needs to query its children. Add the field when you need it, and GORM will handle the rest.
+
+Inline items (--items)
+
+Category / Product is the default relationship shape: two resources, two pages, two forms, two tables, linked by a belongs_to. But some pairs — Invoice / InvoiceItem, Order / OrderLine, Survey / Question — want the child created inside the parent's form: you build the invoice and its line items in one go, and they save together or not at all.
+
+Generate that shape with --items:
+
+$ grit generate resource Invoice \
+
+--fields "number:string,status:string" \
+
+--items "InvoiceItem:description:string,qty:int,unit_rate:float"
+
+That one command:
+
+Generates InvoiceItem as a full resource (model, handler, routes) with a invoice:belongs_to:Invoice back-reference — so it's filterable by ?invoice_id= — but marked hidden, so it stays out of the sidebar.
+
+Gives Invoice a has-many Items []InvoiceItem and a line-items field in its form — an editable table with add/remove rows and a live per-row and grand total.
+
+Makes the parent's Create/Update handler accept an items array and persist the parent + children in one GORM transaction — atomic, no orphans.
+
+apps/admin/resources/invoices.ts — the generated line-items field
+Copy to clipboard
+
+{
+
+key: "items",
+
+label: "Invoice Items",
+
+type: "line-items",
+
+colSpan: 2,
+
+itemEndpoint: "/api/invoice_items",  // child list, for the detail page
+
+foreignKey: "invoice_id",            // child FK back to the parent
+
+itemFields: [                        // the editable row columns
+
+{ key: "description", label: "Description", type: "text" },
+
+{ key: "qty",        label: "Qty",        type: "number", numberKind: "int" },
+
+{ key: "unit_rate",  label: "Unit Rate",  type: "number", numberKind: "float" },
+
+],
+
+}
+
+If a row's columns include a quantity and a rate/price, the table shows a derived Total column and a grand total automatically. The parent's detail page renders the same items as a related table (fetched by the foreign key), so you see them after saving without any extra wiring. You can hand-edit this field like any other — add columns, change types, point it at a different child.
+
+Hierarchies (--tree)
+
+Everything above relates two different resources. A hierarchy relates a resource to itself: Electronics contains Cameras contains Lenses. That is one table with a parent pointing at another row in the same table, and it is the one relationship a plain belongs_to could not express, because a Go struct cannot contain itself by value.
+
+--tree handles it:
+
+grit generate resource Category \
+
+--fields "name:string,slug:slug,description:text" \
+
+--tree --public
+
+Copy to clipboard
+
+It adds four columns and a service that knows how to use them:
+
+parent_id — the link upwards, empty for a root
+
+path — "/id/id/id/", this row's id last
+
+depth — 0 for a root, 1 for its children
+
+position — the order among siblings
+
+path is the one to understand, because every useful question about a hierarchy becomes a string comparison on it. "Everything under Electronics" is WHERE path LIKE '/electronics-id/%': one indexed comparison, no recursion, no joins, at any depth. A materialized path rather than a recursive CTE because Grit runs on Postgres, MySQL and SQLite, and CTE support differs across all three while a path is identical everywhere.
+
+Two levels, and the two questions a category page asks
+
+Say you have Electronics with Cameras and Laptops under it. A category page almost always needs both of these, and they have different answers:
+
+Which categories sit under this one? Those are the tiles you render. Use children from the tree endpoint.
+
+Which products belong here? Products are filed under Cameras, not under Electronics, so filtering by the one id returns nothing and the page looks broken while the data is perfect. Use descendant_ids from the detail endpoint.
+
+Confusing the two is the usual first bug. descendant_ids is a flat list of ids for filtering products; it is not a shape you can render a menu from.
+
+The easy way to fetch both: one call
+
+--tree with --public mounts an endpoint that returns the whole published hierarchy, already nested, in a single query:
+
+GET /api/v1/public/categories/tree
+
+Copy to clipboard
+
+response (real, ids trimmed)
+Copy to clipboard
+
+{
+
+"data": [
+
+{
+
+"id": "01a01d37-4afc...",
+
+"parent_id": "",
+
+"depth": 0,
+
+"name": "Clothing",
+
+"slug": "clothing",
+
+"children": null
+
+},
+
+{
+
+"id": "01a01d37-0e7f...",
+
+"parent_id": "",
+
+"depth": 0,
+
+"name": "Electronics",
+
+"slug": "electronics",
+
+"children": [
+
+{
+
+"id": "01a01d37-485e...",
+
+"parent_id": "01a01d37-0e7f...",
+
+"depth": 1,
+
+"name": "Cameras",
+
+"slug": "cameras",
+
+"children": null
+
+},
+
+{
+
+"id": "01a01d37-49ad...",
+
+"parent_id": "01a01d37-0e7f...",
+
+"depth": 1,
+
+"name": "Laptops",
+
+"slug": "laptops",
+
+"children": null
+
+}
+
+]
+
+}
+
+]
+
+}
+
+That one response serves the category index page (the roots) and every level-1 page (each root's children), so a whole navigation tree costs one request. It sits in the public group, which has response caching mounted, so it is also among the cheapest things on the page.
+
+A leaf's children is null, not []. Go marshals an empty slice as null, so node.children.map(...)throws on Cameras. Guard it once, in the helper below, rather than at every render site.
+
+apps/web/hooks/use-categories.ts
+Copy to clipboard
+
+export interface CategoryNode {
+
+id: string
+
+parent_id: string
+
+depth: number
+
+name: string
+
+slug: string
+
+description?: string
+
+/** null on a leaf, not an empty array. */
+
+children: CategoryNode[] | null
+
+}
+
+/** The whole hierarchy, one request, cached hard because it rarely changes. */
+
+export function useCategoryTree() {
+
+return useQuery({
+
+queryKey: ["category-tree"],
+
+staleTime: 5 * 60 * 1000,
+
+queryFn: () => get<{ data: CategoryNode[] }>("categories/tree"),
+
+})
+
+}
+
+/** Depth-first lookup by slug. A shop tree is tens of nodes, not thousands. */
+
+export function findNode(nodes: CategoryNode[], slug: string): CategoryNode | undefined {
+
+for (const node of nodes) {
+
+if (node.slug === slug) return node
+
+const hit = node.children ? findNode(node.children, slug) : undefined
+
+if (hit) return hit
+
+}
+
+return undefined
+
+}
+
+/** Children as an array, whatever the API sent. The null is guarded once, here. */
+
+export function childrenOf(node?: CategoryNode): CategoryNode[] {
+
+return node?.children ?? []
+
+}
+
+The level-1 page then renders its children with no extra request, and the index page reads the roots off the same cached response:
+
+apps/web/app/categories/[slug]/page.tsx
+Copy to clipboard
+
+const { data: tree } = useCategoryTree()
+
+const category = findNode(tree?.data ?? [], slug)
+
+const subCategories = childrenOf(category)
+
+return (
+
+<>
+
+<h1>{category?.name}</h1>
+
+{/* Level 2: the tiles. Nothing renders on a leaf, which is correct. */}
+
+{subCategories.length > 0 && (
+
+<nav>
+
+{subCategories.map((child) => (
+
+<Link key={child.id} href={`/categories/${child.slug}`}>
+
+{child.name}
+
+</Link>
+
+))}
+
+</nav>
+
+)}
+
+{/* Products in this category AND everything under it. */}
+
+<ProductGrid slug={slug} />
+
+</>
+
+)
+
+For the products half, the detail endpoint hands back the subtree so you never walk the tree yourself:
+
+GET /api/v1/public/categories/electronics
+
+-> { "descendant_ids": ["<electronics>", "<cameras>", "<laptops>"] }
+
+GET /api/v1/public/products?category_id=<electronics>,<cameras>,<laptops>
+
+-> every product in the branch
+
+Copy to clipboard
+
+descendant_ids includes the category itself, so the same code works unchanged on a leaf. The comma-separated filter is opt-in per column on the server and only ever enabled for id columns: splitting on commas is right for ids and wrong for anything a person types, where "Smith, John" is one value rather than two.
+
+The rest of the endpoints
+
+GET /api/v1/categories/tree — the same tree behind auth, for the admin.
+
+GET /api/v1/categories/:id/breadcrumbs — ancestors read straight out of the stored path, so it costs one query at any depth.
+
+PATCH /api/v1/categories/:id/move — reparent, carrying the subtree, with a cycle refused as 422.
+
+POST /api/v1/categories/reorder — sibling order.
+
+POST /api/v1/categories/rebuild-tree — recompute every path from parent_id alone. This is what you need after adding --treeto a resource that already had rows: those rows have no path, so the tree renders flat until you rebuild.
+
+The admin gets a Tree / Table toggle on the list page: drag onto a row to nest, between rows to reorder, onto the bar at the top to promote back to a root. Dragging a node into its own subtree is refused before the request is made, because a branch moved inside itself detaches from the tree and no query ever finds it again.
+
+The storefront guide builds all of this against a real catalogue in Step 4e.
+
+Full Example — E-Commerce
+
+Here is a complete workflow that demonstrates both relationship types in an e-commerce scenario. Generate the parent models first, then the child model with relationships:
+
+terminal
+
+# Step 1: Generate Category (the parent)
+
+$ grit generate resource Category --fields "name:string,slug:slug,description:text"
+
+# Step 2: Generate Tag
+
+$ grit generate resource Tag --fields "name:string:unique"
+
+# Step 3: Generate Product with relationships
+
+$ grit generate resource Product --fields "name:string,category:belongs_to,tags:many_to_many:Tag,price:float,published:bool"
+
+The Product resource definition generated by the commands above includes both relationship types in the columns and form fields:
+
+apps/admin/resources/products.ts
+Copy to clipboard
+
+export default defineResource({
+
+name: "Product",
+
+endpoint: "/api/products",
+
+table: {
+
+columns: [
+
+{ key: "name", label: "Name", sortable: true, searchable: true },
+
+{ key: "category.name", label: "Category", sortable: false },
+
+{ key: "price", label: "Price", format: "currency", sortable: true },
+
+{ key: "published", label: "Published", format: "boolean" },
+
+],
+
+},
+
+form: {
+
+fields: [
+
+{ key: "name", label: "Name", type: "text", required: true },
+
+{
+
+key: "category_id",
+
+label: "Category",
+
+type: "relationship-select",
+
+required: true,
+
+relatedEndpoint: "/api/categories",
+
+displayField: "name",
+
+},
+
+{
+
+key: "tag_ids",
+
+label: "Tags",
+
+type: "multi-relationship-select",
+
+relatedEndpoint: "/api/tags",
+
+displayField: "name",
+
+relationshipKey: "tags",
+
+},
+
+{ key: "price", label: "Price", type: "number" },
+
+{ key: "published", label: "Published", type: "toggle" },
+
+],
+
+},
+
+})
+
+Customizing Relationships
+
+The generated relationship configuration works out of the box, but you can customize it to fit your needs. Here are the most common adjustments:
+
+displayField
+
+Defaults to "name". Change it to display a different field in the dropdown and table. For example, if your related model uses title instead of name:
+
+Custom displayField
+Copy to clipboard
+
+// Show user email instead of name
+
+{
+
+key: "author_id",
+
+label: "Author",
+
+type: "relationship-select",
+
+relatedEndpoint: "/api/users",
+
+displayField: "email",
+
+}
+
+// Show article title
+
+{
+
+key: "article_id",
+
+label: "Article",
+
+type: "relationship-select",
+
+relatedEndpoint: "/api/articles",
+
+displayField: "title",
+
+}
+
+relatedEndpoint
+
+Auto-generated as /api/<plural>. Change it if your API uses a different path or if you need to hit a filtered endpoint:
+
+Custom relatedEndpoint
+Copy to clipboard
+
+// Custom API path
+
+{
+
+key: "category_id",
+
+label: "Category",
+
+type: "relationship-select",
+
+relatedEndpoint: "/api/v2/product-categories",
+
+displayField: "name",
+
+}
+
+// Filtered endpoint — only active users
+
+{
+
+key: "assignee_id",
+
+label: "Assignee",
+
+type: "relationship-select",
+
+relatedEndpoint: "/api/users?active=true",
+
+displayField: "name",
+
+}
+
+Table Display
+
+The dot notation in column definitions (category.name) can be changed to access any nested field from the Preloaded response. For example, you might want to display a category's slug instead of its name:
+
+Custom dot notation columns
+Copy to clipboard
+
+columns: [
+
+// Display category slug instead of name
+
+{ key: "category.slug", label: "Category Slug", sortable: false },
+
+// Display author email
+
+{ key: "author.email", label: "Author Email", sortable: false },
+
+]
+
+Form BuilderDashboard & Widgets

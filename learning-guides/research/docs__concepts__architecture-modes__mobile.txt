@@ -1,0 +1,516 @@
+Architecture Modes
+
+Mobile Architecture: API + Expo React Native
+
+Go API paired with an Expo React Native app in a Turborepo monorepo. Shared types between backend and mobile, with encrypted token storage and file-based navigation.
+
+Overview
+
+The mobile architecture gives you a Go backend and an Expo React Native app inside a Turborepo monorepo. Types and schemas are shared through a packages/shared/ directory, just like the double and triple architectures. The mobile app uses Expo Router for file-based navigation (similar to Next.js App Router but for native screens) and SecureStore for encrypted token storage.
+
+The Go API is identical to every other architecture -- same handler-service-model pattern, same batteries, same code generation. The difference is on the client side: instead of a web browser, your users interact with a native iOS/Android app.
+
+Scaffold command
+
+grit new myapp --mobile
+
+Copy to clipboard
+
+Native app (Expo)Go APIData
+Native iOS/Android via Expo — same Go API, types shared through packages/shared
+
+Key Characteristics
+
+PropertyMobile Architecture
+
+BackendGo API (Gin + GORM) -- same as all architectures
+
+ClientExpo React Native (iOS + Android)
+
+NavigationExpo Router (file-based, like Next.js App Router)
+
+Token storageSecureStore (encrypted, not localStorage)
+
+MonorepoTurborepo + pnpm workspaces
+
+Shared typespackages/shared/ (Zod schemas + TypeScript types)
+
+Full Folder Structure
+
+A Turborepo monorepo with the Go API in apps/api/, the Expo app in apps/expo/, and shared types in packages/shared/.
+
+myapp/
+
+📂apps
+
+📂apiGo backend (same as other architectures)
+
+go.modModule: myapp/apps/api
+
+go.sum
+
+Dockerfile
+
+📂cmd
+
+server/main.go
+
+migrate/main.go
+
+seed/main.go
+
+📂internalFull Go backend
+
+📁config
+
+📁database
+
+📁models
+
+📁handlers
+
+📁services
+
+📁middleware
+
+📁routes
+
+📁mail
+
+📁storage
+
+📁jobs
+
+📁cache
+
+📁ai
+
+📁auth
+
+📂expoExpo React Native app
+
+package.json
+
+app.jsonExpo configuration
+
+babel.config.js
+
+tsconfig.json
+
+📂appExpo Router screens
+
+_layout.tsxRoot layout
+
+login.tsxLogin screen
+
+register.tsxRegister screen
+
+📂(tabs)Tab navigation
+
+_layout.tsxTab bar layout
+
+index.tsxHome tab
+
+profile.tsxProfile tab
+
+settings.tsxSettings tab
+
+📁componentsReact Native components
+
+📁hooksuseAuth, useQuery hooks
+
+📁libAPI client, SecureStore helpers
+
+📁assetsImages, fonts
+
+📂packages
+
+📂sharedShared types + schemas
+
+package.json
+
+tsconfig.json
+
+📁schemasZod validation schemas
+
+📁typesTypeScript interfaces
+
+📁constantsAPI routes, config
+
+.env
+
+.env.example
+
+.gitignore
+
+docker-compose.ymlPostgreSQL, Redis, MinIO, Mailhog
+
+docker-compose.prod.yml
+
+turbo.json
+
+pnpm-workspace.yaml
+
+grit.jsonarchitecture: "mobile"
+
+📂.claude/skills/grit
+
+SKILL.md
+
+reference.md
+
+Directory Breakdown
+
+apps/api/ -- Go Backend
+
+Identical to every other Grit architecture. The full Go backend with Gin router, GORM models, handler-service-model pattern, and all batteries (auth, storage, email, jobs, cache, AI). The API does not know or care whether the client is a web browser or a mobile app -- it just serves JSON over REST.
+
+apps/expo/ -- Expo React Native App
+
+The Expo app uses the managed workflow with Expo Router for file-based navigation. Screens live in the app/ directory and follow the same conventions as Next.js App Router: _layout.tsx for layout wrappers, group folders like (tabs)/ for navigation groups, and regular .tsx files for individual screens.
+
+apps/expo/app/(tabs)/ -- Tab Navigation
+
+The tab group provides the main navigation structure. The _layout.tsx inside this folder defines the tab bar with icons. Each file becomes a tab: index.tsx is Home, profile.tsx is Profile, and settings.tsx is Settings.
+
+packages/shared/ -- Shared Types
+
+Zod schemas and TypeScript interfaces shared between the API types (via grit sync) and the Expo app. Import with @shared/schemas or @shared/types from anywhere in the monorepo.
+
+grit.json -- Project Config
+
+grit.json
+Copy to clipboard
+
+{
+
+"architecture": "mobile",
+
+"go_module": "myapp/apps/api"
+
+}
+
+SecureStore vs localStorage
+
+On the web, JWT tokens are stored in localStorage. On mobile, this is insecure because any app with root access can read localStorage. Expo provides expo-secure-store, which uses the iOS Keychain and Android Keystore to encrypt tokens at rest.
+
+FeatureWeb (localStorage)Mobile (SecureStore)
+
+EncryptionNone (plaintext)AES-256 (hardware-backed)
+
+StorageBrowser storageiOS Keychain / Android Keystore
+
+AccessAny JS in the pageOnly your app (sandboxed)
+
+apps/expo/lib/secure-store.ts
+Copy to clipboard
+
+import * as SecureStore from 'expo-secure-store'
+
+const TOKEN_KEY = 'auth_token'
+
+const REFRESH_KEY = 'refresh_token'
+
+export async function saveTokens(access: string, refresh: string) {
+
+await SecureStore.setItemAsync(TOKEN_KEY, access)
+
+await SecureStore.setItemAsync(REFRESH_KEY, refresh)
+
+}
+
+export async function getAccessToken(): Promise<string | null> {
+
+return SecureStore.getItemAsync(TOKEN_KEY)
+
+}
+
+export async function clearTokens() {
+
+await SecureStore.deleteItemAsync(TOKEN_KEY)
+
+await SecureStore.deleteItemAsync(REFRESH_KEY)
+
+}
+
+API URL Configuration
+
+On the web, localhost:8080 works fine because the browser and the API are on the same machine. On a physical mobile device, localhost refers to the phone itself, not your development machine. You need to use your machine's local IP address instead.
+
+apps/expo/lib/api-client.ts
+Copy to clipboard
+
+import Constants from 'expo-constants'
+
+import { getAccessToken } from './secure-store'
+
+// In development, use your machine's local IP (not localhost)
+
+// Find it with: ipconfig (Windows) or ifconfig (macOS/Linux)
+
+const API_URL = __DEV__
+
+? 'http://192.168.1.100:8080'  // Your machine's IP
+
+: 'https://api.yourapp.com'     // Production URL
+
+export async function apiFetch(path: string, options: RequestInit = {}) {
+
+const token = await getAccessToken()
+
+const res = await fetch(API_URL + path, {
+
+...options,
+
+headers: {
+
+'Content-Type': 'application/json',
+
+...(token ? { Authorization: 'Bearer ' + token } : {}),
+
+...options.headers,
+
+},
+
+})
+
+if (!res.ok) throw new Error(await res.text())
+
+return res.json()
+
+}
+
+On the iOS simulator and Android emulator, you can use localhost (iOS) or 10.0.2.2 (Android emulator). But on a real device connected via USB or Wi-Fi, use the machine's local IP.
+
+Data Flow
+
+data flow
+Copy to clipboard
+
+Mobile App (Expo)
+
+│
+
+├── SecureStore → reads JWT token
+
+│
+
+├── fetch('https://api.yourapp.com/api/posts')
+
+│       │
+
+│       └── Go API → JWT middleware → handler → service → PostgreSQL
+
+│
+
+├── FlatList renders data (not HTML tables)
+
+├── Pull-to-refresh triggers refetch
+
+└── Infinite scroll loads next page
+
+Mobile-Specific Patterns
+
+Mobile apps use different UI patterns than web apps. Here are the key differences in the Expo scaffold.
+
+FlatList Instead of HTML Tables
+
+React Native doesn't have <table> or <div>. Data lists use FlatList which virtualizes rendering for performance -- only visible items are rendered.
+
+example: FlatList
+Copy to clipboard
+
+<FlatList
+
+data={posts}
+
+keyExtractor={(item) => item.id.toString()}
+
+renderItem={({ item }) => (
+
+<Pressable onPress={() => router.push('/post/' + item.id)}>
+
+<Text style={styles.title}>{item.title}</Text>
+
+<Text style={styles.date}>{item.created_at}</Text>
+
+</Pressable>
+
+)}
+
+onRefresh={refetch}
+
+refreshing={isRefetching}
+
+onEndReached={fetchNextPage}
+
+onEndReachedThreshold={0.5}
+
+/>
+
+Tab Navigation Layout
+
+The tab bar is the primary navigation pattern on mobile. Expo Router makes this declarative with a (tabs)/ group folder.
+
+apps/expo/app/(tabs)/_layout.tsx
+Copy to clipboard
+
+import { Tabs } from 'expo-router'
+
+import { Home, User, Settings } from 'lucide-react-native'
+
+export default function TabLayout() {
+
+return (
+
+<Tabs screenOptions={{
+
+tabBarActiveTintColor: '#6c5ce7',
+
+tabBarStyle: { backgroundColor: '#0a0a0f', borderTopColor: '#2a2a3a' },
+
+}}>
+
+<Tabs.Screen
+
+name="index"
+
+options={{ title: 'Home', tabBarIcon: ({ color }) => <Home color={color} size={22} /> }}
+
+/>
+
+<Tabs.Screen
+
+name="profile"
+
+options={{ title: 'Profile', tabBarIcon: ({ color }) => <User color={color} size={22} /> }}
+
+/>
+
+<Tabs.Screen
+
+name="settings"
+
+options={{ title: 'Settings', tabBarIcon: ({ color }) => <Settings color={color} size={22} /> }}
+
+/>
+
+</Tabs>
+
+)
+
+}
+
+Push Notifications
+
+Expo Notifications provides a unified API for push notifications on both iOS and Android. Register the device's push token with your Go API, then send notifications from the backend using Expo's push service. This is useful for real-time alerts, chat messages, order updates, and marketing notifications.
+
+Code Generation
+
+Running grit generate resource in a mobile project scaffolds the full stack — Go backend, shared TypeScript types, and a working set of Expo Router screens (list, detail, create, edit) plus a typed React Query hook and a form component. You get a functioning CRUD flow on the device immediately, then style it to taste.
+
+Generated FileLocation
+
+Go modelapps/api/internal/models/post.go
+
+Go serviceapps/api/internal/services/post.go
+
+Go handler (+ CSV import)apps/api/internal/handlers/post.go, post_import.go
+
+Zod schema + TS typespackages/shared/schemas/post.ts, types/post.ts
+
+Expo list + detail screensapps/expo/app/posts/index.tsx, [id].tsx
+
+Expo create + edit screensapps/expo/app/posts/new.tsx, edit/[id].tsx
+
+Expo form componentapps/expo/components/resource-forms/posts-form.tsx
+
+React Query hookapps/expo/hooks/use-posts.ts
+
+Working screens, then make them yours
+
+The generated Expo screens are real, navigable, and wired to the API through the typed hook — a full create/read/update/delete flow the moment you generate the resource. They're a starting point, not a cage: restyle the FlatList, swap components, or rework the form in resource-forms/posts-form.tsx — the shared types keep everything in sync with the backend.
+
+Building and Distribution
+
+Expo provides two ways to distribute your app: EAS Build for full native builds (submitted to App Store / Google Play), and OTA updates for JavaScript-only changes that skip the app store review process.
+
+EAS Build
+
+build for stores
+Copy to clipboard
+
+# Install EAS CLI
+
+npm install -g eas-cli
+
+# Configure build profiles
+
+cd apps/expo && eas build:configure
+
+# Build for iOS (requires Apple Developer account)
+
+eas build --platform ios
+
+# Build for Android
+
+eas build --platform android
+
+# Submit to stores
+
+eas submit --platform ios
+
+eas submit --platform android
+
+OTA Updates
+
+For JavaScript-only changes (bug fixes, UI tweaks, new screens), you can push updates directly to users without going through the app store review process.
+
+# Push an update to all users
+
+eas update --branch production --message "Fix login screen layout"
+
+Copy to clipboard
+
+API Deployment
+
+The Go API is deployed separately using Docker, the same as the API-only architecture.
+
+# Deploy the API
+
+cd apps/api && docker build -t myapp-api .
+
+docker push myapp-api:latest
+
+Copy to clipboard
+
+When to Choose Mobile
+
+Good fit
+
+-Mobile-first products (social, delivery, fitness, etc.)
+
+-Cross-platform apps (one codebase for iOS + Android)
+
+-Apps that need push notifications, camera, GPS
+
+-Teams that know React and want to build native apps
+
+-Apps where the primary interface is a phone
+
+Not ideal for
+
+-Web-first apps (use double or triple instead)
+
+-Apps that need both web and mobile (add web to this scaffold later)
+
+-Games or heavy GPU apps (use Unity or native SDKs)
+
+-Projects that need an admin panel (add admin app separately)
+
+Example Project
+
+The Job Portal example built with the mobile architecture. Includes the Go API, Expo app with tab navigation, SecureStore auth, shared types, and EAS build config.
+View Job Portal (Mobile + Expo) on GitHub →
+
+API Only ArchitectureArchitecture Modes Overview

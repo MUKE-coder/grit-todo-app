@@ -1,0 +1,133 @@
+Mobile
+Resource Generation
+
+When you run grit generate resource in a mobile project, Grit emits six Expo files per resource on top of the Go backend and shared types — a typed hook, four screens, and a shared form. This page is a deep dive into each one and how field types shape what gets generated.
+
+One commandSix Expo files
+One command writes a typed hook, four screens, and a shared form — six Expo files per resource
+
+The resource → files fan-out
+
+A single command produces a working native CRUD flow. Grit detects the Expo app automatically (it looks for apps/expo) and generates the mobile files alongside everything else:
+
+grit generate resource Product
+Copy to clipboard
+
+grit generate resource Product --fields "name:string,price:float,category:belongs_to"
+
+│
+
+├─ Go backend        → model + service + handler + routes
+
+├─ packages/shared   → schemas/product.ts + types/product.ts
+
+│
+
+└─ apps/expo/        (6 files)
+
+├─ hooks/use-products.ts                       ← typed React Query hook
+
+├─ app/products/index.tsx                      ← list screen
+
+├─ app/products/[id].tsx                       ← detail screen
+
+├─ app/products/new.tsx                        ← create screen
+
+├─ app/products/edit/[id].tsx                  ← edit screen
+
+└─ components/resource-forms/products-form.tsx ← shared create/edit form
+
+│
+
+└─ + a "Products" card injected into
+
+app/(tabs)/explore.tsx  (// grit:mobile-resources)
+
+The six generated files
+
+FileWhat it is
+
+hooks/use-<plural>.tsTyped React Query hook: infinite-scroll list, single-record query, and create / update / delete mutations. Exports the resource interface + a Page type.
+
+app/<plural>/index.tsxList screen — search, sortable columns, pull-to-refresh, infinite scroll, CSV export, bulk import, and a create sheet.
+
+app/<plural>/[id].tsxDetail screen — one labelled Row per field, optional hero image, plus Edit and Delete actions.
+
+app/<plural>/new.tsxCreate screen — renders the shared form and calls the create mutation.
+
+app/<plural>/edit/[id].tsxEdit screen — loads the record, pre-fills the shared form, calls the update mutation.
+
+components/resource-forms/<plural>-form.tsxShared form rendered by both new and edit (and the list’s create sheet).
+
+The typed hook
+
+use-<plural>.ts is the single source of data access for the resource. It declares the resource's TypeScript interface (IDs are UUID strings; created_at / updated_at are always present) and exports five hooks:
+
+use<Plural>() — an infinite-scroll list built on useInfiniteQuery. It accepts a search string, equality filters, sort key and order, and a page size. It accumulates pages and stops when the last page is reached.
+
+use<Singular>(id) — fetches one record with useQuery.
+
+useCreate<Singular>(), useUpdate<Singular>(), useDelete<Singular>() — mutations that invalidate the list cache on success.
+
+The filters argument is what powers belongs_to scoping — e.g. useProducts("", { category_id: id }) lists only the products in one category. The API already supports the matching query parameter.
+
+The shared form component
+
+<plural>-form.tsx is a single component used by the create screen, the edit screen, and the list's create sheet. It pre-fills from an optional initial record and calls onSubmit(values) — so the parent owns the mutation and the navigation. Each field type maps to a native control:
+
+Field typeRendered control
+
+string, date, datetimeSingle-line TextInput
+
+text, richtextMulti-line TextInput (textarea)
+
+int, uint, floatNumeric TextInput with format/parse helpers
+
+boolNative Switch toggle
+
+belongs_toRelationSelect chip picker (see below)
+
+fileSingle native image upload with live preview
+
+filesMulti-image grid with removable thumbnails
+
+slug, many_to_many, string_arraySkipped in the form (slug is derived server-side)
+
+How belongs_to fields render
+
+A belongs_to field pulls in two things. In the form, it renders a RelationSelect — a chip picker whose options come from the related resource's own generated hook (loaded with a large first page so the picker isn't capped at the list default). Submitting sends the selected foreign key, and the field is validated as required.
+
+On the list screen, the same relations become filter pills in a filter sheet — tap a parent to scope the list to its children. The detail screen shows the parent's name or title (preloaded by the API) instead of the raw foreign key.
+
+products-form.tsx (belongs_to excerpt)
+Copy to clipboard
+
+const categoriesQuery = useCategories("", {}, "created_at", "desc", 500);
+
+const categoriesOpts = categoriesQuery.data?.pages.flatMap((p) => p.data) ?? [];
+
+// …in the form body:
+
+<RelationSelect
+
+label="Category"
+
+value={categoryId}
+
+onChange={setCategoryId}
+
+options={categoriesOpts}
+
+/>
+
+How file fields render
+
+A file or files field renders a native image picker. Tapping it opens an ImagePickerSheet; picked images show instantly as a local preview, upload in the background via uploadLocalFile(), and the returned stored URLs go into the payload as FileRef objects. A single file is one framed preview; files is a grid of removable thumbnails with an add tile.
+
+Images that just work. Uploaded images are stored through the API's S3-compatible storage. The scaffold ships lib/images.ts with a resolveImageUrl() helper that rewrites the host so stored images load on a device (a phone can't reach localhost) — list rows, detail hero images, and form previews all run through it.
+
+Re-running is safe
+
+Generation is idempotent where it matters. The resource card injected into the More tab is added at the // grit:mobile-resources marker and is skipped if it already exists, so regenerating a resource never duplicates the link. Shared helpers (the screen header, form sheet, pickers, upload and image helpers) are only written if they're missing — older scaffolds get them backfilled on the next generate.
+
+Your First Mobile AppBuilding & Publishing

@@ -1,0 +1,328 @@
+Batteries
+Cron Scheduler
+
+Grit uses the asynq Scheduler for cron-like recurring task execution. Schedule periodic cleanup jobs, report generation, or any recurring work using standard cron expressions. Tasks are enqueued into the same Redis-backed job queue used by background jobs.
+
+SchedulerWorker pool
+Each time the cron fires, the scheduler enqueues a task; a worker picks it up and runs it
+
+How It Works
+
+The cron scheduler is a separate component from the job worker. While the worker processes jobs from the queue, the scheduler periodically enqueues new tasks according to cron expressions. Both share the same Redis connection and task types.
+
+cron-flow.txt
+Copy to clipboard
+
+┌────────────────────┐     ┌─────────┐     ┌──────────────────┐
+
+│  Cron Scheduler    │     │  Redis  │     │  Worker          │
+
+│                    │     │  Queue  │     │                  │
+
+│  Every hour:       │     │         │     │                  │
+
+│  enqueue           │────>│  task   │────>│  handleTokens    │
+
+│  tokens:cleanup    │     │         │     │  Cleanup()       │
+
+│                    │     │         │     │                  │
+
+│  Custom schedule:  │     │         │     │                  │
+
+│  enqueue           │────>│  task   │────>│  handleCustom()  │
+
+│  report:generate   │     │         │     │                  │
+
+└────────────────────┘     └─────────┘     └──────────────────┘
+
+Scheduler Service
+
+The scheduler lives at internal/cron/cron.go. It wraps the asynq Scheduler and registers cron tasks at creation time.
+
+internal/cron/cron.go
+Copy to clipboard
+
+// Task represents a registered cron task for display purposes.
+
+type Task struct {
+
+Name     string `json:"name"`
+
+Schedule string `json:"schedule"`
+
+Type     string `json:"type"`
+
+}
+
+// RegisteredTasks holds the list of cron tasks for the admin API.
+
+var RegisteredTasks []Task
+
+// Scheduler wraps asynq.Scheduler for cron-like job scheduling.
+
+type Scheduler struct {
+
+scheduler *asynq.Scheduler
+
+}
+
+// New creates a new cron Scheduler connected to Redis.
+
+func New(redisURL string) (*Scheduler, error)
+
+// Start begins executing scheduled tasks (runs in a goroutine).
+
+func (s *Scheduler) Start() error
+
+// Stop shuts down the scheduler gracefully.
+
+func (s *Scheduler) Stop()
+
+Built-in Tasks
+
+Grit ships with three built-in cron tasks — expired-token cleanup (hourly), orphan-upload cleanup (daily), and a weekly full-database backup. They're registered before the // grit:cron-tasks marker, so your own tasks slot in right after them.
+
+TaskScheduleTypeDescription
+
+Cleanup expired tokens0 * * * *tokens:cleanupEvery hour, on the hour
+
+Cleanup orphan uploads15 3 * * *uploads:cleanup_orphansDaily at 03:15 (low traffic)
+
+Weekly database backup0 2 * * 0backup:weeklySunday 02:00 UTC
+
+internal/cron/cron.go (registration)
+Copy to clipboard
+
+func New(redisURL string) (*Scheduler, error) {
+
+redisOpt, err := asynq.ParseRedisURI(redisURL)
+
+if err != nil {
+
+return nil, fmt.Errorf("parsing redis URL for cron: %w", err)
+
+}
+
+scheduler := asynq.NewScheduler(redisOpt, nil)
+
+// Register built-in cron tasks
+
+RegisteredTasks = []Task{}
+
+// Cleanup expired tokens -- every hour
+
+_, err = scheduler.Register("0 * * * *", asynq.NewTask("tokens:cleanup", nil))
+
+if err != nil {
+
+return nil, fmt.Errorf("registering tokens cleanup: %w", err)
+
+}
+
+RegisteredTasks = append(RegisteredTasks, Task{
+
+Name:     "Cleanup expired tokens",
+
+Schedule: "0 * * * *",
+
+Type:     "tokens:cleanup",
+
+})
+
+// Cleanup orphan uploads -- daily at 03:15
+
+_, err = scheduler.Register("15 3 * * *", asynq.NewTask("uploads:cleanup_orphans", nil))
+
+if err != nil {
+
+return nil, fmt.Errorf("registering orphan upload cleanup: %w", err)
+
+}
+
+RegisteredTasks = append(RegisteredTasks, Task{
+
+Name: "Cleanup orphan uploads", Schedule: "15 3 * * *", Type: "uploads:cleanup_orphans",
+
+})
+
+// Weekly full-database backup -- Sunday 02:00 UTC
+
+_, err = scheduler.Register("0 2 * * 0", asynq.NewTask("backup:weekly", nil))
+
+if err != nil {
+
+return nil, fmt.Errorf("registering weekly backup: %w", err)
+
+}
+
+RegisteredTasks = append(RegisteredTasks, Task{
+
+Name: "Weekly database backup", Schedule: "0 2 * * 0", Type: "backup:weekly",
+
+})
+
+// grit:cron-tasks
+
+return &Scheduler{scheduler: scheduler}, nil
+
+}
+
+Adding Custom Cron Tasks
+
+Add custom cron tasks by registering them in the New() function. Use standard cron expressions (5-field format). The task must have a corresponding handler registered in the job worker.
+
+custom-cron-task.go
+Copy to clipboard
+
+// Add after the "// grit:cron-tasks" marker:
+
+// Generate daily reports -- every day at midnight
+
+_, err = scheduler.Register("0 0 * * *", asynq.NewTask("report:daily", nil))
+
+if err != nil {
+
+return nil, fmt.Errorf("registering daily report: %w", err)
+
+}
+
+RegisteredTasks = append(RegisteredTasks, Task{
+
+Name:     "Generate daily reports",
+
+Schedule: "0 0 * * *",
+
+Type:     "report:daily",
+
+})
+
+// Send weekly digest -- every Monday at 9 AM
+
+payload, _ := json.Marshal(map[string]string{"type": "weekly"})
+
+_, err = scheduler.Register("0 9 * * 1", asynq.NewTask("email:digest", payload))
+
+if err != nil {
+
+return nil, fmt.Errorf("registering weekly digest: %w", err)
+
+}
+
+RegisteredTasks = append(RegisteredTasks, Task{
+
+Name:     "Send weekly digest",
+
+Schedule: "0 9 * * 1",
+
+Type:     "email:digest",
+
+})
+
+Cron Expression Reference
+
+ExpressionSchedule
+
+* * * * *Every minute
+
+0 * * * *Every hour
+
+0 0 * * *Every day at midnight
+
+0 9 * * 1Every Monday at 9 AM
+
+*/5 * * * *Every 5 minutes
+
+0 0 1 * *First day of every month
+
+The grit:cron-tasks Marker
+
+The // grit:cron-tasks comment in cron.go is a marker used by the code generator. grit generate job NightlyReport --cron "30 23 * * *" writes the job, registers its handler with the worker, and injects the schedule at this marker, where it also joins the list on the admin Cron page. You can add tasks manually either above or below it -- just do not remove the marker.
+
+marker-location.go
+Copy to clipboard
+
+// ... built-in tasks above ...
+
+// grit:cron-tasks    <-- CLI injects new tasks here
+
+return &Scheduler{scheduler: scheduler}, nil
+
+}
+
+Admin Cron Viewer
+
+The admin panel shows all registered cron tasks via the GET /api/admin/cron/tasks endpoint. This endpoint reads from the RegisteredTasks slice, which is populated during scheduler initialization.
+
+internal/handlers/cron.go
+Copy to clipboard
+
+// CronHandler handles admin cron task endpoints.
+
+type CronHandler struct{}
+
+// ListTasks returns all registered cron tasks.
+
+func (h *CronHandler) ListTasks(c *gin.Context) {
+
+tasks := cron.RegisteredTasks
+
+if tasks == nil {
+
+tasks = []cron.Task{}
+
+}
+
+c.JSON(http.StatusOK, gin.H{
+
+"data": tasks,
+
+})
+
+}
+
+// Response example:
+
+// {
+
+//   "data": [
+
+//     {
+
+//       "name": "Cleanup expired tokens",
+
+//       "schedule": "0 * * * *",
+
+//       "type": "tokens:cleanup"
+
+//     }
+
+//   ]
+
+// }
+
+Lifecycle
+
+The scheduler is started in main.go after the worker, and stopped during graceful shutdown. It runs as a goroutine alongside the HTTP server.
+
+cmd/server/main.go (excerpt)
+Copy to clipboard
+
+// Create and start the cron scheduler
+
+cronScheduler, err := cron.New(cfg.RedisURL)
+
+if err != nil {
+
+log.Printf("Warning: Cron scheduler failed to start: %v", err)
+
+} else {
+
+cronScheduler.Start()
+
+defer cronScheduler.Stop()
+
+log.Println("Cron scheduler started")
+
+}
+
+Background JobsRedis Caching

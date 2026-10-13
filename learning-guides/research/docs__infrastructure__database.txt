@@ -1,0 +1,574 @@
+Infrastructure
+Database & Migrations
+
+Grit uses GORM as its ORM and PostgreSQL as the primary database. Define your models as Go structs and run migrations with a dedicated command.
+
+Go structs (schema)Database tables
+Your Go structs are the schema — grit migrate syncs them into PostgreSQL
+
+Go deeper: Database Mastery covers GORM models, migrations and queries in depth, and GORM Studio is a full tour of the visual database browser at /studio.
+
+PostgreSQL Setup
+
+PostgreSQL runs via Docker Compose. After starting the containers, your database is ready at localhost:5434.
+
+terminal
+
+$ docker compose up -d postgres
+
+Connection String
+
+By default the Go API assembles the connection string from the individual POSTGRES_* parts in your .env file (POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_HOST, POSTGRES_PORT, POSTGRES_DB). Set the optional DATABASE_URL to override those parts (e.g. for an external Neon/Supabase/RDS Postgres or SQLite) — when set, it wins. The resulting connection string follows the standard PostgreSQL format:
+
+.env
+Copy to clipboard
+
+DATABASE_URL=postgres://grit:grit@localhost:5434/myapp?sslmode=disable
+
+The URL format breakdown:
+
+PartValueDescription
+
+protocolpostgres://PostgreSQL driver
+
+user:passwordgrit:gritAuth credentials (change in production)
+
+host:portlocalhost:5434Database server address
+
+databasemyappDatabase name (matches your project name)
+
+sslmodedisableUse "require" in production
+
+Supported Databases
+
+Pick the engine with DB_PROVIDER in .env, or at scaffold time with grit new myapp --db mysql. Each engine reads its own block of settings, and the blocks for the others can stay where they are.
+
+.env
+Copy to clipboard
+
+# postgres | mysql | sqlite | memory
+
+DB_PROVIDER=mysql
+
+MYSQL_USER=grit
+
+MYSQL_PASSWORD=secret
+
+MYSQL_DB=myapp
+
+MYSQL_HOST=localhost
+
+MYSQL_PORT=3306
+
+Until v3.234.0 there was no such setting: the engine came from the scheme on DATABASE_URL, so a project had Postgres settings in .env and no place at all to put MySQL credentials, for an engine that had been supported for months.
+
+DATABASE_URL still wins when it is set: it is the escape hatch for a managed database whose connection string carries options these parts do not model, such as a Neon pooler or an RDS proxy. When it names a different engine from DB_PROVIDER, the app says so at boot rather than leaving you to wonder why the settings you edited do nothing. Four engines:
+
+DatabaseDSNUse it for
+
+PostgreSQLpostgres://user:pass@host:5432/dbThe default, and what Docker Compose starts
+
+MySQL 8+ / MariaDBmysql://user:pass@tcp(host:3306)/dbExisting MySQL infrastructure and shared hosting
+
+SQLitesqlite:./data.dbDev, tests, and the desktop app's local mirror
+
+SQLite in memoryDB_PROVIDER=memoryDemos and tests. Empty at every boot, so the server migrates it itself: a separate migrate command would build the schema in a process that then exits.
+
+The MySQL DSN is the driver's own format with a scheme bolted on the front, so the host goes inside tcp(...) rather than after an @. Grit appends parseTime=true&loc=UTC when you have not set it: without it MySQL hands back DATETIME columns as raw bytes and every time.Time field on every model fails to scan.
+
+.env
+Copy to clipboard
+
+# Postgres (default)
+
+DATABASE_URL=postgres://grit:grit@localhost:5434/myapp?sslmode=disable
+
+# MySQL
+
+DATABASE_URL=mysql://grit:grit@tcp(localhost:3306)/myapp
+
+# SQLite
+
+DATABASE_URL=sqlite:./myapp.db
+
+What is actually tested. The live suite, 68 checks over a running app, runs on Postgres 15, 16 and 17, and on MySQL 8 and SQLite, on every push. That covers ownership, trees, the public surface, money, encryption at rest, CSV import and optimistic locking on each of them. It is worth saying because the claim used to rest on the drivers compiling: building a project on MySQL for the first time found a table AutoMigrate refused outright, an indexed column of 1024 characters, which is 4096 bytes in utf8mb4 against MySQL's 3072-byte limit.
+
+Nothing else in your project changes. Models, migrations, handlers, and the admin panel are dialect-agnostic, and the one place the difference leaks (Postgres and SQLite can return a written row with RETURNING, MySQL cannot) is handled for you in internal/database/dialect.go.
+
+GORM Database Connection
+
+Grit generates a database connection module at apps/api/internal/database/database.go. It opens a GORM connection with PostgreSQL and configures connection pooling:
+
+apps/api/internal/database/database.go
+Copy to clipboard
+
+package database
+
+import (
+
+"fmt"
+
+"log"
+
+"gorm.io/driver/postgres"
+
+"gorm.io/gorm"
+
+"gorm.io/gorm/logger"
+
+)
+
+// Connect establishes a database connection using the provided DSN.
+
+func Connect(dsn string) (*gorm.DB, error) {
+
+db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+
+Logger: logger.Default.LogMode(logger.Info),
+
+})
+
+if err != nil {
+
+return nil, fmt.Errorf("failed to connect to database: %w", err)
+
+}
+
+sqlDB, err := db.DB()
+
+if err != nil {
+
+return nil, fmt.Errorf("failed to get underlying sql.DB: %w", err)
+
+}
+
+// Connection pool settings
+
+sqlDB.SetMaxIdleConns(10)
+
+sqlDB.SetMaxOpenConns(100)
+
+log.Println("Database connected successfully")
+
+return db, nil
+
+}
+
+Connection Pooling
+
+GORM uses Go's built-in database/sql connection pool under the hood. Grit configures these defaults:
+
+SettingDefaultDescription
+
+MaxIdleConns10Maximum idle connections kept open
+
+MaxOpenConns100Maximum total open connections
+
+You can also set ConnMaxLifetime and ConnMaxIdleTime for long-running production applications. See the Go database/sql docs for details.
+
+Migrations
+
+Grit uses a smart migration system that only creates tables which don't exist yet. Migrations run as a separate command before starting the server:
+
+terminal
+
+$ grit migrate
+
+For full details on how migrations work, fresh migrations, foreign key ordering, and the typical workflow, see the Migrations guide.
+
+Defining Models
+
+Models live in apps/api/internal/models/. Each model is a Go struct with GORM tags that define the database schema. Here is the User model that ships with every Grit project:
+
+apps/api/internal/models/user.go
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"golang.org/x/crypto/bcrypt"
+
+"gorm.io/gorm"
+
+)
+
+const (
+
+RoleAdmin  = "admin"
+
+RoleEditor = "editor"
+
+RoleUser   = "user"
+
+)
+
+type User struct {
+
+ID              uint           `gorm:"primarykey" json:"id"`
+
+Name            string         `gorm:"size:255;not null" json:"name" binding:"required"`
+
+Email           string         `gorm:"size:255;uniqueIndex;not null" json:"email" binding:"required,email"`
+
+Password        string         `gorm:"size:255;not null" json:"-"`
+
+Role            string         `gorm:"size:20;default:user" json:"role"`
+
+Avatar          string         `gorm:"size:500" json:"avatar"`
+
+Active          bool           `gorm:"default:true" json:"active"`
+
+EmailVerifiedAt *time.Time     `json:"email_verified_at"`
+
+CreatedAt       time.Time      `json:"created_at"`
+
+UpdatedAt       time.Time      `json:"updated_at"`
+
+DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
+
+}
+
+// BeforeCreate hashes the password before saving.
+
+func (u *User) BeforeCreate(tx *gorm.DB) error {
+
+if u.Password != "" {
+
+hashedPassword, err := bcrypt.GenerateFromPassword(
+
+[]byte(u.Password), bcrypt.DefaultCost,
+
+)
+
+if err != nil {
+
+return err
+
+}
+
+u.Password = string(hashedPassword)
+
+}
+
+return nil
+
+}
+
+GORM Struct Tags
+
+Common GORM struct tags used in Grit models:
+
+TagExampleEffect
+
+primarykeygorm:"primarykey"Marks as primary key
+
+sizegorm:"size:255"Sets VARCHAR length
+
+not nullgorm:"not null"Adds NOT NULL constraint
+
+uniqueIndexgorm:"uniqueIndex"Creates unique index
+
+indexgorm:"index"Creates regular index
+
+defaultgorm:"default:user"Sets default column value
+
+typegorm:"type:text"Sets explicit column type
+
+foreignKeygorm:"foreignKey:UserID"Defines foreign key relationship
+
+Common GORM Operations
+
+These are the most common database operations you will use in your Grit handlers and services. GORM provides a fluent, chainable API.
+
+Create
+
+Create a record
+Copy to clipboard
+
+user := models.User{
+
+Name:  "John Doe",
+
+Email: "john@example.com",
+
+Password: "secret123",
+
+}
+
+result := db.Create(&user)
+
+if result.Error != nil {
+
+return fmt.Errorf("creating user: %w", result.Error)
+
+}
+
+// user.ID is now populated
+
+Find (Single Record)
+
+Find by ID or condition
+Copy to clipboard
+
+// Find by primary key
+
+var user models.User
+
+db.First(&user, 1) // SELECT * FROM users WHERE id = 1
+
+// Find by condition
+
+db.Where("email = ?", "john@example.com").First(&user)
+
+// Check if record exists
+
+if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+
+// User not found
+
+}
+
+Find (Multiple Records)
+
+Query lists with pagination
+Copy to clipboard
+
+var users []models.User
+
+// All records
+
+db.Find(&users)
+
+// With conditions
+
+db.Where("active = ?", true).Find(&users)
+
+// With pagination
+
+db.Offset(0).Limit(20).Order("created_at DESC").Find(&users)
+
+// Count total for pagination
+
+var count int64
+
+db.Model(&models.User{}).Where("active = ?", true).Count(&count)
+
+Update
+
+Update records
+Copy to clipboard
+
+// Update single field
+
+db.Model(&user).Update("name", "Jane Doe")
+
+// Update multiple fields
+
+db.Model(&user).Updates(models.User{
+
+Name: "Jane Doe",
+
+Role: "admin",
+
+})
+
+// Update with map (includes zero-value fields)
+
+db.Model(&user).Updates(map[string]interface{}{
+
+"active": false,
+
+"name":   "Jane Doe",
+
+})
+
+Delete
+
+Delete records
+Copy to clipboard
+
+// Soft delete (sets deleted_at, record still in DB)
+
+db.Delete(&user, 1)
+
+// Hard delete (permanently removes from DB)
+
+db.Unscoped().Delete(&user, 1)
+
+// Delete by condition
+
+db.Where("active = ? AND created_at < ?", false, cutoffDate).Delete(&models.User{})
+
+Preload (Relationships)
+
+Eager-load relationships
+Copy to clipboard
+
+// Define a Post model with relationship
+
+type Post struct {
+
+ID        uint           `gorm:"primarykey" json:"id"`
+
+Title     string         `gorm:"size:255;not null" json:"title"`
+
+Body      string         `gorm:"type:text" json:"body"`
+
+UserID    uint           `json:"user_id"`
+
+User      User           `json:"user"`
+
+CreatedAt time.Time      `json:"created_at"`
+
+}
+
+// Preload the User relationship
+
+var posts []Post
+
+db.Preload("User").Find(&posts)
+
+// Nested preload
+
+db.Preload("User").Preload("Comments").Find(&posts)
+
+Indexing
+
+Proper indexing is critical for query performance. GORM creates indexes from struct tags during AutoMigrate:
+
+Index examples
+Copy to clipboard
+
+type Product struct {
+
+ID       uint   `gorm:"primarykey"`
+
+Name     string `gorm:"size:255;index"`           // Regular index
+
+SKU      string `gorm:"size:100;uniqueIndex"`     // Unique index
+
+Category string `gorm:"size:100;index:idx_cat_price"` // Composite index
+
+Price    float64 `gorm:"index:idx_cat_price"`     // Same composite index
+
+DeletedAt gorm.DeletedAt `gorm:"index"`           // Soft delete index
+
+}
+
+Add indexes to columns you frequently filter, sort, or join on. The DeletedAt field should always have an index since GORM adds a WHERE deleted_at IS NULL condition to every query on soft-deletable models.
+
+SQLite for Quick Testing
+
+If you want to prototype without Docker or PostgreSQL, GORM supports SQLite as a drop-in replacement. Add the SQLite driver and swap the connection:
+
+SQLite connection
+Copy to clipboard
+
+import (
+
+"github.com/glebarez/sqlite"
+
+"gorm.io/gorm"
+
+)
+
+func ConnectSQLite(dbPath string) (*gorm.DB, error) {
+
+db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
+
+if err != nil {
+
+return nil, fmt.Errorf("failed to connect to SQLite: %w", err)
+
+}
+
+return db, nil
+
+}
+
+// Usage:
+
+// db, err := ConnectSQLite("test.db")     // file-based
+
+// db, err := ConnectSQLite(":memory:")     // in-memory (tests)
+
+Note: SQLite is great for prototyping and unit tests, but always test with PostgreSQL before deploying. Some PostgreSQL-specific features (like JSONB columns, array types, and certain index types) are not available in SQLite.
+
+GORM Studio
+
+Every Grit project includes GORM Studio — a full-featured visual database browser and editor embedded directly into your API at /studio.
+
+Data Browser
+
+Paginated grid with sorting, full-text search, column filtering, and relationship navigation
+
+CRUD Operations
+
+Create, edit, and delete records through modal forms. Bulk deletion support
+
+Raw SQL Editor
+
+Execute queries with read/write detection and DDL blocking for safety
+
+Schema Export
+
+Export schemas as SQL, JSON, YAML, DBML, or PNG/PDF entity-relationship diagrams
+
+Data Export
+
+Export data as JSON, CSV (ZIP), or SQL INSERT statements
+
+Data Import
+
+Import data from JSON, CSV, SQL, or Excel (.xlsx) files into existing tables
+
+Schema Import
+
+Import schemas from SQL, JSON, YAML, or DBML files to create tables
+
+Go Model Generation
+
+Generate Go model structs with proper GORM tags from your database schema
+
+Enable or disable it in your .env:
+
+.env
+Copy to clipboard
+
+GORM_STUDIO_ENABLED=true
+
+Configuration
+
+GORM Studio is mounted in routes.go with all registered models. When you generate a new resource, the CLI automatically injects the model using the /* grit:studio */ marker.
+
+internal/routes/routes.go
+Copy to clipboard
+
+studio.Mount(router, db, []interface{}{
+
+&models.User{},
+
+&models.Post{},  // auto-injected by grit generate
+
+/* grit:studio */
+
+}, studio.Config{
+
+Prefix:     "/studio",
+
+ReadOnly:   false,        // set true to disable mutations
+
+DisableSQL: false,        // set true to hide SQL editor
+
+})
+
+Security
+
+GORM Studio includes built-in security: table name validation against registered models, parameterized queries, DDL blocking (DROP, ALTER, TRUNCATE, CREATE), CSV formula injection prevention, and SRI hashes for embedded assets.
+
+Access GORM Studio at http://localhost:8080/studio when the API is running. Disable it in production by setting GORM_STUDIO_ENABLED=false.
+
+Docker SetupDeployment

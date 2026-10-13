@@ -1,0 +1,85 @@
+Plugin
+
+Command palette
+
+Press ⌘K, type a few letters, hit Enter — jump to any resource or system page without touching the mouse.
+
+grit plugin add command-palette
+
+Copy to clipboard
+
+This one is unusual: it adds a full feature to the admin and never touches Go. No models, no migrations, no server changes — it is pure client code, mounted through the admin layout's injection markers. It works on the triple and full architectures, the two that ship an admin app.
+
+The problem it solves
+
+Navigating a growing admin by mouse — sidebar, then section, then page — is slow for people who live in it all day. A keyboard palette lets a power user jump anywhere by typing a few letters, the same muscle memory they already have from Linear, VS Code, or Raycast.
+
+The admin already ships a floating QuickAccess button — a grid of cards you click. The command palette is the complementary keyboard path, built from the same registry so the two never drift apart.
+
+How it works
+
+A global keydown listener is registered once when the admin loads. Press ⌘K on macOS or Ctrl+K anywhere to open a centered overlay with a search box; Escape closes it. Until you open it, the component renders nothing.
+
+The list of destinations is assembled from two sources. The first is the resource registry — resources imported from @/resources. Every registered resource contributes two commands:
+
+Go to <Plural>    →  /resources/<slug>
+
+New <Singular>    →  /resources/<slug>?action=create
+
+Copy to clipboard
+
+The second source is the fixed set of system pages: Dashboard, System Hub, Roles & permissions, User Activity, System Health, Data & Backup, and Profile.
+
+Because the palette reads the registry directly, a resource you just created with grit generate resource shows up automatically — there is nothing to wire up.
+
+Fuzzy search and keyboard control
+
+Type to fuzzy-filter against each command's label and hint. Arrow Up and Arrow Down move the highlight, Enter opens the highlighted command, and clicking a row opens it too. Navigation goes through Next.js router.push, so every jump is client-side and instant.
+
+Install
+
+Add the plugin, then start the admin — there is no migration step because there is no database work:
+
+grit plugin add command-palette
+
+cd apps/admin && pnpm dev
+
+Copy to clipboard
+
+The palette is mounted in the dashboard layout via injection markers, so it is available on every admin page the moment the app boots.
+
+Using it
+
+Press Ctrl+K (or ⌘K), start typing a resource or page name, and press Enter to go there:
+
+⌘K            open the palette
+
+roles         filter to "Roles & permissions"
+
+Enter         jump to it
+
+⌘K
+
+new           see every "New <Resource>" create action
+
+↑ / ↓         move the highlight
+
+Enter         open the highlighted command
+
+Copy to clipboard
+
+Use cases
+
+Fast keyboard navigation for people in the admin every day — no reaching for the sidebar.
+
+Jump straight to create — type new and a resource name to land on the create form without clicking through.
+
+Discoverability — a single searchable list of every place the admin can take you.
+
+Muscle memory — the ⌘K reflex you already have from Linear, VS Code, and Raycast, now in your own admin.
+
+A plugin can be pure frontend
+
+Most plugins touch the Go API. This one proves the injection-marker system is general enough for client-only features: the command palette is entirely admin code and still installs, mounts, and stays in sync with your resources like any other plugin.
+
+ImpersonateSaved views

@@ -1,0 +1,286 @@
+Backend
+Workflows
+
+A status column that anything can set to anything is not a status. It is a text field with suggestions. A workflow turns one select field into a process the server enforces, declared in the same place the field is.
+
+What a status field is without one
+
+Generate an order with a status select and the admin shows a dropdown with every value on every record. Any client that can update an order can send this:
+
+PATCH /api/v1/orders/8f2a
+
+{ "status": "delivered" }
+
+Copy to clipboard
+
+On an unpaid order. Nothing stops it. A delivered order can go back to pending, an unpaid one can be marked shipped, and the only thing between your fulfilment process and nonsense is that people mostly click the right option. That is the default behaviour of a status dropdown in every CRUD admin, Grit included, until you declare the process.
+
+Declaring it
+
+A workflow is a block on the select field itself. That needs more structure than a command-line flag, so the resource goes in a YAML file:
+
+order.yaml
+Copy to clipboard
+
+- name: status
+
+type: select
+
+options:
+
+- { value: pending,   label: Pending payment }
+
+- { value: paid,      label: Paid }
+
+- { value: packed,    label: Packed }
+
+- { value: shipped,   label: Shipped }
+
+- { value: delivered, label: Delivered }
+
+- { value: cancelled, label: Cancelled }
+
+workflow:
+
+initial: pending
+
+terminal: [delivered, cancelled]
+
+transitions:
+
+- action: mark_paid
+
+from: [pending]
+
+to: paid
+
+- action: pack
+
+from: [paid]
+
+to: packed
+
+permission: orders.fulfil
+
+- action: ship
+
+from: [packed]
+
+to: shipped
+
+permission: orders.fulfil
+
+- action: deliver
+
+from: [shipped]
+
+to: delivered
+
+- action: cancel
+
+from: [pending, paid, packed]
+
+to: cancelled
+
+confirm: true
+
+grit g resource Order --from order.yaml --force
+
+grit migrate
+
+Copy to clipboard
+
+The shape of it
+
+pending
+
+initial
+
+paid
+
+mark_paid
+
+packed
+
+pack · orders.fulfil
+
+ship · orders.fulfil
+
+shipped
+
+deliver
+
+delivered
+
+terminal
+
+cancelled
+
+terminal · from pending, paid, packed
+
+Three decisions worth understanding
+
+States come from the field's own options
+
+They are not listed twice. If they were, the dropdown and the state machine would drift, and you would get a transition to a state the UI never offers, or an option nothing can reach.
+
+It is a directed graph, not a ladder
+
+This is the one people get wrong. paid back to pending is illegal only because you did not declare it. Add a transition and it becomes legal:
+
+- action: reopen
+
+from: [paid]
+
+to: pending
+
+Copy to clipboard
+
+Only three things are actually enforced:
+
+Nothing leaves a terminal state. Whatever you list under terminal is an end.
+
+An empty from means from anywhere. Useful for something like archive that applies whatever the current state is.
+
+Generation refuses a dead end. A non-terminal state with no way out is rejected when you generate, rather than discovered in production when an order lands in it and nobody can move it.
+
+Permission sits on the transition, not the resource
+
+pack and ship require orders.fulfil. deliver does not. Warehouse staff advance fulfilment without being able to refund, which is not expressible if permission is a property of the whole resource.
+
+What it generates
+
+Four things, none of which you write.
+
+1. A guarded service method
+
+The check runs in the service, so a warehouse account calling ship without the permission gets a 403 from the server. Not a hidden button: hiding a button is a UI preference, and the request still works if somebody sends it by hand.
+
+2. Per-action endpoints, and no general status write
+
+POST /api/v1/orders/:id/transitions/mark_paid
+
+POST /api/v1/orders/:id/transitions/pack
+
+POST /api/v1/orders/:id/transitions/cancel
+
+GET  /api/v1/orders/workflow      the definition, for a client that draws it
+
+Copy to clipboard
+
+This is the core of the whole feature. There is no endpoint that sets status to an arbitrary value, so an illegal jump is not rejected. It is unrepresentable.
+
+An action that exists but is not legal from here returns a 422 saying what state the record is in and which actions are available from it, so a client can show the next step without a second request.
+
+GET /workflow returns the definition itself, which is what lets a client draw only the legal transitions as buttons instead of a dropdown of everything.
+
+3. A domain event per transition
+
+Each transition emits <resource>.<action>, so orders.mark_paid, on the shared bus. Audit, webhooks and realtime are already subscribers, and so is anything you add:
+
+events.On("orders.mark_paid", events.Async, "send-confirmation", sendOrderConfirmation)
+
+Copy to clipboard
+
+The transition is its own event rather than a generic update, because a subscriber that cares about orders being paid should not have to diff two versions of a record to work out that is what happened. It is also how a confirmation email gets sent without a line of email code in the checkout handler.
+
+4. confirm: true in the admin
+
+Marks the action as needing a confirmation step, because cancel is not undoable and a misclick on a table row is easy.
+
+The trap those events create
+
+Read this before adding a back-edge. Say your orders.mark_paid subscriber sends the customer confirmation email, and you add a reopen transition from paid to pending because a payment sometimes needs redoing.
+
+Now paid → pending → paid sends that email twice. The state machine is behaving exactly as declared. The mistake is reversing into a state whose entry has a side effect.
+
+Use a compensating state instead. A refunded or payment_failed state, with its own transitions and its own event, says what actually happened rather than pretending the order went back in time.
+
+Doing the rest of the work: transition hooks
+
+A transition in a real process is rarely only a status change. Approving a purchase request draws down the department's budget and reserves the stock, and if either cannot happen the approval should not happen either. A subscriber is too late for that: by the time it runs the approval has committed, and it cannot refuse it.
+
+A hook runs inside the transition's own transaction, after the status has changed and before anything commits. What it writes through tx commits or rolls back with the move. Return workflow.Refuse(...) and the caller gets a 422 with your message; any other error is a 500. Either way the move is undone.
+
+internal/services/procurement.go
+Copy to clipboard
+
+func init() {
+
+workflow.OnTransition("purchase_requests", "approve", drawDownBudget)
+
+workflow.OnTransition("purchase_requests", "approve", reserveStock)
+
+}
+
+func drawDownBudget(tx *gorm.DB, m workflow.Move) error {
+
+pr := m.Record.(*models.PurchaseRequest)
+
+res := tx.Model(&models.Budget{}).
+
+Where("department = ? AND remaining >= ?", pr.Department, pr.Total).
+
+Update("remaining", gorm.Expr("remaining - ?", pr.Total))
+
+if res.Error != nil {
+
+return res.Error
+
+}
+
+if res.RowsAffected == 0 {
+
+return workflow.Refuse("the %s budget cannot cover %d", pr.Department, pr.Total)
+
+}
+
+return nil
+
+}
+
+If reserveStock then refuses, the budget draw-down rolls back with the approval. Two approvals of one request never both run their hooks: the status update is conditional on the state it read, so the second affects no rows and stops before them. Measured on Postgres: ten simultaneous approvals of 100 against a budget of 600 approved six, refused four, and left the budget at exactly zero; twenty simultaneous approvals of one request drew it down once.
+
+Subscribers that must not miss an event
+
+Sync and Async subscribers live in the process. An Async event still queued is gone if the process stops, dropped if the queue is full, and not retried if the subscriber fails. That is right for a realtime push and wrong for "record this spend in the HR ledger". For those, subscribe Durable:
+
+func init() {
+
+events.OnDurable("purchase_requests.fulfill", "record-spend", recordSpend)
+
+}
+
+func recordSpend(tx *gorm.DB, e events.Event) error {
+
+var pr models.PurchaseRequest
+
+if err := e.DecodeAfter(&pr); err != nil {
+
+return err
+
+}
+
+// At least once: skip it if this request is already in the ledger.
+
+...
+
+}
+
+Copy to clipboard
+
+The event is written to outbox_messages in the transition's transaction, so it reaches the subscriber if and only if the move commits.
+
+A relay started in routes.go delivers it, retrying with backoff until the subscriber returns nil and parking it as failed after twelve attempts. A delivery survives a restart, and another replica takes it over if this one dies holding it.
+
+OnDurable runs the subscriber in its own transaction, so a failed attempt leaves nothing half written. Delivery is at least once, so make it idempotent.
+
+Events from generated create, update and delete handlers reach Durable subscribers too, written straight after their commit.
+
+events.On and OnDurable can be called from an init() function. Before v3.221.0 a subscription made before the bus started was silently dropped.
+
+What is not built yet
+
+The admin does not render workflow state as a badge with the legal transitions as buttons. Today you get the generated dropdown plus the transition endpoints, and a custom cell is how to draw it properly. The definition endpoint exists so that component can be written without hardcoding the graph.
+
+RBAC & RolesProduct Variants

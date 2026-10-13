@@ -1,0 +1,1151 @@
+Tutorial
+Build a Project Management SaaS
+
+Build a complete project management tool with projects, tasks, comments, status workflows, email notifications, role-based access, and a dashboard with live task stats. This tutorial covers relationships, background jobs, the mailer, middleware customization, and admin panel badges.
+
+RelationshipsLive dashboard
+A tasks SaaS built on relationships, background jobs, the mailer, and live dashboard stats
+
+Prerequisites
+
+✓Go 1.26.6+ installed (an older Go downloads it)
+
+✓Node.js 18+ and pnpm installed
+
+✓Docker and Docker Compose installed
+
+✓Grit CLI installed — see /docs/getting-started/installation (one-line install script)
+
+1
+
+Create the project
+
+Scaffold a new Grit project called taskflow. This generates the complete monorepo with Go API, Next.js web app, admin panel, shared packages, and Docker configuration.
+
+Terminal
+Copy to clipboard
+
+$grit new taskflow
+
+$cd taskflow
+
+2
+
+Start Docker services
+
+Launch PostgreSQL, Redis, MinIO, and Mailhog. Redis is especially important for this project because we will use it for the background job queue that sends email notifications.
+
+Terminal
+Copy to clipboard
+
+$docker compose up -d
+
+3
+
+Generate the Project resource
+
+Every task belongs to a project. Generate a Project resource with name, description, and status fields.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Project --fields "name:string,description:text,status:string"
+
+apps/api/internal/models/project.go
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"gorm.io/gorm"
+
+)
+
+type Project struct {
+
+ID          uint           `gorm:"primarykey" json:"id"`
+
+Name        string         `gorm:"size:255;not null" json:"name" binding:"required"`
+
+Description string         `gorm:"type:text" json:"description"`
+
+Status      string         `gorm:"size:50;default:active" json:"status"`
+
+CreatedAt   time.Time      `json:"created_at"`
+
+UpdatedAt   time.Time      `json:"updated_at"`
+
+DeletedAt   gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+
+}
+
+4
+
+Generate the Task resource
+
+Tasks are the core of the application. Generate a Task resource with title, description, status, priority, and a due date.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Task --fields "title:string,description:text,status:string,priority:string,dueDate:date"
+
+apps/api/internal/models/task.go
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"gorm.io/gorm"
+
+)
+
+type Task struct {
+
+ID          uint           `gorm:"primarykey" json:"id"`
+
+Title       string         `gorm:"size:255;not null" json:"title" binding:"required"`
+
+Description string         `gorm:"type:text" json:"description"`
+
+Status      string         `gorm:"size:50;default:todo" json:"status"`
+
+Priority    string         `gorm:"size:50;default:medium" json:"priority"`
+
+DueDate     *time.Time     `json:"due_date"`
+
+CreatedAt   time.Time      `json:"created_at"`
+
+UpdatedAt   time.Time      `json:"updated_at"`
+
+DeletedAt   gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+
+}
+
+5
+
+Generate the Comment resource
+
+Team members need to discuss tasks. Generate a Comment resource with a content field. We will wire up relationships to Task and User in the next step.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Comment --fields "content:text"
+
+6
+
+Set up relationships
+
+Now wire the models together. A Task belongs to a Project and is assigned to a User. A Comment belongs to a Task and is authored by a User. A Project has many Tasks.
+
+apps/api/internal/models/task.go
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"gorm.io/gorm"
+
+)
+
+type Task struct {
+
+ID          uint           `gorm:"primarykey" json:"id"`
+
+Title       string         `gorm:"size:255;not null" json:"title" binding:"required"`
+
+Description string         `gorm:"type:text" json:"description"`
+
+Status      string         `gorm:"size:50;default:todo" json:"status"`
+
+Priority    string         `gorm:"size:50;default:medium" json:"priority"`
+
+DueDate     *time.Time     `json:"due_date"`
+
+// Belongs to Project
+
+ProjectID   uint           `gorm:"index;not null" json:"project_id" binding:"required"`
+
+Project     Project        `gorm:"foreignKey:ProjectID" json:"project,omitempty"`
+
+// Assigned to User
+
+AssigneeID  *uint          `gorm:"index" json:"assignee_id"`
+
+Assignee    *User          `gorm:"foreignKey:AssigneeID" json:"assignee,omitempty"`
+
+// Has many comments
+
+Comments    []Comment      `gorm:"foreignKey:TaskID" json:"comments,omitempty"`
+
+CreatedAt   time.Time      `json:"created_at"`
+
+UpdatedAt   time.Time      `json:"updated_at"`
+
+DeletedAt   gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+
+}
+
+apps/api/internal/models/comment.go
+Copy to clipboard
+
+package models
+
+import (
+
+"time"
+
+"gorm.io/gorm"
+
+)
+
+type Comment struct {
+
+ID        uint           `gorm:"primarykey" json:"id"`
+
+Content   string         `gorm:"type:text;not null" json:"content" binding:"required"`
+
+// Belongs to Task
+
+TaskID    uint           `gorm:"index;not null" json:"task_id" binding:"required"`
+
+Task      Task           `gorm:"foreignKey:TaskID" json:"task,omitempty"`
+
+// Authored by User
+
+UserID    uint           `gorm:"index;not null" json:"user_id"`
+
+User      User           `gorm:"foreignKey:UserID" json:"user,omitempty"`
+
+CreatedAt time.Time      `json:"created_at"`
+
+UpdatedAt time.Time      `json:"updated_at"`
+
+DeletedAt gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+
+}
+
+apps/api/internal/models/project.go — add Tasks relation
+Copy to clipboard
+
+type Project struct {
+
+ID          uint           `gorm:"primarykey" json:"id"`
+
+Name        string         `gorm:"size:255;not null" json:"name" binding:"required"`
+
+Description string         `gorm:"type:text" json:"description"`
+
+Status      string         `gorm:"size:50;default:active" json:"status"`
+
+Tasks       []Task         `gorm:"foreignKey:ProjectID" json:"tasks,omitempty"`
+
+CreatedAt   time.Time      `json:"created_at"`
+
+UpdatedAt   time.Time      `json:"updated_at"`
+
+DeletedAt   gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+
+}
+
+Run grit sync to regenerate the TypeScript types with the new relationships.
+
+7
+
+Add a status workflow
+
+Tasks follow a workflow: Todo → In Progress → Review → Done. Define status constants and add a validation method that enforces valid transitions.
+
+apps/api/internal/models/task.go — add status constants and validation
+Copy to clipboard
+
+// Task status constants
+
+const (
+
+TaskStatusTodo       = "todo"
+
+TaskStatusInProgress = "in_progress"
+
+TaskStatusReview     = "review"
+
+TaskStatusDone       = "done"
+
+)
+
+// Task priority constants
+
+const (
+
+TaskPriorityLow    = "low"
+
+TaskPriorityMedium = "medium"
+
+TaskPriorityHigh   = "high"
+
+TaskPriorityUrgent = "urgent"
+
+)
+
+// ValidStatuses returns all valid task statuses.
+
+var ValidStatuses = []string{
+
+TaskStatusTodo,
+
+TaskStatusInProgress,
+
+TaskStatusReview,
+
+TaskStatusDone,
+
+}
+
+// ValidTransitions defines which status transitions are allowed.
+
+var ValidTransitions = map[string][]string{
+
+TaskStatusTodo:       {TaskStatusInProgress},
+
+TaskStatusInProgress: {TaskStatusReview, TaskStatusTodo},
+
+TaskStatusReview:     {TaskStatusDone, TaskStatusInProgress},
+
+TaskStatusDone:       {TaskStatusTodo}, // reopen
+
+}
+
+// CanTransitionTo checks whether the task can move to the given status.
+
+func (t *Task) CanTransitionTo(newStatus string) bool {
+
+allowed, ok := ValidTransitions[t.Status]
+
+if !ok {
+
+return false
+
+}
+
+for _, s := range allowed {
+
+if s == newStatus {
+
+return true
+
+}
+
+}
+
+return false
+
+}
+
+Now enforce the workflow in the Task service's update method:
+
+apps/api/internal/services/task.go — Update method
+Copy to clipboard
+
+func (s *TaskService) Update(id uint, input map[string]interface{}) (*models.Task, error) {
+
+task, err := s.GetByID(id)
+
+if err != nil {
+
+return nil, fmt.Errorf("task not found: %w", err)
+
+}
+
+// Validate status transition if status is being changed
+
+if newStatus, ok := input["status"].(string); ok && newStatus != task.Status {
+
+if !task.CanTransitionTo(newStatus) {
+
+return nil, fmt.Errorf(
+
+"invalid status transition: cannot move from %q to %q",
+
+task.Status, newStatus,
+
+)
+
+}
+
+}
+
+result := s.db.Model(task).Updates(input)
+
+if result.Error != nil {
+
+return nil, fmt.Errorf("failed to update task: %w", result.Error)
+
+}
+
+// Reload with relationships
+
+return s.GetByID(id)
+
+}
+
+8
+
+Create a project dashboard widget
+
+Add a custom API endpoint that returns task statistics per project, then display it as a dashboard widget in the admin panel.
+
+apps/api/internal/handlers/project.go — add stats endpoint
+Copy to clipboard
+
+// GetStats returns task statistics grouped by status.
+
+func (h *ProjectHandler) GetStats(c *gin.Context) {
+
+type StatusCount struct {
+
+Status string `json:"status"`
+
+Count  int64  `json:"count"`
+
+}
+
+var stats []StatusCount
+
+result := h.db.Model(&models.Task{}).
+
+Select("status, COUNT(*) as count").
+
+Group("status").
+
+Find(&stats)
+
+if result.Error != nil {
+
+c.JSON(http.StatusInternalServerError, gin.H{
+
+"error": gin.H{
+
+"code":    "INTERNAL_ERROR",
+
+"message": "Failed to fetch task stats",
+
+},
+
+})
+
+return
+
+}
+
+// Also get total counts
+
+var totalTasks int64
+
+var totalProjects int64
+
+var overdueTasks int64
+
+h.db.Model(&models.Task{}).Count(&totalTasks)
+
+h.db.Model(&models.Project{}).Count(&totalProjects)
+
+h.db.Model(&models.Task{}).
+
+Where("due_date < ? AND status != ?", time.Now(), models.TaskStatusDone).
+
+Count(&overdueTasks)
+
+c.JSON(http.StatusOK, gin.H{
+
+"data": gin.H{
+
+"total_tasks":    totalTasks,
+
+"total_projects": totalProjects,
+
+"overdue_tasks":  overdueTasks,
+
+"by_status":      stats,
+
+},
+
+})
+
+}
+
+Register the route:
+
+apps/api/internal/routes/routes.go
+Copy to clipboard
+
+// Inside the authenticated group
+
+projects.GET("/stats", projectHandler.GetStats)
+
+Now create a React component that fetches and displays these stats on the admin dashboard:
+
+apps/admin/components/widgets/project-stats.tsx
+Copy to clipboard
+
+'use client'
+
+import { useQuery } from '@tanstack/react-query'
+
+import { apiClient } from '@/lib/api-client'
+
+import { FolderKanban, CheckCircle2, AlertTriangle, ListTodo } from 'lucide-react'
+
+interface ProjectStats {
+
+total_tasks: number
+
+total_projects: number
+
+overdue_tasks: number
+
+by_status: { status: string; count: number }[]
+
+}
+
+export function ProjectStatsWidget() {
+
+const { data } = useQuery<{ data: ProjectStats }>({
+
+queryKey: ['project-stats'],
+
+queryFn: async () => {
+
+const { data } = await apiClient.get('/api/projects/stats')
+
+return data
+
+},
+
+refetchInterval: 30000, // refresh every 30 seconds
+
+})
+
+const stats = data?.data
+
+const cards = [
+
+{
+
+label: 'Total Projects',
+
+value: stats?.total_projects ?? 0,
+
+icon: FolderKanban,
+
+color: 'text-primary',
+
+},
+
+{
+
+label: 'Total Tasks',
+
+value: stats?.total_tasks ?? 0,
+
+icon: ListTodo,
+
+color: 'text-blue-400',
+
+},
+
+{
+
+label: 'Completed',
+
+value: stats?.by_status.find((s) => s.status === 'done')?.count ?? 0,
+
+icon: CheckCircle2,
+
+color: 'text-emerald-400',
+
+},
+
+{
+
+label: 'Overdue',
+
+value: stats?.overdue_tasks ?? 0,
+
+icon: AlertTriangle,
+
+color: 'text-red-400',
+
+},
+
+]
+
+return (
+
+<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+
+{cards.map((card) => (
+
+<div
+
+key={card.label}
+
+className="rounded-xl border border-border/40 bg-card/50 p-5"
+
+>
+
+<div className="flex items-center justify-between mb-3">
+
+<span className="text-xs font-medium text-muted-foreground/60 uppercase tracking-wider">
+
+{card.label}
+
+</span>
+
+<card.icon className={`h-4 w-4 ${card.color}`} />
+
+</div>
+
+<p className="text-2xl font-bold tracking-tight">{card.value}</p>
+
+</div>
+
+))}
+
+</div>
+
+)
+
+}
+
+9
+
+Add email notifications when tasks are assigned
+
+When a task is assigned to a user, send them an email notification. This uses Grit's background job queue (Redis + asynq) so the API response is not blocked by email sending.
+
+First, define the job type and its payload:
+
+apps/api/internal/jobs/task_assigned.go
+Copy to clipboard
+
+package jobs
+
+import (
+
+"context"
+
+"encoding/json"
+
+"fmt"
+
+"github.com/hibiken/asynq"
+
+"taskflow/apps/api/internal/mail"
+
+)
+
+const TypeTaskAssigned = "task:assigned"
+
+type TaskAssignedPayload struct {
+
+TaskTitle     string `json:"task_title"`
+
+ProjectName   string `json:"project_name"`
+
+AssigneeEmail string `json:"assignee_email"`
+
+AssigneeName  string `json:"assignee_name"`
+
+}
+
+// EnqueueTaskAssigned creates a new task assignment notification job.
+
+func (c *Client) EnqueueTaskAssigned(payload TaskAssignedPayload) error {
+
+data, err := json.Marshal(payload)
+
+if err != nil {
+
+return fmt.Errorf("failed to marshal payload: %w", err)
+
+}
+
+task := asynq.NewTask(TypeTaskAssigned, data)
+
+_, err = c.client.Enqueue(task, asynq.MaxRetry(3))
+
+return err
+
+}
+
+// HandleTaskAssigned processes the task assignment email.
+
+func HandleTaskAssigned(mailer *mail.Mailer) asynq.HandlerFunc {
+
+return func(ctx context.Context, t *asynq.Task) error {
+
+var payload TaskAssignedPayload
+
+if err := json.Unmarshal(t.Payload(), &payload); err != nil {
+
+return fmt.Errorf("failed to unmarshal payload: %w", err)
+
+}
+
+return mailer.Send(ctx, mail.SendOptions{
+
+To:       payload.AssigneeEmail,
+
+Subject:  fmt.Sprintf("You've been assigned: %s", payload.TaskTitle),
+
+Template: "task-assigned",
+
+Data: map[string]string{
+
+"Name":    payload.AssigneeName,
+
+"Task":    payload.TaskTitle,
+
+"Project": payload.ProjectName,
+
+},
+
+})
+
+}
+
+}
+
+Now dispatch the job from the Task service whenever a task is assigned:
+
+apps/api/internal/services/task.go — add to Update method
+Copy to clipboard
+
+// After the task is updated, check if assignee changed
+
+if newAssigneeID, ok := input["assignee_id"]; ok && newAssigneeID != nil {
+
+// Reload the updated task with relationships
+
+updated, _ := s.GetByID(id)
+
+if updated.Assignee != nil {
+
+err := s.jobClient.EnqueueTaskAssigned(jobs.TaskAssignedPayload{
+
+TaskTitle:     updated.Title,
+
+ProjectName:   updated.Project.Name,
+
+AssigneeEmail: updated.Assignee.Email,
+
+AssigneeName:  updated.Assignee.Name,
+
+})
+
+if err != nil {
+
+// Log the error but don't fail the update
+
+log.Printf("failed to enqueue task assignment email: %v", err)
+
+}
+
+}
+
+}
+
+Create the email template:
+
+apps/api/internal/mail/templates/task-assigned.html
+Copy to clipboard
+
+<!DOCTYPE html>
+
+<html>
+
+<head><meta charset="utf-8"></head>
+
+<body style="font-family: 'Onest', sans-serif; background: #0a0a0f; color: #e8e8f0; padding: 40px;">
+
+<div style="max-width: 500px; margin: 0 auto; background: #111118; border-radius: 12px; padding: 32px; border: 1px solid #2a2a3a;">
+
+<h2 style="color: #6c5ce7; margin-top: 0;">New Task Assigned</h2>
+
+<p>Hi {{.Name}},</p>
+
+<p>You have been assigned a new task:</p>
+
+<div style="background: #1a1a24; border-radius: 8px; padding: 16px; margin: 16px 0; border: 1px solid #2a2a3a;">
+
+<p style="margin: 0; font-weight: 600;">{{.Task}}</p>
+
+<p style="margin: 4px 0 0; color: #9090a8; font-size: 14px;">Project: {{.Project}}</p>
+
+</div>
+
+<p style="color: #9090a8; font-size: 14px;">Log in to Taskflow to view the details and get started.</p>
+
+</div>
+
+</body>
+
+</html>
+
+10
+
+Customize the admin panel with badges and colors
+
+Update the Task resource definition to show status badges with workflow colors, priority badges, assignee names, and project names. Add filters for status, priority, and project.
+
+apps/admin/resources/tasks.ts
+Copy to clipboard
+
+import { defineResource } from '@grit/admin'
+
+export default defineResource({
+
+name: 'Task',
+
+endpoint: '/api/tasks',
+
+icon: 'CheckSquare',
+
+table: {
+
+columns: [
+
+{ key: 'id', label: 'ID', sortable: true },
+
+{ key: 'title', label: 'Title', sortable: true, searchable: true },
+
+{ key: 'project.name', label: 'Project', relation: 'project' },
+
+{ key: 'assignee.name', label: 'Assignee', relation: 'assignee' },
+
+{ key: 'status', label: 'Status', sortable: true, badge: {
+
+todo:        { color: 'slate', label: 'Todo' },
+
+in_progress: { color: 'blue', label: 'In Progress' },
+
+review:      { color: 'yellow', label: 'Review' },
+
+done:        { color: 'green', label: 'Done' },
+
+}},
+
+{ key: 'priority', label: 'Priority', badge: {
+
+low:    { color: 'slate', label: 'Low' },
+
+medium: { color: 'blue', label: 'Medium' },
+
+high:   { color: 'orange', label: 'High' },
+
+urgent: { color: 'red', label: 'Urgent' },
+
+}},
+
+{ key: 'due_date', label: 'Due Date', format: 'date' },
+
+{ key: 'created_at', label: 'Created', format: 'relative' },
+
+],
+
+filters: [
+
+{ key: 'status', type: 'select', options: [
+
+{ label: 'Todo', value: 'todo' },
+
+{ label: 'In Progress', value: 'in_progress' },
+
+{ label: 'Review', value: 'review' },
+
+{ label: 'Done', value: 'done' },
+
+]},
+
+{ key: 'priority', type: 'select', options: [
+
+{ label: 'Low', value: 'low' },
+
+{ label: 'Medium', value: 'medium' },
+
+{ label: 'High', value: 'high' },
+
+{ label: 'Urgent', value: 'urgent' },
+
+]},
+
+{ key: 'project_id', type: 'select', resource: 'projects',
+
+displayKey: 'name', label: 'Project' },
+
+{ key: 'due_date', type: 'date-range' },
+
+],
+
+actions: ['create', 'edit', 'delete'],
+
+bulkActions: ['delete'],
+
+},
+
+form: {
+
+fields: [
+
+{ key: 'title', label: 'Title', type: 'text', required: true },
+
+{ key: 'description', label: 'Description', type: 'textarea' },
+
+{ key: 'project_id', label: 'Project', type: 'relation',
+
+resource: 'projects', displayKey: 'name', required: true },
+
+{ key: 'assignee_id', label: 'Assignee', type: 'relation',
+
+resource: 'users', displayKey: 'name' },
+
+{ key: 'status', label: 'Status', type: 'select',
+
+options: ['todo', 'in_progress', 'review', 'done'], default: 'todo' },
+
+{ key: 'priority', label: 'Priority', type: 'select',
+
+options: ['low', 'medium', 'high', 'urgent'], default: 'medium' },
+
+{ key: 'due_date', label: 'Due Date', type: 'date' },
+
+],
+
+},
+
+})
+
+11
+
+Role-based access control
+
+Admins should see all tasks across all projects. Regular users should only see tasks assigned to them or tasks in projects they own. Add a middleware-based scope and apply it in the task handler.
+
+apps/api/internal/services/task.go — scoped query
+Copy to clipboard
+
+// GetAllScoped returns tasks scoped to the current user's role.
+
+func (s *TaskService) GetAllScoped(
+
+userID uint, role string,
+
+page, pageSize int, sort, order, search string,
+
+) ([]models.Task, int64, error) {
+
+var tasks []models.Task
+
+var total int64
+
+query := s.db.Model(&models.Task{})
+
+// Non-admin users only see their own tasks
+
+if role != "admin" {
+
+query = query.Where("assignee_id = ?", userID)
+
+}
+
+// Search
+
+if search != "" {
+
+query = query.Where("title ILIKE ?", "%"+search+"%")
+
+}
+
+query.Count(&total)
+
+// Sorting
+
+if sort != "" {
+
+direction := "ASC"
+
+if order == "desc" {
+
+direction = "DESC"
+
+}
+
+query = query.Order(sort + " " + direction)
+
+} else {
+
+query = query.Order("created_at DESC")
+
+}
+
+// Preload relationships
+
+query = query.Preload("Project").Preload("Assignee")
+
+// Pagination
+
+offset := (page - 1) * pageSize
+
+result := query.Offset(offset).Limit(pageSize).Find(&tasks)
+
+return tasks, total, result.Error
+
+}
+
+Use the scoped query in the handler by extracting the current user from the Gin context (set by the auth middleware):
+
+apps/api/internal/handlers/task.go — GetAll handler
+Copy to clipboard
+
+func (h *TaskHandler) GetAll(c *gin.Context) {
+
+// Extract the authenticated user from context
+
+user, _ := c.Get("user")
+
+currentUser := user.(*models.User)
+
+page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+
+pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+
+sort := c.DefaultQuery("sort", "")
+
+order := c.DefaultQuery("order", "")
+
+search := c.DefaultQuery("search", "")
+
+tasks, total, err := h.service.GetAllScoped(
+
+currentUser.ID, currentUser.Role,
+
+page, pageSize, sort, order, search,
+
+)
+
+if err != nil {
+
+c.JSON(http.StatusInternalServerError, gin.H{
+
+"error": gin.H{"code": "INTERNAL_ERROR", "message": err.Error()},
+
+})
+
+return
+
+}
+
+pages := int(total) / pageSize
+
+if int(total)%pageSize != 0 {
+
+pages++
+
+}
+
+c.JSON(http.StatusOK, gin.H{
+
+"data": tasks,
+
+"meta": gin.H{
+
+"total": total, "page": page,
+
+"page_size": pageSize, "pages": pages,
+
+},
+
+})
+
+}
+
+12
+
+Run and test everything
+
+Start all services and verify the complete workflow.
+
+Terminal
+Copy to clipboard
+
+$grit start
+
+Test the workflow:
+
+Open the admin panel at http://localhost:3001 and register an admin user.
+
+Create a project called "Website Redesign" with status "active".
+
+Create a task titled "Design homepage", assign it to your user, set priority to "high".
+
+Check Mailhog at http://localhost:8025 — you should see the assignment notification email.
+
+Update the task status from "todo" to "in_progress" — it should succeed.
+
+Try changing it directly to "done" — the API should reject the invalid transition.
+
+Add a comment on the task to test the commenting system.
+
+Check the dashboard stats widget — it should show 1 project, 1 task, and the correct status breakdown.
+
+Browse the database in GORM Studio at http://localhost:8080/studio.
+
+What you've built
+
+✓A project management SaaS with Projects, Tasks, and Comments
+
+✓Three-level relationships: Project → Task → Comment, Task → User (assignee)
+
+✓A status workflow with enforced transitions (Todo → In Progress → Review → Done)
+
+✓Background job queue that sends email notifications on task assignment
+
+✓HTML email templates styled to match the Grit dark theme
+
+✓An admin dashboard with live task statistics (total, completed, overdue)
+
+✓Admin panel with status and priority badges in color-coded columns
+
+✓Role-based access: admins see all tasks, users see only their own
+
+✓Server-side pagination, sorting, and filtering across all resources
+
+✓Docker-based infrastructure with PostgreSQL, Redis, MinIO, and Mailhog
+
+Next steps
+
+You now have a solid project management foundation. Here are ideas to extend it:
+
+Kanban board — use the Grit Pro tier's kanban widget to display tasks in a drag-and-drop board view.
+
+Activity timeline — log every status change and assignment as an "Activity" model and display it on the task detail page.
+
+File attachments — use the Grit storage service to attach files to tasks and comments.
+
+Recurring tasks — use the cron scheduler to auto-create tasks on a schedule.
+
+WebSocket updates — push real-time task status changes to all connected team members.
+
+Time tracking — add a TimeEntry resource linked to tasks to log hours worked.
+
+Build a BlogBuild an E-Commerce Store

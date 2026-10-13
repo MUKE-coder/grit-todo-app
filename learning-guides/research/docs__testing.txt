@@ -1,0 +1,417 @@
+Testing
+Performance & Security Testing
+
+How to run load tests with k6 and a methodology-driven penetration test against a Grit app. Both produce evidence — a before/after latency graph, a list of closed vulnerabilities — that's exactly what serious clients pay a premium for.
+
+PerformanceSecurity
+Load and security tests both produce hard evidence — the deliverables clients pay a premium for
+
+Go deeper: the Testing Your Grit App course walks through Go, Vitest and Playwright suites end to end.
+
+Performance testing with k6
+
+Every fresh Grit project ships a complete k6 suite in tests/k6/ covering the six load-test types: smoke, average-load, stress, spike, soak, breakpoint. They share a single user journey via tests/k6/lib/common.js — edit the journey once, reshape the load profile per test.
+
+Install k6
+
+# macOS
+
+brew install k6
+
+# Linux (Debian/Ubuntu)
+
+sudo gpg -k && sudo gpg --no-default-keyring \
+
+--keyring /usr/share/keyrings/k6-archive-keyring.gpg \
+
+--keyserver hkp://keyserver.ubuntu.com:80 \
+
+--recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+
+echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" \
+
+| sudo tee /etc/apt/sources.list.d/k6.list
+
+sudo apt-get update && sudo apt-get install k6
+
+# Windows
+
+winget install k6
+
+Copy to clipboard
+
+The six test types — when to run each
+
+TypeQuestion it answersWhen
+
+smoke.jsScript + system handle minimal load?Every PR (CI gate)
+
+average-load.jsNormal expected traffic behaviour?Every PR (CI gate)
+
+stress.jsFailure mode at the limit?Before launch
+
+spike.jsSurvive a sudden surge + recover?Before launch
+
+soak.jsMemory leaks / resource creep over hours?Before major releases
+
+breakpoint.jsExact capacity — VU count at failure?Capacity planning
+
+Run a test
+
+# 1. Start the API (in another terminal)
+
+grit start server
+
+# 2. Run any test
+
+export BASE_URL=http://localhost:8080
+
+k6 run tests/k6/smoke.js              # 30s — does it work?
+
+k6 run tests/k6/average-load.js       # 9m — baseline at 100 VUs
+
+k6 run tests/k6/stress.js             # 9m — 4× load
+
+k6 run tests/k6/spike.js              # 4m — 50 → 1000 → 50
+
+k6 run tests/k6/breakpoint.js         # 1h — slow ramp to 5000
+
+k6 run tests/k6/soak.js               # 4h — overnight
+
+Copy to clipboard
+
+Wire smoke + average-load into CI
+
+k6 exits non-zero when a threshold breaches — that's how it gates the pipeline. Add a job to your workflow:
+
+.github/workflows/perf.yml
+Copy to clipboard
+
+name: perf
+
+on: [pull_request]
+
+jobs:
+
+k6:
+
+runs-on: ubuntu-latest
+
+steps:
+
+- uses: actions/checkout@v4
+
+- name: Build and start API
+
+run: |
+
+go build -o /tmp/server .
+
+/tmp/server &
+
+sleep 5
+
+- uses: grafana/setup-k6-action@v1
+
+- name: Smoke + average-load
+
+env:
+
+BASE_URL: http://localhost:8080
+
+run: |
+
+k6 run tests/k6/smoke.js
+
+k6 run tests/k6/average-load.js
+
+Reading the result
+
+Open /pulse/ui/ in another tab during the run — Pulse shows you live request traces and DB query timings so you can see the bottleneck appear in real time. Look for:
+
+Smoke: must always pass. Failure = the script is broken, not the system.
+
+Average-load: p95 ≤ 500 ms and error-rate ≤ 1% is the default SLO. Loosen / tighten in lib/common.js.
+
+Stress: graceful degradation (latency climbs, errors stay low) vs collapse (error spike). The former is fine; the latter needs work.
+
+Spike: the recovery curve is the answer. p95 must return to baseline within ~1 min after the surge.
+
+Soak: a slowly tilting latency line over 4h = memory leak or unclosed connections. Check Pulse's runtime metrics for steady memory growth.
+
+Breakpoint: the VU count at which thresholds first breach is your real capacity. Plan launches at 50% of this.
+
+Security testing — the pentest methodology
+
+Only test what you're authorised to test.Techniques are identical for attack and defence — the line between "security professional" and "criminal" is the signed scope. Practise on your own apps, OWASP Juice Shop, PortSwigger labs, HackTheBox. Anything else is a crime in most countries, regardless of intent.
+
+The five-phase methodology
+
+Follow these in order, every time. The methodology (not the tools) is what makes a pentest thorough and repeatable.
+
+Scope & authorisation — signed scope + rules of engagement before anything technical.
+
+Recon & mapping — passive (OSINT, Shodan) + active (Nmap, Burp + ffuf).
+
+Vulnerability discovery — automated scan + manual testing of logic & access control.
+
+Exploitation — prove impact with the minimum necessary; chain low-sev findings into bigger ones.
+
+Reporting & remediation — CVSS-scored report with reproduction steps + fixes.
+
+The toolkit
+
+ToolFor
+
+Burp Suite (Community)Intercepting proxy — see / replay / modify every request. The center of any web pentest.
+
+NmapPort + service scanning — what's exposed.
+
+ffuf / GobusterContent discovery — brute-force hidden directories & endpoints.
+
+sqlmapAutomate SQL-injection detection + exploitation safely.
+
+NucleiTemplate-based vuln scanning against a huge community library.
+
+govulncheck + pnpm auditSupply chain — already wired into .github/workflows/security.yml.
+
+Running a pentest against a Grit app — what to test
+
+Map each OWASP Top 10:2025 category to a concrete test against the generated API. Cross-reference defences on the Security Guide page.
+
+Broken Access Control / IDOR (A01)
+
+# Login as user A
+
+TOKEN_A=$(curl -s -X POST http://localhost:8080/api/auth/login \
+
+-H 'Content-Type: application/json' \
+
+-d '{"email":"a@example.com","password":"password"}' | jq -r '.data.tokens.access_token')
+
+# Create an invoice
+
+INV_ID=$(curl -s -X POST http://localhost:8080/api/invoices \
+
+-H "Authorization: Bearer $TOKEN_A" \
+
+-d '{"amount":100}' | jq -r '.data.id')
+
+# Now login as user B and try to read user A's invoice
+
+TOKEN_B=$(curl -s -X POST http://localhost:8080/api/auth/login \
+
+-H 'Content-Type: application/json' \
+
+-d '{"email":"b@example.com","password":"password"}' | jq -r '.data.tokens.access_token')
+
+curl -s http://localhost:8080/api/invoices/$INV_ID \
+
+-H "Authorization: Bearer $TOKEN_B"
+
+# Expected: 404 (NOT 403, NOT 200). authz.MustOwn returns 404 so existence
+
+# of A's invoice doesn't leak to B.
+
+Copy to clipboard
+
+SQL Injection (A05)
+
+# Try classic payloads on any parameter that hits the DB
+
+curl "http://localhost:8080/api/users?email=' OR '1'='1"
+
+curl "http://localhost:8080/api/users?email=admin' --"
+
+# Expected: 200 with a normal (empty) response. GORM parameterises so the
+
+# input is interpreted as data, never SQL.
+
+# Time-based blind probe
+
+curl "http://localhost:8080/api/users?email=' OR pg_sleep(5)--"
+
+# Expected: response in <100ms (no delay). The DB never sees the payload as SQL.
+
+Copy to clipboard
+
+XSS (A05)
+
+# Try stored XSS via a field that's later rendered
+
+curl -X POST http://localhost:8080/api/blogs \
+
+-H "Authorization: Bearer $TOKEN_ADMIN" \
+
+-d '{"title":"<script>alert(1)</script>","content":"x"}'
+
+# View the blog in the SPA. React escapes by default → the script tag
+
+# renders as text. The CSP header blocks inline script as a 2nd layer.
+
+# Check the response headers:
+
+curl -I http://localhost:8080/ | grep -i content-security
+
+# Expected: Content-Security-Policy: default-src 'self'; script-src 'self'; ...
+
+Copy to clipboard
+
+SSRF (A01 — 2025)
+
+# Try to make the server fetch the AWS metadata endpoint via any feature
+
+# that fetches user-provided URLs (webhook delivery, image-from-URL, etc).
+
+curl -X POST http://localhost:8080/api/webhooks/dispatch \
+
+-H "Authorization: Bearer $TOKEN" \
+
+-d '{"url":"http://169.254.169.254/latest/meta-data/iam/security-credentials/"}'
+
+# Expected: 400 with "URL not allowed". internal/safefetch blocks the
+
+# request at validation AND re-blocks at TCP-connect time if DNS rebinds.
+
+Copy to clipboard
+
+Authentication brute force (A07)
+
+# Hammer the login endpoint
+
+for i in $(seq 1 20); do
+
+curl -s -X POST http://localhost:8080/api/auth/login \
+
+-H 'Content-Type: application/json' \
+
+-d '{"email":"victim@example.com","password":"guess'$i'"}'
+
+done
+
+# Expected after ~5 attempts: 429 "Rate limited" (Sentinel's per-route limit).
+
+# After more attempts at the same email: the account locks (AuthShield).
+
+Copy to clipboard
+
+Misconfiguration / verbose errors (A02)
+
+# Probe for verbose error pages
+
+curl http://localhost:8080/api/this-route-does-not-exist
+
+curl http://localhost:8080/api/users/invalid-uuid
+
+# Expected: generic error JSON, no stack trace, no DB driver names.
+
+# Also check the security headers are set:
+
+curl -I http://localhost:8080/api/health | grep -iE 'x-frame|x-content|content-security|strict-transport|referrer'
+
+Copy to clipboard
+
+The audit report — what to deliver
+
+A polished, CVSS-scored, evidence-backed report is what justifies the fee. Structure it for two readers — an executive who needs the bottom line on page 1, and an engineer who needs enough detail to reproduce each finding.
+
+Executive summary (1 page) — overall risk posture, finding counts by severity, top 3 business risks.
+
+Scope & methodology — what was tested, what wasn't, dates, approach (e.g. "authorised black-box web pentest per OWASP WSTG").
+
+Findings — one entry per vuln, sorted critical-first. Each finding needs: title, CVSS score + severity, affected component, plain-English risk description, reproduction steps, evidence (screenshots, request/response), and a specific fix.
+
+Remediation roadmap — prioritised list with SLAs (Critical: 7 days, High: 14 days, Medium: 30 days, Low: 90 days).
+
+Appendices — raw tool output, full logs.
+
+CVSS scoring (FIRST.org)
+
+ScoreSeveritySLA
+
+9.0–10.0Critical24h – 7 days
+
+7.0–8.9Highwithin 7 days
+
+4.0–6.9Medium14–30 days
+
+0.1–3.9Low60–90 days
+
+Adjust the raw CVSS by business context — a "Critical" on an air-gapped internal tool may be a real-world Low; a "Medium" on a public payment endpoint may be a real-world Critical. Document the adjustment and the reasoning. That documented judgment is the senior-level deliverable.
+
+Continuous evidence — between pentests
+
+A pentest is a snapshot. Between tests, three things keep the system defensible and prove it:
+
+Audit trails — Grit's middleware.LogSecurityEvent + the activity-log hash chain provide tamper-evident records of every authN/authZ event.
+
+Continuous scanning — .github/workflows/ci.yml runs go vet, govulncheck and gosec on every PR, scan.yml scans a freshly generated application daily, and Dependabot raises PRs the moment a CVE drops.
+
+Remediation tracking — every finding flows from discovery → ticket (severity + owner + SLA) → fix → re-test. That documented loop is what SOC 2 / ISO 27001 auditors ask to see.
+
+The docs are tested too
+
+"The docs said to do X and X did not work" is the most repeated root cause in this project's changelog: a command that had been renamed, a flag that never existed, a field type the generator refuses. Every instance was found by a person following a page, which is the most expensive way to find it.
+
+So the build reads the docs. Every grit command shown on any page, 586 of them today, is resolved against the real command tree: the command has to exist, and so does every flag it is given. Every --fields spec goes through the same parser the generator uses, so a documented field type that does not exist fails the build rather than somebody's afternoon. Two bugs turned up the first time it ran: a page telling people to run grit migrate:fresh, a spelling Grit never had, and a tutorial whose status:select field the generator refuses because a select needs options.
+
+That catches a command that is wrong. It does not catch steps that are each valid and do not work in order, so a block can claim more by naming a flow:
+
+docs/app/docs/backend/migrations/page.tsx
+Copy to clipboard
+
+<CodeBlock
+
+terminal
+
+verify="migrate-rollback"
+
+code={`grit generate resource Widget --fields "name:string"
+
+grit migrate
+
+grit migrate status
+
+grit migrate down --dry-run
+
+grit migrate down --yes`}
+
+/>
+
+The Docs workflow scaffolds a project per flow, migrates it, and runs that flow's blocks in page order against a real Postgres, failing on the first non-zero exit. Three flows are covered today: the rollback walkthrough above, grit doctor reporting nothing on a correct project, and a generated resource compiling and vetting clean.
+
+Most blocks are not marked, and the reason is worth stating: they start a server, bring up docker compose, or carry a placeholder only you can fill in. Marking them would mean pretending. What every block does get is the command and field-spec check, which is the part that silently rots.
+
+How Grit itself is tested: live checks on every Postgres
+
+This is about the framework rather than your application, and it is the answer to a fair question: what stops a Grit release breaking something that used to work?
+
+Grit's worst bugs were never found by a unit test. An export that returned an empty file with a 200, a list that handed one account another account's rows, a save that silently overwrote a newer one, a replace that appended instead of replacing. Each was found by building a real application and using it. Unit tests over generated source cannot catch them, because they are behaviours of the running thing, and several are behaviours of the database.
+
+So that verification is kept as code. tests/live/verify.py drives a running generated application over HTTP and reads Postgres behind it, where the database is the only witness: whether an encrypted column is really ciphertext, whether a move rewrote a subtree, whether a replace left one line or three. .github/workflows/live.yml scaffolds a project on every push, generates the resource shapes those bugs lived in (owned, tree, public, money, encrypted, a relation, line items), migrates, starts the server and runs the suite against Postgres 15, 16 and 17.
+
+Optimistic locking — an ETag per version, a 409 naming the current one, and twenty simultaneous writes on one version where exactly one may land.
+
+Ownership — every path by id, the list, the export and the bulk route, including a staff account that holds the delete permission and still cannot touch another user's row.
+
+Data — money exact to the minor unit, an encrypted column unreadable in the table, a relation id that matches nothing refused rather than dropped, line items replaced rather than appended.
+
+Surfaces — the public endpoints behind an API key publishing an allowlist, the tree's moves and reorders, CSV import including an owned resource where only an ADMIN may name another owner.
+
+The same suite runs by hand against any project: python tests/live/verify.py http://localhost:8080 --db myapp. Adding a check is the rule whenever a bug is found by using an application rather than by a test, which is how the list above got its length.
+
+Resources
+
+PortSwigger Web Security Academy — the best free pentest labs anywhere.
+
+OWASP Juice Shop — the deliberately vulnerable practice app.
+
+OWASP Top 10:2025 — the canonical risk map.
+
+OWASP WSTG — 90+ web-app test cases mapped to the Top 10.
+
+k6 docs — load-testing reference.
+
+FIRST CVSS — official scoring spec + calculator.
+
+Security GuidePulse (Observability)

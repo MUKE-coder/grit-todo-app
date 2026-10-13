@@ -1,0 +1,111 @@
+Deployment
+Deployment
+Go-live checklist
+
+The things that are cheap to check now and expensive to discover later. Everything here has bitten a real deployment.
+
+Most of this is machine-checkable. Run grit doctor first and let it find what it can — then work through the rest, which needs a human who knows what the app is for.
+
+grit doctor
+
+Copy to clipboard
+
+Secrets
+
+The single most common way a hobby deploy becomes an incident.
+
+JWT_SECRET is unique to this environment
+
+Not the value from .env.example — that string is identical in every Grit project ever generated. Staging and production must differ, or a token minted in staging is valid in production.
+
+FIELD_ENCRYPTION_KEY is in the secret store and backed up separately
+
+It encrypts two-factor secrets and encrypted columns. Lose it and every two-factor user is locked out. See the section on backing it up below.
+
+No secret is a build argument
+
+Build logs are retained, often readable by more people than the container environment, and frequently shipped to a third-party CI provider.
+
+Nothing sensitive is in a NEXT_PUBLIC_ variable
+
+Those are compiled into JavaScript that every visitor downloads. Grep the built output before launch: a leaked key here is public the moment the page loads.
+
+.env is not committed
+
+Check the history, not just the working tree. A rotated key is only rotated if the old one is dead.
+
+Access
+
+CORS_ORIGINS lists exact origins
+
+No wildcard. With credentialed requests a wildcard is both a security hole and rejected by browsers.
+
+The database is not reachable from the internet
+
+The development compose file publishes Postgres on a host port so you can attach a GUI. The production one must not. Confirm from outside the network, not from the server.
+
+Studio, Pulse and Sentinel dashboards are protected
+
+GORM Studio at /studio browses every table. Pulse and Sentinel expose traffic and configuration. All three must be behind auth, an IP allowlist, or switched off in production.
+
+The default admin account is gone or has a new password
+
+admin@example.com / admin123 is in the seeder of every generated project, and in these docs.
+
+Data
+
+Migrations ran as an explicit step
+
+Grit does not auto-migrate in production. A process that rewrites the schema on every boot is a bad idea when the platform restarts it for its own reasons.
+
+Backups are configured AND a restore has been tested
+
+An untested backup is a hypothesis. Restore into a scratch database and count the rows — that is the only thing that turns it into a fact.
+
+Uploads go to object storage, not local disk
+
+Any platform that can move or rebuild your container will lose local files. This includes every PaaS on the previous pages.
+
+Operations
+
+The health check points at /api/health
+
+Not /. A platform checking the wrong path either cycles a healthy machine forever or reports a deploy that never finishes.
+
+You know how to roll back
+
+Before you need to, not during. On a plain VPS that means keeping the previous binary; on a PaaS it means having actually clicked the button once.
+
+Logs go somewhere you can search
+
+Container stdout that nobody collects is not logging. Confirm you can find a specific request from an hour ago.
+
+Someone is told when it breaks
+
+An uptime check hitting /api/health from outside your infrastructure. Finding out from a customer is the expensive way.
+
+Back up FIELD_ENCRYPTION_KEY
+
+grit new writes a random key to .env. It encrypts every user’s two-factor secret and every crypto.EncryptedString column, so the database on its own is not enough to read them. That is the point, and it is also why the key needs as much care as the database.
+
+Where it lives. Put it in the deployment’s secret store, not in the image, the repository or a build argument. Every instance of the API needs the same value.
+
+Where the backup lives. Keep a copy somewhere separate from the database backups, such as a password manager or a secrets vault that a second person can reach. A backup stored next to the key it protects is one leak away from being readable.
+
+If it is lost. Nobody with two-factor sign-in can finish signing in, and each of them has to have two-factor reset by an administrator. Encrypted columns cannot be read at all. Restoring a database backup does not help, because the backup is encrypted with the same key.
+
+Rotating it. Changing the value is not a rotation. Everything already encrypted stays encrypted under the old key, so a new value has exactly the same effect as losing the old one. Treat the key as permanent for the life of the data.
+
+A project created before keys were generated has none. Generate one, store it as above, then run grit migrate, which encrypts the two-factor secrets and other values that are already stored:
+
+openssl rand -base64 32
+
+grit migrate
+
+Copy to clipboard
+
+One thing this list cannot check
+
+Whether anyone other than you can deploy it. Write down the steps — where it runs, how to get a shell, how to restore the database, who pays the bill. A deployment only one person understands is an outage waiting for that person to be unavailable.
+
+All deployment targets

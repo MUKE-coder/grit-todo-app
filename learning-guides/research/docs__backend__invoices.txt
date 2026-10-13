@@ -1,0 +1,231 @@
+Backend
+
+Invoices & Line Items
+
+An invoice is the canonical parent-with-children resource: an Invoice that owns many InvoiceItem rows. This guide covers generating both in one command, generating them separately, auto-numbering the invoice, and printing it.
+
+Invoice is just the example. Every technique here is generic. The same --items shape models any parent-with-children — orders / order-items, purchase-orders / lines, surveys / questions, playlists / tracks. grit generate sequence numbers any resource (orders, receipts, tickets), and the print view is on every generated detail page. Read “Invoice” as “whatever you're modeling.”
+
+Generate both in one command
+
+--items generates the child resource and wires it to the parent as an inline, editable line-items table inside the parent's form. Rows are saved atomically with the invoice (GORM has-many in one transaction).
+
+Terminal
+Copy to clipboard
+
+$grit g resource Invoice --fields "number:string,status:string" \
+
+$  --items "InvoiceItem:description:string,qty:int,unit_rate:float"
+
+Read the two arguments like this:
+
+anatomy of --items
+Copy to clipboard
+
+--fields "number:string,status:string"
+
+└──────────────┬──────────────┘
+
+the PARENT (Invoice) columns
+
+--items "InvoiceItem : description:string,qty:int,unit_rate:float"
+
+└────┬─────┘   └──────────────────┬─────────────────────┘
+
+child model            child fields (same name:type
+
+name              grammar as --fields), comma-separated
+
+# Result:
+
+#   Invoice   → number, status,  + a line-items field holding InvoiceItems
+
+#   InvoiceItem → description, qty, unit_rate, + invoice_id (belongs_to Invoice)
+
+#
+
+# The child gets a belongs_to back to the parent automatically; the parent's
+
+# form renders the children as an add/remove table saved with the invoice.
+
+Generate them separately
+
+Prefer to build the pieces one at a time? --items is just a shortcut for two generate resource calls plus a relationship. Do it by hand:
+
+Terminal
+Copy to clipboard
+
+# 1. the parent
+
+$grit g resource Invoice --fields "number:string,status:string"
+
+# 2. the child, with a belongs_to back to the parent
+
+$grit g resource InvoiceItem \
+
+$  --fields "description:string,qty:int,unit_rate:float,invoice:belongs_to:Invoice"
+
+That gives you two independent, fully-routed resources linked by invoice_id. The difference from --items: the child is its own top-level resource (its own page, list, and endpoints) rather than an inline table on the invoice form. Add the inline table later by adding a line-items field to the invoice's resource definition, or forget a column and add it with grit g field:
+
+Terminal
+Copy to clipboard
+
+$grit g field Invoice due_date:date
+
+Auto-number the invoice
+
+You rarely want users typing invoice numbers by hand. The one-liner is the auto field modifier — declare it on the field and Grit wires up the whole atomic-counter machinery for you:
+
+Terminal
+Copy to clipboard
+
+$grit g resource Invoice --fields "number:string:auto:INV,status:string,total:float"
+
+number:string:auto:INV reads as “a string column named number, auto-generated with the prefix INV.” The prefix is optional (number:string:auto derives one from the model name). That single modifier does four things so you don't have to:
+
+stands up the shared internal/sequence package and registers its counter table with AutoMigrate (once per project);
+
+generates the model's BeforeCreate hook to fill the field from an atomic, gap-free counter — INV-202607-0001, -0002, …;
+
+makes the column optional (the server fills it, so nothing is required at the API boundary);
+
+hides it from the create/edit form — no empty “Number” box for users to puzzle over — while keeping it on the table and detail page.
+
+Create an invoice with no number and it comes back numbered; import one that already has a number and that number is kept (the hook only fills blanks). By default auto resets the counter monthly with a 4-digit width — want yearly, never, or a different width? Reach for the explicit grit generate sequence route below, which exposes all three knobs.
+
+The explicit route: grit generate sequence
+
+auto is a shortcut over this command. Use it directly when you want to control the reset cadence or width, number an existing field, or call the counter from your own handler code. It creates the same atomic, gap-free counter plus a typed helper you can call from the create path.
+
+Terminal
+Copy to clipboard
+
+$grit generate sequence Invoice --prefix INV --reset monthly --width 4
+
+That writes internal/sequence/ (a generic counter package) and internal/services/invoice_sequence.go exposing NextInvoiceNumber(db, t). --reset controls when the counter rolls over (monthly, yearly, never) and --width the zero-padding — so the numbers look like:
+
+pattern
+Copy to clipboard
+
+INV-202607-0001
+
+INV-202607-0002
+
+INV-202608-0001   ← monthly reset rolls the counter over
+
+Wire it into the invoice's BeforeCreate hook so every new invoice is numbered automatically — set it only when blank, so an imported invoice keeps its original number. Call the generic sequence.Next directly: the services.NextInvoiceNumber wrapper lives in the services package (which imports models), so calling it from a model would be an import cycle. The sequence package imports no models, so a model can call it — use the wrapper from handlers instead.
+
+internal/models/invoice.go
+Copy to clipboard
+
+import "yourapp/apps/api/internal/sequence"
+
+func (m *Invoice) BeforeCreate(tx *gorm.DB) error {
+
+if m.ID == "" {
+
+m.ID = uuid.New().String()
+
+}
+
+if m.Number == "" {
+
+number, err := sequence.Next(tx, sequence.Config{
+
+Name: "invoice", Prefix: "INV", Reset: sequence.ResetMonthly, Width: 4,
+
+}, time.Now())
+
+if err != nil {
+
+return err
+
+}
+
+m.Number = number
+
+}
+
+return nil
+
+}
+
+Because the counter lives in a row that's locked and incremented in the same transaction as the insert, this is safe under concurrent load — no two invoices ever get the same number, and there are no gaps. Want a different shape entirely (say 2026/Q3/0001)? The helper is plain Go you can edit; the sequence package just hands you the next integer.
+
+The number fills in on the server, not in the form. The hook runs at create time and only when the field is blank — nothing pre-fills the browser. When you wire the sequence by hand, declare the field number:string:optional (string fields are required by default) so the create form won't demand it, and drop the number entry from the resource's form.fields if you'd rather not show an empty box; it stays in the table and detail either way. The auto modifier above does both of these for you — optional column, hidden from the form — which is exactly why it exists.
+
+Line-item totals
+
+The inline line-items table shows a per-row Total and a grand total as you type — driven by column names, not configuration. It looks for one column matching a quantity pattern (qty / quantity) and one matching a money pattern (unit_rate, unit_price, rate, price, or amount); if both exist it renders Total = quantity × money and sums the rows. The default qty:int + unit_rate:float match, so you get it for free.
+
+It's display-only — computed in the browser to help data entry; only the declared columns are submitted, so no total is stored unless you add an amount column and compute it in the item's BeforeSavehook. And because the trigger is the column name, renaming qty to count or unit_rate to cost simply stops the auto-total from showing (nothing breaks) — keep a name in those patterns to keep it.
+
+The PDF endpoint
+
+Every generated resource exposes a server-rendered PDF, and the detail page has a PDF button that opens it:
+
+Terminal
+Copy to clipboard
+
+$GET /api/invoices/:id/pdf   →   application/pdf
+
+It is rendered in Go, not by the browser, which is the important part: the same bytes come back for everyone, so you can attach the PDF to an email, push it to S3, or hand it to a background job — none of which is possible with a print dialog. The layout is built from the record itself:
+
+a repeating header (your APP_NAME plus the record's identifier) and a repeating footer with Page N of M — on every page, so a long invoice stays navigable;
+
+a title block, then the resource's fields as a two-up grid (dates formatted, booleans as Yes/No, empty values as an em dash, and a belongs_to shown by the related record's name rather than its UUID);
+
+each set of line items as a table with numeric columns right-aligned, then totals and notes.
+
+The handler is ordinary generated Go in internal/handlers/invoice.go — it builds a pdf.Record and hands it to pdf.RenderRecord. Restyle by editing that struct (reorder fields, add a total, change the title); go deeper by editing internal/pdf/record.go, or drop to the underlying go-pdf/fpdf document for full control:
+
+internal/handlers/invoice.go (generated — yours to edit)
+Copy to clipboard
+
+rec := pdf.Record{
+
+Title:      "INVOICE",
+
+Subtitle:   pdf.Value(item.Number),
+
+Brand:      appName,
+
+FooterNote: appName + " · generated " + time.Now().Format("2 Jan 2006 15:04"),
+
+Fields: []pdf.Field{
+
+{Label: "Number",   Value: pdf.Value(item.Number)},
+
+{Label: "Status",   Value: pdf.Value(item.Status)},
+
+{Label: "Customer", Value: pdf.Display(item.Customer)},
+
+},
+
+}
+
+// Line items become a table section, with totals underneath.
+
+rec.Sections = append(rec.Sections, pdf.Section{
+
+Title:   "Invoice Items",
+
+Headers: []string{"Description", "Qty", "Unit Rate"},
+
+Aligns:  []string{"L", "R", "R"},
+
+Rows:    itemRows,
+
+})
+
+rec.Totals = []pdf.TotalLine{{Label: "Total", Value: "6,000,000", Bold: true}}
+
+out, err := pdf.RenderRecord(rec)
+
+Printing an invoice
+
+The Print button next to it calls the browser's print dialog against a print-optimized layout: a print stylesheet hides everything except the record's detail card and its line-items table, so the sidebar, navbar, and the Edit/Delete/Back controls never reach the paper. Related resources are excluded too. The stylesheet sets @page margins, forces ink-friendly colors, repeats table headers across pages, and avoids splitting a row down the middle. Reach for PDF when you need a file to keep or send; reach for Print when you just want paper.
+
+It works the moment the resource exists, with no per-resource code. Under the hood the detail content is wrapped in #print-area and the @media print block in the admin's globals.css makes only that subtree visible — so a custom invoice template is just a matter of styling that one container.
+
+MigrationsSeeders

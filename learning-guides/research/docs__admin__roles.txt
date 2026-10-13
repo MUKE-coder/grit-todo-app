@@ -1,0 +1,88 @@
+Admin Panel
+Roles & Permissions UI
+
+Every scaffolded admin ships a permission editor at /system/roles. It lists roles, edits their grants through a CRUD matrix, and hides nav entries and buttons the current user has no permission to use.
+
+The UI is a courtesy, not the boundaryHiding a button only stops it from being clicked. Every route is enforced server-side by RequireRole, and the API rejects a request whether or not the button was rendered. Treat the admin screen as a convenience layer over the authorization model.
+
+The permission editor
+
+Permissions are grouped by module, then by feature. Each level has a tri-state checkbox, so you can grant an entire module without ticking every row underneath it.
+
+CRUD matrix per feature. Actions a feature doesn't declare render as an em dash rather than a checkbox that would silently do nothing when ticked.
+
+Live counter and filter. A “granted / total” count updates as you edit, and a text filter narrows a long catalog.
+
+Copy permissions from. Start a new role from an existing one instead of re-ticking a matrix.
+
+Built-in roles are locked. Their names can't be edited and the delete button is hidden. The server enforces both independently.
+
+Wildcards survive a round tripSelection is seeded from the server's expanded permission list, then collapsed back to wildcards on save. A role granted products.* keeps that wildcard, so it automatically inherits any action added to products later — editing a role in the UI never silently freezes it to today's action list.
+
+Gating your own UI
+
+The usePermissions() hook reads the current user's effective grants once and caches them. Use it to hide actions the API would reject anyway.
+
+app/(dashboard)/products/page.tsx
+Copy to clipboard
+
+import { usePermissions } from "@/hooks/use-permissions";
+
+export default function ProductsPage() {
+
+const { can, isSuper, isLoading } = usePermissions();
+
+return (
+
+<>
+
+<ProductTable />
+
+{/* exact permission */}
+
+{can("products.delete") && <BulkDeleteButton />}
+
+{/* any action on the resource */}
+
+{can("products.*") && <ProductToolbar />}
+
+</>
+
+);
+
+}
+
+can() returns false while permissions are still loading, and returns true for everything when the user is a super admin. Gated UI therefore stays hidden until grants are known rather than flashing into view and disappearing — a flash of forbidden UI looks broken and leaks the shape of the admin to users who can't use it.
+
+Navigation is gated the same way
+
+Sidebar entries declare the permission they need. An entry whose permission the user lacks is not rendered, so the nav never links to a page the API will refuse.
+
+components/chrome/CollapsibleSidebar.tsx
+Copy to clipboard
+
+{ href: "/system/roles", label: "Roles & permissions",
+
+iconKey: "ShieldCheck", adminOnly: true, requires: "roles.view" },
+
+Generated resources register their own entry and their own <resource>.<action> permissions when you run grit generate resource, and both are removed again by grit remove resource.
+
+Identical in both admins
+
+The Next.js admin and the Vite/TanStack admin render the same roles component, transformed at scaffold time rather than written twice. That is deliberate: a permission editor that disagreed between the two frontends would be a security-shaped bug, not a cosmetic one.
+
+Related
+
+Roles & Permissions
+
+The permission model, wildcards, and server-side guards.
+
+Admin Resources
+
+Define the screens the permissions apply to.
+
+Multi-tenancy
+
+Per-organization roles via the multitenant plugin.
+
+Dashboard & WidgetsAuthorization

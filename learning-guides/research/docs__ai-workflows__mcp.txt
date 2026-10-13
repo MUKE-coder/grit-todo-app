@@ -1,0 +1,104 @@
+AI Workflows
+MCP Server
+
+Let your AI coding agent ask Grit about your project instead of guessing from a grep. grit mcp serve speaks the Model Context Protocol and answers with the real route table, the real model definitions, and the real layout.
+
+Why
+
+An agent working in a Grit project has to answer the same questions over and over. What is the URL for listing users? Does that endpoint need an admin token? What fields does Invoice actually have? Without a way to ask, it greps, infers, and gets it subtly wrong — usually by dropping the /api/v1 prefix or inventing a field that isn't there.
+
+The MCP server answers those questions from your source files, so the agent reads facts instead of guessing. Some of them nothing else can answer: which files you have edited since Grit wrote them, and which permission keys actually exist.
+
+Setup
+
+With Claude Code, one command:
+
+claude mcp add grit -- grit mcp serve --project /path/to/your-project
+
+Copy to clipboard
+
+For any other MCP client, add it to the client's config:
+
+{
+
+"mcpServers": {
+
+"grit": {
+
+"command": "grit",
+
+"args": ["mcp", "serve", "--project", "/path/to/your-project"]
+
+}
+
+}
+
+}
+
+Copy to clipboard
+
+Omit --project and the server searches upward from its working directory for grit.json, the same way every other Grit command finds your project.
+
+The tools
+
+grit_project_info
+
+Architecture, frontend framework, Go module path, the CLI version that scaffolded the project, and which apps exist. Worth calling first — it tells the agent whether Go code lives at the root or under apps/api, which is the thing most often assumed wrongly.
+
+grit_list_routes
+
+Every registered route with its method, full path including the /api/v1 prefix, handler, and access level (public, protected, admin). Takes optional method and contains filters so the agent can ask a narrow question instead of pulling 140 routes into its context.
+
+grit_describe_models
+
+Every GORM model with its fields, Go types, JSON names, and GORM tags: the exact shape of a request or response body, and the column constraints behind it. Pass model to fetch just one.
+
+grit_list_resources
+
+What grit generate resource has made, and every file each one owns: the model, service, handler and routes, the admin resource definition, its overlay, the hooks, the Zod schema and the TypeScript types. Found by the bulk-request type the generator declares, so the framework's own endpoints are not reported as things somebody generated. Worth calling before generating, to see whether the thing already exists.
+
+grit_file_ownership
+
+Which generated files are still exactly as Grit wrote them, which you have edited, and which have been deleted. Nothing else can answer this: it comes from the manifest Grit records when it writes. It matters twice over, because editing a pristine file is what stops grit upgrade updating it, and a modified file is where an upgrade will report a conflict.
+
+grit_list_permissions
+
+Every permission key the application understands, grouped as the admin's permission tree groups them. A guard written against a key that is not in the catalogue matches nothing and fails silently, which is exactly the kind of mistake an agent makes and nobody notices until a role does not work.
+
+grit_doctor
+
+The same audit as the grit doctor command, as structured findings: the check that found each one, what it is about, and the fix. Worth running after generating a resource that holds personal data, and before claiming a project is ready to deploy.
+
+grit_env_keys
+
+The environment variables the project reads, with the comment documenting each and whether .env sets it. Values are never returned, from either file: this is where the database password and the signing keys live, and a tool that returned one would put it in a transcript, a log and a model's context in a single call.
+
+grit_cli_reference
+
+The CLI's commands and flags, read from the binary that is running the server. An agent proposing a flag from a different version costs you a confusing error, and the binary is the only thing that knows what this version accepts.
+
+grit_generate_resource (write mode)
+
+Generates the model, service, handler and routes, the Zod schema and TypeScript types, the hooks and the admin page, with the wiring injected. This writes files, so it exists only on a server started with --mode write.
+
+Two modes, and the writing tools are absent from one
+
+The default server is read-only. Not because each handler checks a flag: the tools that write files are not registered, so there is no code path that reaches one. No token, no scope, no misconfigured client and no instruction hidden in a README can call what is not in the map.
+
+grit mcp serve                 # read-only: nine tools that answer questions
+
+grit mcp serve --mode write    # also the generators, which write files
+
+Copy to clipboard
+
+The alternative, which is what most servers do, is to register everything and check a flag inside each handler. That works until somebody adds a tool and forgets the check, and the failure is silent and total: the tool simply works for everyone. Letting the mode decide what gets built removes the class of mistake rather than asking every future contributor to remember.
+
+Even in write mode, every change lands in your diff and you review it like any other. Reading is still static: the answers come from parsing your source, so the server works on a checkout that has never been started and needs no credentials.
+
+Scope
+
+The server targets Grit's web and API architectures — single, double, triple, api, and mobile. Standalone desktop projects created with grit new-desktop have a different shape (Wails bindings rather than HTTP routes) and are not covered yet.
+
+One further kind of tool is deliberately not shipped: anything that asks a running service about itself, such as its recent errors or its live traces. Those need a connection and a credential, which is a meaningfully different surface from parsing a checkout, and worth doing separately rather than bolting on. A running Grit service already answers /llms.txt and /docs/openapi.json over HTTP, which covers most of what an agent wants from one.
+
+Using Grit with AntigravityLLM Skill Guide

@@ -1,0 +1,563 @@
+Admin Panel
+DataTable
+
+The DataTable component is the primary way data is displayed in the admin panel. It supports server-side pagination, column sorting, filtering, search, custom cell renderers, row actions, and data export — all driven by your resource definition.
+
+Server-side queryDataTable
+Sorting, filtering, and pagination run server-side — the table just renders the current page
+
+Server-Side Pagination
+
+The DataTable never loads the entire dataset into memory. It communicates with your Go API using query parameters for page, page_size,sort_by, sort_order, search, and filter values. The API returns a paginated response with a meta object containing total count, current page, page size, and total pages.
+
+Pagination controls appear at the bottom of the table showing the current range (e.g. "Showing 1-20 of 156"), page navigation buttons, and a page size selector (10, 20, 50, 100 rows).
+
+HTTP request
+Copy to clipboard
+
+GET /api/posts?page=1&page_size=20&sort_by=created_at&sort_order=desc&search=hello
+
+Response:
+
+{
+
+"data": [ ... ],
+
+"meta": {
+
+"total": 156,
+
+"page": 1,
+
+"page_size": 20,
+
+"pages": 8
+
+}
+
+}
+
+The default page size is controlled by table.pageSize in your resource definition (default: 20). Users can change the page size at runtime using the selector in the pagination bar.
+
+Column Sorting
+
+Any column with sortable: true in its definition becomes clickable. Clicking a column header cycles through three states:
+
+Ascending — small arrow pointing up appears next to the header.
+
+Descending — arrow points down.
+
+No sort — returns to the default sort order.
+
+Sorting sends sort_by and sort_order query parameters to the API. Only single-column sorting is supported (clicking a new column clears the previous sort). You can set a default sort in the resource definition:
+
+Default sort
+Copy to clipboard
+
+table: {
+
+defaultSort: { key: 'created_at', direction: 'desc' },
+
+columns: [ ... ],
+
+}
+
+Column Filtering
+
+Filters appear as a horizontal bar above the data table. Three filter types are supported, each rendering a different control:
+
+Select Filter
+
+Renders a dropdown with predefined options. Useful for status fields, categories, or any column with a fixed set of values.
+
+Select filter
+Copy to clipboard
+
+{ key: 'status', type: 'select', options: ['active', 'inactive', 'banned'] }
+
+Date Range Filter
+
+Renders two date pickers (from and to) for filtering records within a time window. Sends created_at_from and created_at_to query parameters.
+
+Date range filter
+Copy to clipboard
+
+{ key: 'created_at', type: 'date-range', label: 'Created Date' }
+
+Number Range Filter
+
+Renders two number inputs (min and max) for filtering numeric values. Useful for price ranges, quantities, or scores. Sends amount_min andamount_max query parameters.
+
+Number range filter
+Copy to clipboard
+
+{ key: 'amount', type: 'number-range', label: 'Amount' }
+
+Active filters show a count badge on the filter bar and a "Clear filters" button appears when any filter is applied. Changing filters resets the page to 1.
+
+Show/Hide Columns
+
+A column visibility dropdown appears in the table toolbar. Users can toggle individual columns on or off. Columns with hidden: true in their definition are hidden by default but can be shown via the dropdown. Column visibility preferences are persisted in localStorage so they survive page reloads.
+
+Search
+
+When table.searchable is true (the default), a search input appears in the table toolbar. Typing into it sends a search query parameter to the API. On the Go side, the search handler applies aILIKE query across all columns marked with searchable: true in the resource definition.
+
+Search is debounced at 300ms to avoid excessive API calls while the user is typing.
+
+Custom Cell Renderers
+
+The format and badge column options cover most use cases. Here are examples of each renderer:
+
+Column renderer examples
+Copy to clipboard
+
+columns: [
+
+// Badge — colored pills for status values
+
+{ key: 'status', label: 'Status', badge: {
+
+active:   { color: 'green', label: 'Active' },
+
+inactive: { color: 'gray',  label: 'Inactive' },
+
+}},
+
+// Currency — formatted as $1,234.50
+
+{ key: 'amount', label: 'Amount', format: 'currency' },
+
+// Date — formatted as "Jan 15, 2026"
+
+{ key: 'due_date', label: 'Due Date', format: 'date' },
+
+// Relative — formatted as "3 hours ago"
+
+{ key: 'created_at', label: 'Created', format: 'relative' },
+
+// Boolean — green checkmark or red X
+
+{ key: 'active', label: 'Active', format: 'boolean' },
+
+// Image — 32x32 rounded thumbnail
+
+{ key: 'avatar', label: 'Avatar', format: 'image' },
+
+// Relation — dot-notation key reads the Preloaded related object
+
+{ key: 'customer.name', label: 'Customer' },
+
+// Video — thumbnail with play overlay
+
+{ key: 'preview', label: 'Preview', format: 'video' },
+
+// Link — clickable URL with hostname
+
+{ key: 'website', label: 'Website', format: 'link' },
+
+// Email — clickable mailto link
+
+{ key: 'email', label: 'Email', format: 'email' },
+
+// Color — swatch circle with hex value
+
+{ key: 'color', label: 'Color', format: 'color' },
+
+]
+
+Column Styling
+
+Add the className property to any column definition to apply custom Tailwind CSS classes to every cell in that column. This wraps the rendered content in a <span> with your classes, so it works alongside any format type.
+
+Column className examples
+Copy to clipboard
+
+columns: [
+
+// Bold title column
+
+{ key: 'title', label: 'Title', className: 'font-semibold text-foreground' },
+
+// Green currency column
+
+{ key: 'price', label: 'Price', format: 'currency', className: 'text-success' },
+
+// Monospace code column
+
+{ key: 'sku', label: 'SKU', className: 'font-mono text-xs tracking-wider' },
+
+// Truncated long text
+
+{ key: 'description', label: 'Description', className: 'max-w-[200px] truncate' },
+
+]
+
+Custom Cell Function
+
+When format and badge are not enough, pass acell function. It receives the full row object and returns any React node, so you can pack multiple fields into one column (name + email stacked, a price with a currency badge, a status pill next to a relative date). When defined, cell takes precedence over format andbadge.
+
+Custom cell renderer
+Copy to clipboard
+
+columns: [
+
+{
+
+key: 'first_name',
+
+label: 'User',
+
+// row is the whole record, so dotted keys aren't necessary
+
+cell: (row) => (
+
+<div className="flex flex-col">
+
+<span className="font-medium">{row.first_name} {row.last_name}</span>
+
+<span className="text-xs text-text-muted">{row.email}</span>
+
+</div>
+
+),
+
+},
+
+]
+
+Clickable columns
+
+Add onClick to a column to make its value clickable. Two behaviors are built in, or you can pass your own function:
+
+onClick: "link" — opens the row's detail page (an open arrow appears on hover). Generated resources set this on their first column automatically, so the primary identifier (invoice number, name, title) is click-to-open out of the box.
+
+onClick: "copy" — copies the cell value to the clipboard and flashes a check-mark. Ideal for IDs, reference numbers, or emails.
+
+onClick: (value, row) => { … } — a custom handler. Open a modal, fire a mutation, deep-link somewhere — you get the cell value and the whole row.
+
+The click is isolated: it never triggers the row's other actions, and it works alongside format, badge, and cell.
+
+Clickable columns
+Copy to clipboard
+
+columns: [
+
+// Click the number to open the invoice (this is the generated default)
+
+{ key: 'number', label: 'Invoice #', onClick: 'link' },
+
+// Click to copy the value to the clipboard
+
+{ key: 'reference', label: 'Ref', onClick: 'copy' },
+
+// Anything you want — you get the cell value and the full row
+
+{
+
+key: 'email',
+
+label: 'Email',
+
+onClick: (value, row) => window.open(`mailto:${value}`),
+
+},
+
+]
+
+Custom row actions
+
+Beyond the built-in view / edit / delete controls, table.rowActions adds your own per-row entries. Each one takes a label plus either an href(row) (renders a link) or an onClick(row) (renders a button). Add variant: "danger" to color it as destructive, and visible(row) to show it only for some rows.
+
+The Users resource ships one: Erase (GDPR), which deep-links to the GDPR page with that user pre-selected — because an ordinary delete is a reversible soft delete, not an Art. 17 erasure.
+
+Custom row actions
+Copy to clipboard
+
+table: {
+
+columns: [ /* … */ ],
+
+actions: ['create', 'view', 'edit', 'delete'],
+
+rowActions: [
+
+{
+
+label: 'Erase (GDPR)',
+
+variant: 'danger',
+
+href: (row) => '/system/gdpr?user=' + String(row.id),
+
+},
+
+{
+
+label: 'Resend',
+
+onClick: (row) => resend(String(row.id)),
+
+visible: (row) => row.status === 'failed',
+
+},
+
+],
+
+}
+
+Row Actions
+
+Each row has an actions menu (three-dot icon) on the right side. The available actions are controlled by the table.actions array in your resource definition:
+
+create — adds a "New [Resource]" button to the table toolbar that opens the create form modal.
+
+edit — opens the edit form modal pre-filled with the row data.
+
+delete — shows a confirmation dialog, then sends a DELETE request to the API.
+
+view — navigates to a detail page for the resource.
+
+export — adds CSV/JSON export buttons to the toolbar.
+
+Delete actions use optimistic updates via React Query — the row is removed from the table immediately and restored if the API call fails.
+
+Actions configuration
+Copy to clipboard
+
+table: {
+
+actions: ['create', 'edit', 'delete', 'export'],
+
+bulkActions: ['delete', 'export'],
+
+columns: [ ... ],
+
+}
+
+Bulk Actions
+
+When bulkActions are defined, each row gets a checkbox on the left side. Selecting one or more rows reveals a floating action bar at the bottom of the table with the configured bulk actions. The BulkAction union is 'delete' | 'export'. For example, selecting 5 rows and clicking "Delete" sends 5 DELETE requests in parallel.
+
+Empty State
+
+When a resource has no data (or no results match the current filters), the DataTable shows a polished empty state with:
+
+An illustration matching the resource icon
+
+A message like "No posts yet"
+
+A "Create your first post" button that opens the create form modal
+
+The empty state maintains the table's full width and height so the layout does not collapse.
+
+Loading Skeleton
+
+While data is being fetched, the DataTable renders a skeleton loader that matches the exact layout of the table — header row, column widths, and row heights are preserved. This prevents layout shift when data loads and gives users confidence that content is on its way.
+
+Subsequent page navigations (changing page, applying filters) show a subtle loading indicator in the table header instead of replacing the entire table with a skeleton. This keeps the current data visible while the new data loads.
+
+Export to CSV / JSON / Excel
+
+The toolbar's download menu offers CSV, JSON, and Excel (.xlsx) export. Users can export the current filtered and sorted view; the menu fetches all matching records from the API (not just the current page) before building the file and triggering a browser download. Configure it with the table.export object — set it tofalse to hide the menu entirely, or flip individualcsv / json / excel flags:
+
+Export menu configuration
+Copy to clipboard
+
+table: {
+
+// All three formats on by default; this hides JSON.
+
+export: { csv: true, json: false, excel: true },
+
+columns: [ ... ],
+
+}
+
+Column labels are used as CSV headers. Hidden columns are excluded from the export unless explicitly shown. Badge values export as their raw value (e.g."paid") rather than the display label.
+
+Excel Import
+
+An Import button in the toolbar opens an Excel upload modal (lazy-loaded so the xlsx parser only joins the bundle when needed). Rows from the uploaded spreadsheet are mapped onto the resource's form fields and created through the API. Import is on by default; configure it withtable.import — set it to false to hide the button, or pass fields to restrict which columns are accepted (useful for excluding computed columns):
+
+Import configuration
+Copy to clipboard
+
+table: {
+
+import: { excel: true, fields: ['name', 'email', 'role'] },
+
+columns: [ ... ],
+
+}
+
+Stats and Insights
+
+Every list page carries four cards above the table: the total, and how many rows were created this week, created this month and updated recently. They read the list response rather than fetching anything of their own, so they describe the rows the table is matching, search and filters included.
+
+grit generate resource adds more, worked out from your model. A boolean column becomes two cards, a select becomes one per option, and the counts come back in the same list request:
+
+Generated from name:string,status:select:open|closed,urgent:bool
+Copy to clipboard
+
+stats: {
+
+countBy: [
+
+{
+
+field: "status",
+
+label: "Status",
+
+labels: { open: "Open", closed: "Closed" },
+
+only: ["open", "closed"],
+
+},
+
+{
+
+field: "urgent",
+
+labels: { "true": "Urgent", "1": "Urgent", "false": "Not Urgent", "0": "Not Urgent" },
+
+only: ["true", "false"],
+
+},
+
+],
+
+}
+
+Each boolean carries both spellings because the databases disagree: Postgres answers true, SQLite and MySQL answer 1, and the same definition has to work on all three. Set stats: { countBy: [] } to keep only the four defaults, or stats: false to drop the cards entirely.
+
+The Insights panel
+
+Under the cards sits Insights, collapsed. Opening it draws how many rows were created per day, week or month, and a bar chart per counted column. It is collapsed by default for a reason beyond space: the charts are a GROUP BY each, so a list page costs exactly what it did before until somebody asks the question, and the panel remembers whether you left it open.
+
+The charts are drawn over the list's own query. Filtering to one category redraws them for that category, which is the point: a whole-table chart above a filtered table is a lie told in a prominent place. The dashboard's per-resource card is where an unfiltered view lives.
+
+Insights configuration
+Copy to clipboard
+
+insights: {
+
+field: "created_at",      // or updated_at
+
+unit: "month",            // day | week | month, the viewer can switch
+
+buckets: 12,              // capped at 60
+
+breakdown: ["status", "urgent"],   // up to 3 filterable columns
+
+labels: { status: { open: "Open", closed: "Closed" } },
+
+}
+
+// insights: false removes the panel.
+
+It is answered by two query parameters on any list endpoint built on paginate.List, so a client outside the admin can ask the same questions: ?series=created_at:month:12 returns a count per period, and ?breakdown=status,role a count per value. The series column is restricted to created_at and updated_at, and a breakdown column must be in Config.Filterable: both names reach the SQL, where a bind parameter cannot go.
+
+Grid Data Entry
+
+Between Import and New there is a gap: Import wants a file somebody already has, New takes one record at a time, and neither suits "I have twelve of these on a bit of paper". Two buttons fill it, both opening the same spreadsheet-shaped grid at 80% of the viewport.
+
+Bulk Create opens five blank rows. Type across them, add rows as needed, and every row is created in one transaction: if any row is rejected, none are written. Empty rows are ignored rather than refused, and a cell left blank is left out of the request entirely so the column's database default applies.
+
+Bulk Edit opens the rows you selected, at their current values. Only the cells you change are sent, so two people editing different columns of the same row do not overwrite each other, and the save button counts what will actually be written ("Save 2 changed").
+
+Every cell is a real input in tab order, so Tab and Shift+Tab walk the grid, Enter moves down a column, and Ctrl+Enter saves. Pasting a block of tab-separated cells from a spreadsheet fills the grid from the cursor, and each column header has a fill-down button that copies the first row's value down the rest.
+
+A column the grid cannot hold stays in the form: rich text, line items, JSON and many-to-many pickers are left out, and if one of them is required the grid says so at the top instead of letting every save fail. Required columns are marked with an asterisk, a row missing one is flagged before anything is sent, and the API validates each row against the model's own binding tags, so a grid cannot create a row the edit form would then refuse to save.
+
+Bulk Create follows the resource's create permission and is on by default. Hide it with table.bulkCreate:
+
+Grid configuration
+Copy to clipboard
+
+table: {
+
+bulkCreate: false,   // hide the Bulk Create button
+
+columns: [ ... ],
+
+}
+
+Date Filter
+
+Every list page ships with a date-window filter in the toolbar (Today, Last 7 days, Last 30 days, This month, or a custom range). It defaults to filtering oncreated_at with the label "Created", and its state is persisted to the URL so a refresh or shared link rehydrates the same view. Configure it with table.dateFilter — setenabled: false to hide it, or point field at a domain column (e.g. scheduled_for on a Booking resource):
+
+Date filter configuration
+Copy to clipboard
+
+table: {
+
+dateFilter: { field: 'scheduled_for', label: 'Scheduled' },
+
+columns: [ ... ],
+
+}
+
+Responsive Behavior
+
+On screens narrower than the table's natural width, the DataTable enables horizontal scrolling. The row actions column is sticky on the right side so it remains visible while scrolling. On mobile devices, the filter bar collapses into a "Filters" button that opens a sheet overlay.
+
+Full Table Configuration Example
+
+apps/admin/resources/invoices.ts (table section)
+Copy to clipboard
+
+table: {
+
+columns: [
+
+{ key: 'id', label: 'ID', sortable: true, hidden: true },
+
+{ key: 'number', label: 'Invoice #', sortable: true, searchable: true },
+
+{ key: 'customer.name', label: 'Customer' },
+
+{ key: 'amount', label: 'Amount', format: 'currency', sortable: true },
+
+{ key: 'status', label: 'Status', badge: {
+
+paid:    { color: 'green',  label: 'Paid' },
+
+pending: { color: 'yellow', label: 'Pending' },
+
+overdue: { color: 'red',    label: 'Overdue' },
+
+}},
+
+{ key: 'due_date', label: 'Due Date', format: 'date', sortable: true },
+
+{ key: 'created_at', label: 'Created', format: 'relative' },
+
+],
+
+filters: [
+
+{ key: 'status', type: 'select',
+
+options: ['paid', 'pending', 'overdue'] },
+
+{ key: 'created_at', type: 'date-range' },
+
+{ key: 'amount', type: 'number-range' },
+
+],
+
+pageSize: 20,
+
+defaultSort: { key: 'created_at', direction: 'desc' },
+
+searchable: true,
+
+actions: ['create', 'edit', 'delete', 'view', 'export'],
+
+bulkActions: ['delete', 'export'],
+
+}
+
+Resource DefinitionsForm Builder

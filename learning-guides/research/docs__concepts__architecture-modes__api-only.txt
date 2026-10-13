@@ -1,0 +1,368 @@
+Architecture Modes
+
+API Only Architecture: Headless Go Backend
+
+The leanest architecture Grit offers. Pure Go API with no frontend, no React, no Node.js. Your API docs page is the primary interface.
+
+Overview
+
+The API-only architecture strips away everything except the Go backend. There is no React, no TypeScript, no Node.js, no pnpm, no Turborepo. You get a clean Go API that serves JSON endpoints and auto-generated API documentation at /docs. Test your endpoints with curl, Postman, or the built-in Scalar/Swagger UI.
+
+Despite being the smallest architecture, it still includes every backend battery: authentication (JWT + OAuth), file storage (S3), email (Resend), background jobs (asynq), cron scheduling, Redis caching, AI integration, and TOTP two-factor auth. You get the full Go API -- you just bring your own frontend.
+
+Scaffold command
+
+grit new myapp --api
+
+Copy to clipboard
+
+Any clientGo APIData & services
+No bundled frontend — every client hits the same JSON API, batteries fully included
+
+Key Characteristics
+
+PropertyAPI Only Architecture
+
+FrontendNone -- pure Go, no React, no Node.js
+
+MonorepoNone -- no turbo.json, no pnpm-workspace
+
+InterfaceAPI docs at /docs (Scalar/Swagger UI)
+
+Testingcurl, Postman, or built-in API docs
+
+BatteriesAll included (auth, storage, email, jobs, AI, TOTP)
+
+Code generationGo files only (model, service, handler + route injection)
+
+Full Folder Structure
+
+The project contains just the Go API inside apps/api/ plus root-level config files. No frontend directories, no packages directory, no TypeScript configuration.
+
+myapp/
+
+📂apps
+
+📂api
+
+Dockerfile
+
+go.modModule: myapp/apps/api
+
+go.sum
+
+📂cmd
+
+server/main.goAPI entry point
+
+migrate/main.goRun migrations
+
+seed/main.goSeed database
+
+📂internalAll Go backend code
+
+config/config.go
+
+database/db.go
+
+📂models// grit:models
+
+user.go
+
+upload.go
+
+📂handlers
+
+auth_handler.go
+
+upload_handler.go
+
+user_handler.go
+
+📂services
+
+auth_service.go
+
+upload_service.go
+
+user_service.go
+
+📂middleware
+
+auth.go
+
+cors.go
+
+logger.go
+
+cache.go
+
+routes/routes.go// grit:handlers, grit:routes:*
+
+📁mail
+
+📁storage
+
+📁jobs
+
+📁cache
+
+📁ai
+
+auth/totp.go
+
+.env
+
+.env.example
+
+.gitignore
+
+docker-compose.ymlPostgreSQL, Redis, MinIO, Mailhog
+
+docker-compose.prod.yml
+
+grit.jsonarchitecture: "api"
+
+📂.claude/skills/gritTailored — no frontend rules
+
+SKILL.md
+
+reference.md
+
+Directory Breakdown
+
+cmd/ -- Entry Points
+
+Three separate entry points for different operations. cmd/server/main.go starts the API server. cmd/migrate/main.go runs GORM AutoMigrate to apply schema changes. cmd/seed/main.go populates the database with initial data (admin user, sample records).
+
+internal/ -- Backend Code
+
+Identical to every other Grit architecture. The handler-service-model pattern, middleware stack, mail templates, storage abstraction, job queue, cache layer, and AI integration are all present. The only difference is that no frontend code exists alongside it.
+
+.claude/skills/grit/ -- AI Skill
+
+The AI skill file is tailored for the API-only architecture. It contains no frontend rules, no React patterns, and no TypeScript conventions. This makes AI assistants more effective because they only see relevant Go patterns.
+
+grit.json -- Project Config
+
+grit.json
+Copy to clipboard
+
+{
+
+"architecture": "api",
+
+"go_module": "myapp/apps/api"
+
+}
+
+No frontend key. The CLI knows to skip all frontend file generation when it reads this config.
+
+Code Generation
+
+Running grit generate resource in an API-only project creates only Go files. No Zod schemas, no TypeScript types, no React hooks, no admin pages.
+
+Generated FileLocation
+
+Go modelapps/api/internal/models/post.go
+
+Go serviceapps/api/internal/services/post_service.go
+
+Go handlerapps/api/internal/handlers/post_handler.go
+
+Route injectionapps/api/internal/routes/routes.go
+
+NOT GeneratedReason
+
+Zod schemasNo frontend to validate
+
+TypeScript typesNo TypeScript in project
+
+React Query hooksNo React in project
+
+Admin pageNo admin panel
+
+Example: grit generate resource Post --fields "title:string,body:text,published:bool" creates 4 Go files (model, service, handler, and a <name>_import.go handler) and injects routes -- that's it.
+
+Built-in API Endpoints
+
+Every API-only project ships with these endpoints out of the box, before you generate any resources.
+
+MethodEndpointPurpose
+
+GET/api/healthHealth check
+
+POST/api/auth/registerCreate account
+
+POST/api/auth/loginGet JWT tokens
+
+POST/api/auth/refreshRefresh access token
+
+GET/api/auth/meCurrent user profile
+
+POST/api/uploadsFile upload (presigned URL)
+
+POST/api/ai/chatAI chat (streaming)
+
+GET/docsInteractive API documentation
+
+Data Flow
+
+With no frontend, the data flow is straightforward. Clients send HTTP requests directly to the Go API.
+
+data flow
+Copy to clipboard
+
+Client (curl / Postman / mobile app / external frontend)
+
+│
+
+├── POST /api/auth/login      → Auth handler → JWT service
+
+├── GET  /api/posts            → Post handler → Post service → PostgreSQL
+
+├── POST /api/uploads          → Upload handler → S3/MinIO
+
+├── POST /api/ai/chat          → AI handler → Claude/OpenAI
+
+└── GET  /docs                 → Scalar/Swagger UI
+
+Development Workflow
+
+Development is simpler than any other architecture -- just one terminal for the Go server.
+
+getting started
+Copy to clipboard
+
+# Start infrastructure
+
+docker compose up -d
+
+# Run the API with hot reload
+
+grit start server
+
+# Test with curl
+
+curl http://localhost:8080/api/health
+
+curl -X POST http://localhost:8080/api/auth/register \
+
+-H "Content-Type: application/json" \
+
+-d '{"name":"admin","email":"admin@example.com","password":"password123"}'
+
+# Or open the API docs in your browser
+
+open http://localhost:8080/docs
+
+Deployment
+
+Deploy the Go binary with Docker or directly. No frontend build step needed.
+
+Docker
+
+apps/api/Dockerfile
+Copy to clipboard
+
+FROM golang:1.21-alpine AS builder
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+
+RUN go mod download
+
+COPY . .
+
+RUN CGO_ENABLED=0 go build -o server cmd/server/main.go
+
+FROM alpine:3.19
+
+WORKDIR /app
+
+COPY --from=builder /app/server .
+
+EXPOSE 8080
+
+CMD ["./server"]
+
+Docker Compose (production)
+
+docker-compose.prod.yml
+Copy to clipboard
+
+services:
+
+api:
+
+build:
+
+context: ./apps/api
+
+dockerfile: Dockerfile
+
+ports:
+
+- "8080:8080"
+
+env_file: .env
+
+depends_on:
+
+- postgres
+
+- redis
+
+postgres:
+
+image: postgres:16-alpine
+
+volumes:
+
+- pgdata:/var/lib/postgresql/data
+
+environment:
+
+POSTGRES_DB: myapp
+
+POSTGRES_USER: postgres
+
+POSTGRES_PASSWORD: ${DB_PASSWORD}
+
+redis:
+
+image: redis:7-alpine
+
+volumes:
+
+pgdata:
+
+When to Choose API Only
+
+Good fit
+
+-Mobile app backends (iOS/Android consume your API)
+
+-Microservices in a larger system
+
+-Headless CMS or content API
+
+-Third-party integrations and webhooks
+
+-Frontend built by a different team or in a different repo
+
+Not ideal for
+
+-Projects that need an admin panel (use triple or double)
+
+-Full-stack apps where you want React scaffolded too
+
+-Teams that want shared TypeScript types from the same repo
+
+Example Project
+
+The Job Portal example built with the API-only architecture. Includes all endpoints, Docker setup, seed data, and API documentation.
+View Job Portal (API Only) on GitHub →
+
+Single ArchitectureMobile Architecture

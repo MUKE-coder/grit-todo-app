@@ -1,0 +1,620 @@
+Admin Panel
+Standalone Usage
+
+Use FormBuilder, FormStepper, and DataTable on any page — in both the web and admin apps. These components are fully prop-driven and work independently of the resource system.
+
+Your pageNo resource system needed
+The same components work outside the resource system — just pass props
+
+Overview
+
+While the resource system automates CRUD pages in the admin panel, the underlying components are designed to work standalone. You can use them anywhere:
+
+A contact form on your marketing site
+
+A multi-step checkout in your e-commerce app
+
+A user directory on a dashboard page
+
+A settings page with custom form logic
+
+An order history table on a customer portal
+
+All you need is a FormDefinition or ColumnDefinition[] — the same type definitions the resource system uses internally.
+
+FormBuilder on Any Page
+
+The FormBuilder component accepts a FormDefinition (fields + layout) and renders a complete form with validation, error messages, and submit/cancel buttons. It uses React Hook Form internally.
+
+app/contact/page.tsx — Contact form
+Copy to clipboard
+
+"use client";
+
+import { FormBuilder } from "@/components/forms/form-builder";
+
+import type { FormDefinition } from "@/lib/resource";
+
+const contactForm: FormDefinition = {
+
+layout: "single",
+
+fields: [
+
+{ key: "name", label: "Full Name", type: "text", required: true },
+
+{ key: "email", label: "Email", type: "text", required: true,
+
+placeholder: "you@example.com" },
+
+{ key: "subject", label: "Subject", type: "select", required: true,
+
+options: [
+
+{ label: "General Inquiry", value: "general" },
+
+{ label: "Support", value: "support" },
+
+{ label: "Sales", value: "sales" },
+
+] },
+
+{ key: "message", label: "Message", type: "textarea", required: true,
+
+rows: 6, placeholder: "How can we help?" },
+
+],
+
+};
+
+export default function ContactPage() {
+
+const handleSubmit = async (data: Record<string, unknown>) => {
+
+const res = await fetch("/api/contact", {
+
+method: "POST",
+
+headers: { "Content-Type": "application/json" },
+
+body: JSON.stringify(data),
+
+});
+
+if (res.ok) alert("Message sent!");
+
+};
+
+return (
+
+<div className="max-w-lg mx-auto py-12 px-4">
+
+<h1 className="text-2xl font-bold mb-6">Contact Us</h1>
+
+<FormBuilder
+
+form={contactForm}
+
+onSubmit={handleSubmit}
+
+onCancel={() => window.history.back()}
+
+submitLabel="Send Message"
+
+/>
+
+</div>
+
+);
+
+}
+
+The FormBuilder props are simple:
+
+PropTypeDescription
+
+formFormDefinitionField definitions and layout
+
+onSubmit(data) => voidCalled with form data on submit
+
+onCancel() => voidCalled when cancel button clicked
+
+defaultValuesRecord<string, unknown>Pre-fill values (for edit mode)
+
+isSubmittingbooleanShows loading spinner on submit button
+
+submitLabelstringCustom submit button text (default: "Save")
+
+Two-Column Layout
+
+Use layout: "two-column" with colSpan on fields for side-by-side inputs:
+
+Two-column registration form
+Copy to clipboard
+
+const registrationForm: FormDefinition = {
+
+layout: "two-column",
+
+fields: [
+
+{ key: "first_name", label: "First Name", type: "text",
+
+required: true, colSpan: 1 },
+
+{ key: "last_name", label: "Last Name", type: "text",
+
+required: true, colSpan: 1 },
+
+{ key: "email", label: "Email", type: "text",
+
+required: true, colSpan: 2 },  // Full width
+
+{ key: "password", label: "Password", type: "text",
+
+required: true, colSpan: 1 },
+
+{ key: "confirm_password", label: "Confirm Password", type: "text",
+
+required: true, colSpan: 1 },
+
+{ key: "terms", label: "I agree to the terms", type: "checkbox",
+
+required: true, colSpan: 2 },
+
+],
+
+};
+
+Multi-Step Form on Any Page
+
+The FormStepper component works the same way as FormBuilderbut splits fields across numbered steps. Perfect for checkout flows, onboarding wizards, or any long form.
+
+app/checkout/page.tsx — Multi-step checkout
+Copy to clipboard
+
+"use client";
+
+import { FormStepper } from "@/components/forms/form-stepper";
+
+import type { FormDefinition } from "@/lib/resource";
+
+const checkoutForm: FormDefinition = {
+
+layout: "two-column",
+
+stepVariant: "horizontal",
+
+steps: [
+
+{
+
+title: "Shipping",
+
+description: "Where should we send your order?",
+
+fields: ["full_name", "address", "city", "zip_code"],
+
+},
+
+{
+
+title: "Payment",
+
+description: "Enter your payment details",
+
+fields: ["card_number", "expiry", "cvv", "billing_zip"],
+
+},
+
+{
+
+title: "Review",
+
+description: "Confirm your order",
+
+fields: ["notes"],
+
+},
+
+],
+
+fields: [
+
+{ key: "full_name", label: "Full Name", type: "text",
+
+required: true, colSpan: 2 },
+
+{ key: "address", label: "Street Address", type: "text",
+
+required: true, colSpan: 2 },
+
+{ key: "city", label: "City", type: "text", required: true },
+
+{ key: "zip_code", label: "Zip Code", type: "text", required: true },
+
+{ key: "card_number", label: "Card Number", type: "text",
+
+required: true, colSpan: 2, placeholder: "4242 4242 4242 4242" },
+
+{ key: "expiry", label: "Expiry", type: "text",
+
+required: true, placeholder: "MM/YY" },
+
+{ key: "cvv", label: "CVV", type: "text",
+
+required: true, placeholder: "123" },
+
+{ key: "billing_zip", label: "Billing Zip", type: "text" },
+
+{ key: "notes", label: "Order Notes", type: "textarea",
+
+colSpan: 2, rows: 4, placeholder: "Any special instructions?" },
+
+],
+
+};
+
+export default function CheckoutPage() {
+
+const handleSubmit = async (data: Record<string, unknown>) => {
+
+const res = await fetch("/api/orders", {
+
+method: "POST",
+
+headers: { "Content-Type": "application/json" },
+
+body: JSON.stringify(data),
+
+});
+
+if (res.ok) window.location.href = "/order-confirmation";
+
+};
+
+return (
+
+<div className="max-w-2xl mx-auto py-12 px-4">
+
+<h1 className="text-2xl font-bold mb-2">Checkout</h1>
+
+<p className="text-muted-foreground mb-8">
+
+Complete your order in 3 easy steps.
+
+</p>
+
+<FormStepper
+
+form={checkoutForm}
+
+onSubmit={handleSubmit}
+
+onCancel={() => window.history.back()}
+
+submitLabel="Place Order"
+
+/>
+
+</div>
+
+);
+
+}
+
+DataTable on Any Page
+
+The DataTable component renders a sortable, styled table from an array of data and column definitions. It supports cell formatting (badges, dates, images), row selection, and action callbacks — no resource system required.
+
+app/team/page.tsx — Team directory
+Copy to clipboard
+
+"use client";
+
+import { useState, useEffect } from "react";
+
+import { DataTable } from "@/components/tables/data-table";
+
+import type { ColumnDefinition } from "@/lib/resource";
+
+const columns: ColumnDefinition[] = [
+
+{ key: "first_name", label: "First Name", sortable: true,
+
+searchable: true },
+
+{ key: "last_name", label: "Last Name", sortable: true },
+
+{ key: "email", label: "Email", format: "text" },
+
+{ key: "role", label: "Role", format: "badge" },
+
+{ key: "active", label: "Status", format: "boolean" },
+
+{ key: "created_at", label: "Joined", format: "date" },
+
+];
+
+export default function TeamPage() {
+
+const [members, setMembers] = useState([]);
+
+const [sortBy, setSortBy] = useState("first_name");
+
+const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
+useEffect(() => {
+
+fetch("/api/users?sort=" + sortBy + "&order=" + sortOrder)
+
+.then((r) => r.json())
+
+.then((r) => setMembers(r.data ?? []));
+
+}, [sortBy, sortOrder]);
+
+return (
+
+<div className="max-w-4xl mx-auto py-12 px-4">
+
+<h1 className="text-2xl font-bold mb-6">Team Members</h1>
+
+<DataTable
+
+columns={columns}
+
+data={members}
+
+sortBy={sortBy}
+
+sortOrder={sortOrder}
+
+onSort={(key) => {
+
+if (key === sortBy) {
+
+setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+
+} else {
+
+setSortBy(key);
+
+setSortOrder("asc");
+
+}
+
+}}
+
+onView={(item) => alert("View: " + item.email)}
+
+/>
+
+</div>
+
+);
+
+}
+
+The DataTable props:
+
+PropTypeDescription
+
+columnsColumnDefinition[]Column definitions with key, label, format
+
+dataRecord<string, unknown>[]Array of row objects
+
+isLoadingbooleanShows skeleton loader
+
+sortBy / sortOrderstring / "asc" | "desc"Current sort state
+
+onSort(key: string) => voidCalled when a sortable column header is clicked
+
+onView / onEdit / onDelete(item) => voidRow action callbacks (show action buttons)
+
+selectedRowsnumber[]Selected row IDs for bulk actions
+
+Using in the Web App
+
+Both FormBuilder and DataTable are scaffolded into the admin app. To use them in the web app, copy the components you need:
+
+Copy components from admin to web
+Copy to clipboard
+
+# 1. Copy the type definitions
+
+cp apps/admin/lib/resource.ts apps/web/lib/resource.ts
+
+# 2. Copy the form components you need
+
+cp -r apps/admin/components/forms/ apps/web/components/forms/
+
+# 3. Copy the table components you need
+
+cp -r apps/admin/components/tables/ apps/web/components/tables/
+
+# 4. Copy the icon map (used by both)
+
+cp apps/admin/lib/icons.ts apps/web/lib/icons.ts
+
+The web app already includes react-hook-form, lucide-react, and tailwindcss. If you use file upload fields, also install react-dropzone. For richtext fields, install the Tiptap packages:
+
+Optional dependencies for advanced fields
+Copy to clipboard
+
+# File upload fields (image, images, video, file, files)
+
+cd apps/web && pnpm add react-dropzone
+
+# Rich text editor field
+
+cd apps/web && pnpm add @tiptap/react @tiptap/starter-kit \
+
+@tiptap/extension-link @tiptap/pm
+
+Minimal Standalone Form
+
+If you only need basic fields (text, number, select, textarea, toggle), you can skip the file upload and richtext dependencies entirely. Here's a minimal settings page:
+
+app/settings/page.tsx — Settings form
+Copy to clipboard
+
+"use client";
+
+import { useState } from "react";
+
+import { FormBuilder } from "@/components/forms/form-builder";
+
+import type { FormDefinition } from "@/lib/resource";
+
+const settingsForm: FormDefinition = {
+
+layout: "two-column",
+
+fields: [
+
+{ key: "site_name", label: "Site Name", type: "text",
+
+required: true, colSpan: 1 },
+
+{ key: "tagline", label: "Tagline", type: "text", colSpan: 1 },
+
+{ key: "timezone", label: "Timezone", type: "select", colSpan: 1,
+
+options: [
+
+{ label: "UTC", value: "UTC" },
+
+{ label: "US Eastern", value: "America/New_York" },
+
+{ label: "US Pacific", value: "America/Los_Angeles" },
+
+{ label: "Europe/London", value: "Europe/London" },
+
+] },
+
+{ key: "language", label: "Language", type: "select", colSpan: 1,
+
+options: [
+
+{ label: "English", value: "en" },
+
+{ label: "Spanish", value: "es" },
+
+{ label: "French", value: "fr" },
+
+] },
+
+{ key: "notifications", label: "Enable Notifications",
+
+type: "toggle", colSpan: 2 },
+
+{ key: "bio", label: "About", type: "textarea",
+
+colSpan: 2, rows: 4 },
+
+],
+
+};
+
+export default function SettingsPage() {
+
+const [saving, setSaving] = useState(false);
+
+const handleSubmit = async (data: Record<string, unknown>) => {
+
+setSaving(true);
+
+await fetch("/api/settings", {
+
+method: "PUT",
+
+headers: { "Content-Type": "application/json" },
+
+body: JSON.stringify(data),
+
+});
+
+setSaving(false);
+
+};
+
+return (
+
+<div className="max-w-2xl mx-auto py-12 px-4">
+
+<h1 className="text-2xl font-bold mb-6">Settings</h1>
+
+<div className="rounded-xl border border-border bg-bg-secondary p-6">
+
+<FormBuilder
+
+form={settingsForm}
+
+defaultValues={{
+
+site_name: "My App",
+
+timezone: "UTC",
+
+language: "en",
+
+notifications: true,
+
+}}
+
+onSubmit={handleSubmit}
+
+onCancel={() => {}}
+
+isSubmitting={saving}
+
+submitLabel="Save Settings"
+
+/>
+
+</div>
+
+</div>
+
+);
+
+}
+
+Available Field Types
+
+All field types from the resource system are available standalone. Each renders the same component with the same styling:
+
+TypeComponentExtra Deps
+
+text, textarea, number, date, datetimeBasic inputsNone
+
+select, radio, toggle, checkboxSelection inputsNone
+
+image, images, video, videos, file, filesUpload fieldsreact-dropzone
+
+richtextWYSIWYG editor@tiptap/*
+
+relationship-select, multi-relationship-selectAPI-backed selectsapiClient
+
+Available Column Formats
+
+DataTable cell rendering supports these formats via the format property on column definitions:
+
+FormatRenders
+
+textPlain text (default)
+
+badgeColored badge pill
+
+booleanGreen/red dot indicator
+
+dateFormatted date string
+
+imageThumbnail avatar
+
+currencyFormatted currency value
+
+richtextHTML stripped, truncated to 100 chars
+
+Multi-Step FormsRelationships

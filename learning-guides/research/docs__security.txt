@@ -1,0 +1,360 @@
+Security
+Security Guide
+
+How Grit defends every category of the OWASP Top 10:2025 by default, with the file path and code for each. Use this page as the audit checklist when a client asks "are we secure?" — walk it with them line by line.
+
+The riskBuilt-in defense
+Every OWASP Top 10 category maps to a specific Grit defense — on by default
+
+Go deeper: the Security Deep Dive course walks through auth, 2FA, the WAF and rate limiting hands-on, and Audit Log + Hash Chain covers tamper-evident activity tracking.
+
+Secure by default. Every fresh grit new project ships with the controls below already wired. You don't add security — you opt out of pieces you don't want.
+
+Prefer the attacker's perspective? The companion page maps each attack from JB's Defender's Handbook to Grit's defence — nmap, Gobuster, Hydra, SQLi, hash cracking, TOTP seed theft, SIM swap, AitM proxies, SSL strip, DDoS — with the actual code path for each, plus a bonus list of defences Grit ships that the handbook doesn't cover (SSRF, IDOR, CSRF, HMAC webhooks, idempotency, tamper-evident audit log).
+Read Defender's Handbook ↔ Grit
+
+Threat model in one paragraph
+
+Grit assumes a hostile public internet. The boundary of trust is the handler signature: anything coming in over the wire — body, query, header, cookie, even a JWT — is untrusted until verified. The defence pattern is layered (PHASE 2 §4.1 "defence in depth") — Sentinel WAF + rate limit + auth middleware + AuthZ check + parameterised queries + output encoding. A single failed layer never turns into a breach.
+
+OWASP Top 10:2025 — defence by category
+
+The 2025 edition is the canonical risk map (8th edition, finalised January 2026). For every category below, Grit ships the defence in code — not in documentation that asks you to remember.
+
+A01 — Broken Access Control
+
+Users acting beyond their permissions; now includes SSRF. Still #1.
+
+internal/authz is the IDOR defence, and from v3.224.0 a generated resource applies it in its service rather than its handler, so every caller gets it: a route, a background job, a command, a test. A list and an export are scoped in SQL, a read by id is checked after loading, and somebody else's row is 404 rather than 403, so a wrong guess cannot be told from a right one.
+
+internal/services/invoice.go (generated)
+Copy to clipboard
+
+// Scoped in SQL. The list is the path people forget, and an export is the
+
+// list without pages.
+
+query = authz.ScopeOwned(ctx, query, "user_id")
+
+// Checked after loading, for every path that works by id.
+
+func (s *InvoiceService) GetByID(ctx context.Context, id string) (*models.Invoice, error) {
+
+var item models.Invoice
+
+if err := s.db(ctx).First(&item, "id = ?", id).Error; err != nil {
+
+return nil, err
+
+}
+
+if !authz.Owns(ctx, &item) {
+
+return nil, gorm.ErrRecordNotFound // 404, not 403
+
+}
+
+return &item, nil
+
+}
+
+// The model implements Ownable:
+
+func (i *Invoice) GetOwnerID() string { return i.UserID }
+
+The caller travels on the context: a handler puts it there with authz.WithActor(c.Request.Context(), authz.ActorOf(c)), and a job says who it acts for with authz.AsSystem or authz.WithActor. An owned resource with no caller on the context matches nothing, which is the safe way for a job that forgot to fail.
+
+In a handler you write yourself, authz.MustOwn does the same check in one call and writes the 404 for you. For tenant / team scoping use authz.CheckScope; for admin-only routes use authz.RequireRoles("ADMIN"). SSRF (absorbed into A01 in 2025) is handled by the internal/safefetch package, see A05 below. What is guaranteed here and what stays yours is listed per subsystem on the stability matrix.
+
+A02 — Security Misconfiguration
+
+Insecure defaults, open buckets, verbose errors. Up from #5.
+
+The SecurityHeaders middleware sets all the OWASP-recommended headers by default: HSTS, X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy, Cross-Origin-Opener-Policy, Cross-Origin-Resource-Policy, and a strict Content-Security-Policy that blocks inline script.
+
+internal/middleware/security.go
+Copy to clipboard
+
+func SecurityHeaders() gin.HandlerFunc {
+
+return func(c *gin.Context) {
+
+c.Header("X-Content-Type-Options", "nosniff")
+
+c.Header("X-Frame-Options", "DENY")
+
+c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+
+c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+
+c.Header("Cross-Origin-Opener-Policy", "same-origin")
+
+c.Header("Cross-Origin-Resource-Policy", "same-origin")
+
+c.Header("Content-Security-Policy",
+
+"default-src 'self'; script-src 'self'; ...; frame-ancestors 'none'; "+
+
+"base-uri 'self'; form-action 'self'; object-src 'none'")
+
+if c.Request.TLS != nil || c.GetHeader("X-Forwarded-Proto") == "https" {
+
+c.Header("Strict-Transport-Security",
+
+"max-age=63072000; includeSubDomains; preload")
+
+}
+
+c.Next()
+
+}
+
+}
+
+Error responses use a generic shape (code, message) that never includes a stack trace in production. Sensitive defaults: in production mode Sentinel WAF runs in block rather than log mode.
+
+A03 — Software Supply Chain Failures
+
+NEW in 2025 — compromised dependencies, build systems, distribution.
+
+Every Grit project ships with .github/dependabot.yml configured for Go modules, npm, and GitHub Actions on a weekly schedule, plus .github/workflows/security.yml running:
+
+govulncheck — Go vulnerability scan against the Go vulnerability database.
+
+pnpm audit — high+ severity gate on the frontend.
+
+CodeQL — static analysis for both Go and JavaScript on every PR.
+
+These run on every push and pull-request, plus weekly so newly-disclosed CVEs surface even when nothing in your code changed. .github/workflows/ci.yml runs the API's tests and the frontend's lint (Biome), type-check, tests and build on every pull request too. Go modules are pinned in  go.sum with checksum verification; once pnpm-lock.yaml is committed, CI installs with --frozen-lockfile.
+
+A04 — Cryptographic Failures
+
+Weak/missing encryption exposing sensitive data.
+
+Three layers of defence ship by default:
+
+Passwords — bcrypt via golang.org/x/crypto/bcryptwith the library default cost. Constant-time verify. Never SHA-256, never MD5, never reversible encryption.
+
+Transport — HSTS preload enforced via SecurityHeaders. Any HTTPS request locks browsers into HTTPS-only for 2 years.
+
+JWT signing — HS256 with a 32-character minimum JWT_SECRET enforced at startup. The auth middleware verifies the algorithm explicitly so the classic alg:none attack is closed.
+
+Field-level encryption — declare a model field as crypto.EncryptedString and it is transparently encrypted at rest with AES-256-GCM. GORM stores ciphertext (tagged enc:v1: with a fresh nonce per write) and your code reads plaintext; the column is opaque to anyone with the database but no key.
+
+Secrets live in environment variables, never in source. .env is in .gitignore; the scaffold ships only .env.example.
+
+Encrypting a column. Set FIELD_ENCRYPTION_KEY (base64, 32 bytes, from openssl rand -base64 32) and mark the field when you generate it: notes:text:encrypted in --fields, or grit generate field Patient notes:text:encrypted on an existing resource. The model, the request structs and the CSV importer all get the type, writes encrypt, reads decrypt, and JSON responses stay plaintext. Encrypted columns are left out of search, sorting and filters, since ciphertext can never match. One rule: because every write uses a fresh nonce the ciphertext is non-deterministic, so an encrypted column can't be queried by equality. Use it for data you store and display but never filter on — personal notes, tokens, contact details — not for keys or lookup columns like email. With no key set the type passes values through as plaintext, so a project can adopt encryption later without a migration. Keep the key backed up: lose it and the encrypted columns are unrecoverable.
+
+A trap the connection closes for you: GORM map-based updates (Updates(map[string]any{"notes": ...})) skip a column's encoder unless the value is itself an EncryptedString, so a bare string stores plaintext. Generated update and PATCH handlers write exactly such maps, and until v3.212.0 the first edit to an encrypted column was stored in plaintext, invisibly, because reads pass an unprefixed value straight through. crypto.Install, called when the API connects, now wraps any string headed for an encrypted column, and a test that ships with every project checks the raw column after a map update. It needs the model to know the column: db.Model(&row).Updates is covered, raw SQL is not.
+
+A05 — Injection
+
+SQLi, command injection, XSS — hostile input executed.
+
+SQLi is closed at the protocol level: GORM uses parameterised queries for every Where, First, Create, Update, etc. The Grit codebase never builds queries by string concatenation; if you must use db.Raw, pass arguments as parameters, not interpolated strings.
+
+ok and not ok
+Copy to clipboard
+
+// OK — parameterised
+
+db.Where("email = ?", email).First(&user)
+
+db.Raw("SELECT * FROM users WHERE email = ?", email).Scan(&user)
+
+// NEVER do this
+
+db.Raw("SELECT * FROM users WHERE email = '" + email + "'")
+
+XSS — the React SPA escapes by default. The CSP header (A02) adds a second layer: even if something slips through, the browser refuses to execute inline script. In a scaffolded project, pnpm lint (Biome) flags every dangerouslySetInnerHTML. The few places Grit uses it carry a biome-ignore comment that says why the HTML is safe.
+
+SSRF (folded into A01 in 2025) — use the internal/safefetch package for any HTTP request whose URL came from the caller (webhooks, image-from-URL, PDF render, OEmbed):
+
+webhook delivery
+Copy to clipboard
+
+import "{module}/internal/safefetch"
+
+resp, err := safefetch.Get(ctx, userProvidedURL)
+
+if errors.Is(err, safefetch.ErrBlocked) {
+
+return fmt.Errorf("URL not allowed: %w", err)
+
+}
+
+safefetch blocks the standard SSRF targets — loopback (127.0.0.1, ::1), RFC1918 private ranges, link-local, CGNAT (100.64/10), AWS metadata (169.254.169.254 + IPv6 fd00:ec2::/32), and well-known cloud-metadata hostnames. It also re-validates the resolved IP at TCP-connect time via a custom dialer, closing the DNS-rebinding TOCTOU window.
+
+A06 — Insecure Design
+
+Flaws baked into the architecture, not the code.
+
+Grit's architecture is opinionated specifically to make insecure designs hard to express: a single auth middleware that's applied to a whole route group (no per-handler oversight), a single Services struct that owns DB access (no rogue connections), and a code generator that wires every new resource through the same handler / service / route pattern with auth checks pre-applied.
+
+When you generate a resource with grit generate resource, the produced handlers already call authz.MustOwn on every object access — IDOR is closed by the generator, not by the developer remembering.
+
+A07 — Authentication Failures
+
+Weak login, sessions, credential handling.
+
+Rate limiting on /api/auth/login — 5 attempts per 15 min per IP via Sentinel.
+
+Account-level brute-force protection — Sentinel's AuthShield locks the account after repeated failures.
+
+Short access tokens (15 min) paired with longer-lived refresh tokens (7 days). The frontend ships a SessionExpiryMonitor that refreshes transparently.
+
+JWT algorithm pinning — the verifier rejects any token whose alg isn't the one we signed with. alg:none is impossible.
+
+TOTP 2FA shipped out of the box (internal/totp) with trusted-device fingerprinting.
+
+Password reset uses single-use, time-bound tokens.
+
+A08 — Software & Data Integrity Failures
+
+Trusting unverified code/data updates.
+
+Webhook signatures — the internal/webhooks framework verifies HMAC signatures (Stripe, GitHub, Twilio, generic) before any business logic runs.
+
+Idempotency-Key middleware — caches the response on the first non-safe request and replays it on retries, preventing duplicate writes from at-least-once delivery.
+
+If-Match on generated updates: a PUT or PATCH carrying the version the client read lands only if the record is still at that version, and gets a 409 otherwise, so two people saving the same record cannot silently overwrite each other.
+
+Activity-log hash chain — every mutation is appended to a SHA-256 chain so retroactive tampering with audit logs breaks verification.
+
+Frontend supply chain — pnpm install --frozen-lockfile in CI; lockfile committed; Dependabot raises PRs on changes.
+
+A09 — Security Logging & Alerting Failures
+
+Can't detect or respond to attacks. Now includes 'alerting'.
+
+Grit ships middleware.LogSecurityEvent(ctx, db, userID, event, ip, ua)with a typed enum of every event that matters for SOC 2 / ISO 27001 / GDPR: login success/failure, logout, password change, password-reset request, TOTP enable/disable, TOTP challenge failure, role change, account lock, AuthZ denial, suspicious request.
+
+Events flow into the existing tamper-evident activity log (each row stores a SHA-256 hash of the previous row plus its canonical fields, so a retroactive deletion breaks the chain at verification time).
+
+The hash covers each entry's timestamp, so entries are stamped at millisecond precision, which every supported database stores exactly, and each one strictly after the last. Before v3.215.0 the stamp carried nanoseconds, Postgres and MySQL rounded them away, and verification failed on the first entry of every such log. A chain written then can be resealed from the admin audit page, or with POST /api/admin/activity/reseal naming the first bad entry. A reseal trusts every entry from that point as it stands, so it is never automatic, and it is recorded in the chain itself, with who did it and a digest of every hash it replaced.
+
+Alerting is wired through Sentinel's AuthShield + Anomaly modules and visible in the /sentinel/ui dashboard. Hook external alerting (PagerDuty, Slack, email) via Sentinel webhooks for spikes in failed logins, AuthZ denials, or WAF blocks.
+
+SIEM export (OCSF). The semantic activity log is exposed in the Open Cybersecurity Schema Framework shape that Splunk, Elastic, Microsoft Sentinel, Chronicle and Amazon Security Lake all ingest, at GET /api/audit/ocsf (admin only). Each event is mapped to its OCSF class — a failed sign-in becomes Authentication (class_uid 3002) with status_id 2; account changes become Account Change (3001); everything else is API Activity (6003). Grit's native action name is preserved under unmapped.grit_action so you can pivot back. Output is newline-delimited JSON, cursor-paginated:
+
+pull-audit.sh
+Copy to clipboard
+
+# First poll: from a start time. Thereafter, resume from the cursor the
+
+# previous response returned in its headers — no row skipped or repeated.
+
+curl -s -D headers.txt   -H "Authorization: Bearer $ADMIN_TOKEN"   "https://api.example.com/api/audit/ocsf?since=2026-07-01T00:00:00Z&limit=1000"   > batch.ndjson
+
+# X-Grit-Next-Since / X-Grit-Next-After are the cursor for the next poll.
+
+# Fewer than 'limit' rows back means you are caught up.
+
+Pull, not push: nothing to configure, no credentials for Grit to store, and the collector owns its own position — the model every one of those SIEMs already ships an HTTP connector for. An unknown action still exports (as API Activity with an Unknown activity), so a new event type is never silently dropped from the feed.
+
+Access reviews (recertification). SOC 2 CC6.2/CC6.3 and ISO 27001 A.9.2.5 all require periodic proof that someone with authority reviewed who has access to what. /system/access-reviews in the admin panel does exactly that: a campaign snapshots every current role assignment, a reviewer certifies or revokes each one, and the campaign is signed off as evidence. Revoking removes the grant immediately and writes an access_review.revoke event to the audit log (which flows out through the OCSF export above). The snapshot copies each user's email and role name, so the record stays legible even after the user or role is later deleted — a completed review is immutable, and you cannot complete one with grants still undecided.
+
+GDPR data toolkit. Two rights, both scaffolded. Right-to-access (Art. 15): GET /api/users/:id/gdpr-export returns a full JSON copy of everything the system holds on a person — profile, uploads, sessions, activity — with the password hash and OAuth ids scrubbed. A user can export their own data; an admin, anyone's. Right-to-erasure (Art. 17): /system/gdpr hard-deletes the child records that exist only to serve that user and anonymizes the account in place — scrubbing name, email and every PII column while keeping the id, so references resolve to a tombstone instead of dangling. Erasure uses an unscoped delete on purpose: a normal GORM delete would only soft-delete rows that carry gorm.DeletedAt, leaving the personal data physically in the table — which is not erasure at all.
+
+The tamper-evident activity log is deliberately left intact: its rows hold a bare UUID, not inline PII, so scrubbing the user row anonymizes them too, and editing them would break the audit hash chain. Every erasure appends one row to a deletion_journal — itself a hash chain, the same construction as the audit log — recording who erased whom, when, and how many records fell, but never the erased person's data. That's the evidence an auditor asks for; the admin page shows the journal with a live “chain verified” badge that turns red the moment any entry is altered after the fact.
+
+A10 — Mishandling of Exceptional Conditions
+
+NEW in 2025 — bad error handling, 'failing open', edge cases.
+
+Grit's middleware fails closed by convention: authz.MustOwn returns 404 on any error (DB unavailable, not found, wrong owner) — the request never reaches the handler in an ambiguous state. gin.Recovery() turns panics into 500s rather than leaking stack traces. Production builds set gin.SetMode(gin.ReleaseMode).
+
+The CSRF, rate-limit, and idempotency middleware all return explicit error responses on the failure path — there is no "continue without check" branch that an attacker can race into.
+
+localhost:3001/system/security
+
+Sentinel's view inside the admin: currently banned IPs, addresses hitting rate limits, and the escalation ladder — 5 hours, 8 hours, 24 hours, then a week — so a re-offending bot cannot wait out a fixed cooldown.
+Supply chain
+
+Two questions an enterprise review always asks: can I prove this binary came from you, and what known vulnerabilities does the code you generate carry. Both have concrete answers.
+
+Verifying a release
+
+Releases are signed with cosign in keyless mode — there is no signing key to steal, and the signing identity is recorded in the public Rekor transparency log, so a valid signature cannot be produced outside a real run of the release workflow. Every release also carries an SPDX SBOM and SLSA build provenance.
+
+verify.sh
+Copy to clipboard
+
+# Checksums
+
+curl -LO https://github.com/MUKE-coder/grit/releases/download/vX.Y.Z/SHA256SUMS
+
+sha256sum -c SHA256SUMS --ignore-missing
+
+# Signature (keyless — verified against Rekor, no key required)
+
+cosign verify-blob   --certificate SHA256SUMS.pem   --signature   SHA256SUMS.sig   --certificate-identity-regexp '^https://github.com/MUKE-coder/grit/.github/workflows/release.yml@refs/tags/v'   --certificate-oidc-issuer https://token.actions.githubusercontent.com   SHA256SUMS
+
+# Provenance — proves the workflow built it, not someone's laptop
+
+gh attestation verify grit-linux-amd64.tar.gz --repo MUKE-coder/grit
+
+Known vulnerabilities in generated code
+
+The dependency versions a scaffolded project pins are part of Grit's security surface — every user inherits them. They are checked with govulncheck, which reports only vulnerabilities in code paths actually reachable, so a finding is exploitable rather than merely present in the module graph.
+
+govulncheck gates CI on every push.
+
+The nightly canary scaffolds a fresh project and scans its dependencies, so a CVE landing in a transitive dependency is caught overnight rather than at your next audit.
+
+Transitive modules that Go's minimal version selection would otherwise settle on a vulnerable version of are pinned to explicit security floors in the generated go.mod, each annotated with the advisory it closes. Raise them, never lower them.
+
+Run the same check against your own project at any time:
+
+apps/api
+Copy to clipboard
+
+go install golang.org/x/vuln/cmd/govulncheck@latest
+
+govulncheck ./...
+
+Your Go toolchain matters as much as your modules: a standard-library CVE is fixed by upgrading Go, not a dependency. Generated Dockerfiles pin a patched Go image, but a locally built binary uses whatever you have installed.
+
+Reporting a vulnerability
+
+Privately, through GitHub Security Advisories. A vulnerability in code Grit generates counts as a vulnerability in Grit — every user gets that code, and it is the category we most want to hear about. Scope and response targets are in SECURITY.md.
+
+Pre-launch hardening checklist
+
+The fastest audit pass — work the list, tick the box. Every item is a concrete Grit affordance.
+
+CheckWhere
+
+JWT_SECRET ≥ 32 chars, rotated per env.env
+
+APP_ENV=production set.env
+
+SENTINEL_ENABLED=true + WAF in block mode.env
+
+AUTO_SEED=false in production.env
+
+CORS_ORIGINS narrowed to actual frontends.env
+
+grit doctor reports no errorsthe whole project
+
+FIELD_ENCRYPTION_KEY set, or encrypted columns are stored in the clear.env
+
+GORM_STUDIO_PASSWORD changed, or GORM_STUDIO_ENABLED=false.env
+
+SENTINEL_AUDIT_KEY set, so the audit chain is keyed.env
+
+Every resource whose rows belong to a user generated with --owned-byinternal/services/
+
+Every handler you wrote yourself calls authz.MustOwn / RequireRolesinternal/handlers/
+
+Any user-supplied URL fetched via safefetchinternal/safefetch
+
+govulncheck + pnpm audit green.github/workflows/ci.yml, scan.yml
+
+k6 average-load passes p95 SLOtests/k6/average-load.js
+
+Sentinel dashboard credentials changed from default.env
+
+The defences above don't replace testing. See the Testing page for the k6 + pentest methodology to prove they hold.
+
+MiddlewareTesting

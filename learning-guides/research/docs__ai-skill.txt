@@ -1,0 +1,213 @@
+For AI Assistants
+LLM Skill Guide
+
+Teach AI assistants to understand your Grit project. Drop a single file into your project root and your AI can generate resources, write handlers, and follow Grit conventions perfectly.
+Download Grit Handbook PDF
+
+What is GRIT_SKILL.md?
+
+GRIT_SKILL.md is a structured context file that teaches AI coding assistants how your Grit project works. It contains everything an AI needs to write code that follows Grit's conventions: project structure, CLI commands, code patterns, API format, naming rules, and more.
+
+Think of it as a "skill file" — a document that gives any AI assistant instant expertise in Grit development. Instead of explaining your project setup in every conversation, the AI reads the skill file and immediately understands the codebase.
+
+Why this matters: Grit's strict conventions and predictable structure make it uniquely suited for AI-assisted development. An AI that understands Grit's patterns can generate complete, working code — not just snippets that need manual wiring.
+
+How to Use It
+
+1
+
+Add the file to your project root
+
+Every Grit project generated with grit new includes a GRIT_SKILL.md file in the project root automatically. If you don't have one, create it manually:
+
+Project structure
+Copy to clipboard
+
+myapp/
+
+├── GRIT_SKILL.md          <-- AI reads this
+
+├── grit.config.ts
+
+├── docker-compose.yml
+
+├── packages/shared/
+
+├── apps/
+
+│   ├── api/
+
+│   ├── web/
+
+│   └── admin/
+
+└── ...
+
+2
+
+Open your project with an AI assistant
+
+The following AI tools will automatically detect and use the skill file:
+
+Claude Code (CLI)
+
+Reads GRIT_SKILL.md as project context automatically when you open the project directory.
+
+Cursor
+
+Add GRIT_SKILL.md to your project. Cursor indexes it and uses the context when generating code.
+
+Windsurf
+
+The file is indexed as part of your workspace context and informs all code generation.
+
+GitHub Copilot
+
+When working in VS Code, reference @workspace to include GRIT_SKILL.md context in chat.
+
+Any AI Chat (ChatGPT, Claude)
+
+Copy and paste the GRIT_SKILL.md content into the conversation as system context.
+
+3
+
+Start building with AI
+
+The AI now understands your project structure, conventions, and patterns. Ask it to generate resources, add fields, create endpoints, or build features — and it will follow Grit conventions automatically.
+
+What It Teaches AI Assistants
+
+The GRIT_SKILL.md file covers everything an AI needs to write idiomatic Grit code:
+
+Project Structure
+
+The complete folder layout: where models, handlers, services, and middleware live in the Go API; where pages, components, and hooks live in Next.js; how the shared package connects them.
+
+apps/api/internal/models/ — Go models
+apps/api/internal/handlers/ — HTTP handlers
+apps/web/app/ — Next.js pages
+packages/shared/src/ — Zod schemas + types
+
+CLI Commands
+
+All available Grit CLI commands: grit new, grit generate resource, grit generate seeder, grit start (server / client), grit migrate, grit seed, grit sync, grit studio, grit add role, grit upgrade. grit start is the only way to run the project. The AI knows which commands to suggest.
+
+grit generate resource Invoice --fields "..." --seed
+# Creates model, handler, service, hook, schema, admin page + seeder
+
+grit generate seeder Invoice --faker --count 50
+# Fills 50 realistic rows (belongs_to linked to real parents)
+
+Code Patterns
+
+Standard patterns for handlers (thin controllers that call services), services (business logic), models (GORM structs with tags), and hooks (React Query wrappers).
+
+Handler -> Service -> Database (GORM)
+Component -> React Query Hook -> API Client
+
+API Conventions
+
+The standard JSON response format: { data, message } for success, { error: { code, message, details } } for errors. HTTP status codes. Pagination format with meta.
+
+{ "data": [...], "meta": { "total": 100, "page": 1, "page_size": 20 } }
+
+Markers (Do Not Delete!)
+
+Lowercase code markers like // grit:models, // grit:routes:protected, and // grit:seeders that the CLI uses to inject generated code. There are no uppercase or END markers. The AI knows to preserve these and insert new code just before them.
+
+&models.User{},
+&models.Invoice{}, // new models go above
+// grit:models
+
+Batteries & Dashboards
+
+All built-in services: file storage (S3/R2), email (Resend), background jobs (asynq), cron, Redis caching, AI (Vercel AI Gateway — one AI_GATEWAY_API_KEY, many models), security (Sentinel), observability (Pulse), and API docs (gin-docs).
+
+/studio   → GORM Studio (DB browser)
+/docs     → gin-docs (API docs)
+/sentinel → Security dashboard
+/pulse    → Observability dashboard
+
+Naming Conventions
+
+Go files: snake_case. Go structs: PascalCase. TypeScript files: kebab-case. React components: PascalCase. API routes: plural lowercase. Database tables: plural snake_case.
+
+user_handler.go, CreatePostSchema, use-users.ts, /api/users
+
+"Vibe Coding" with Grit
+
+Grit's strict conventions make it ideal for AI-assisted development — what some call "vibe coding." Because every Grit project follows the same patterns, AI assistants can generate correct, production-ready code with minimal guidance.
+
+What You Can Ask Your AI
+
+"Add a Product resource with name, price, description, and category fields"
+
+The AI creates the Go model, handler, service, Zod schema, TypeScript types, React Query hook, and admin page — all following Grit conventions.
+
+"Add an image upload field to the Product model"
+
+The AI adds the field to the Go struct, updates the Zod schema, adds the upload UI to the admin form, and wires the storage service.
+
+"Create an API endpoint that returns monthly revenue stats"
+
+The AI adds the handler, service function with the GORM query, route registration, and React Query hook.
+
+"Add a sidebar link for Products in the admin panel"
+
+The AI updates the sidebar component with the correct path, icon, and positioning.
+
+"Add email verification to the registration flow"
+
+The AI adds the verification token to the User model, creates the email template, updates the auth handler, and adds the verification page.
+
+Why Grit Works Well with AI
+
+✓Predictable structure — every file has exactly one place it belongs
+
+✓Consistent patterns — handlers, services, and hooks all follow the same shape
+
+✓Code markers — the AI knows exactly where to inject new code
+
+✓Shared types — changes to Go structs can be propagated to TypeScript automatically
+
+✓Convention over configuration — fewer decisions means fewer mistakes
+
+✓Single framework — the AI does not need to guess which library you are using
+
+Tips for Best Results
+
+Be specific about field types
+
+Instead of "add a products table," say "add a Product resource with name (string), price (float), description (text), category (belongs_to Category), and is_active (bool)." The AI generates better code with precise Grit field types.
+
+Reference existing patterns
+
+Say "follow the same pattern as the User handler" or "use the same form layout as the Users admin page." The AI understands Grit patterns and will replicate them consistently.
+
+Ask for full-stack changes
+
+Grit's monorepo structure means the AI can update the Go model, TypeScript types, and React UI in a single conversation. Ask for the complete change rather than one layer at a time.
+
+Never delete markers
+
+Comments like // grit:models and // grit:routes:protected are used by the CLI code generator. If the AI tries to remove them, ask it to keep them. The skill file already instructs AI assistants to preserve markers.
+
+Keep the skill file updated
+
+When you add custom patterns or change conventions, update GRIT_SKILL.md so the AI stays in sync. The file is your single source of truth for AI context.
+
+Get the Skill File
+
+The GRIT_SKILL.md file is generated automatically when you create a new Grit project:
+
+terminal
+
+$ grit new myapp
+
+# GRIT_SKILL.md is created in the project root
+
+You can also find the latest version on the Grit GitHub repository. Copy it into any existing Grit project that does not have one.
+
+Remember: The skill file works best when it reflects the current state of your project. After generating resources with grit generate resource, the CLI automatically updates the skill file with the new models and routes.
+
+TutorialsUsing Grit with Claude

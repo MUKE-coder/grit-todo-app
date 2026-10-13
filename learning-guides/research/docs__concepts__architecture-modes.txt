@@ -1,0 +1,296 @@
+Core Concepts
+
+Architecture Modes
+
+Grit supports 5 architecture modes plus a --desktop flag that combines with any of them (except --single). Choose the one that fits your team, your deployment target, and the frameworks you already know.
+
+Same in every modeClients the mode includes
+Every mode ships the same Go API core — the mode just decides which clients come with it
+
+Single
+--single
+
+Go API + embedded React SPA — one binary
+
+Ideal for: Laravel/Rails developers, solo devs, simple deploys
+View example project (Job Portal) →
+
+Structure
+
+my-app/
+
+cmd/server/main.gogo:embed frontend/dist/*
+
+📂internal/Go backend
+
+📂frontend/React + Vite + TanStack Router
+
+📂src/admin-panel/The admin panel, at /admin/dashboard
+
+go.mod
+
+Makefilemake dev, make build
+
+Features
+
+-Single binary deployment via go:embed
+
+-Dev: Go on :8080, Vite on :5173 with proxy
+
+-make build produces one executable
+
+-No Node.js needed in production
+
+Double
+--double
+
+Web + API Turborepo monorepo
+
+Ideal for: MERN stack developers, API + SPA projects
+View example project (Job Portal) →
+
+Structure
+
+my-app/
+
+📂apps/
+
+📂api/Go backend (Gin + GORM)
+
+📂web/React frontend (Next.js or TanStack)
+
+📂app/admin/The admin panel, at /admin/dashboard
+
+📂admin-panel/Its components, lib and resources
+
+📂packages/shared/Types, schemas, constants
+
+turbo.json
+
+pnpm-workspace.yaml
+
+Features
+
+-Turborepo for parallel builds
+
+-Shared TypeScript types + Zod schemas
+
+-Independent deployment of API and web
+
+-pnpm workspaces for dependency management
+
+Triple
+--triple (default)
+
+Web + Admin + API Turborepo monorepo
+
+Ideal for: Full-stack teams, SaaS products, content platforms
+View example project (Job Portal) →
+
+Structure
+
+my-app/
+
+📂apps/
+
+📂api/Go backend (Gin + GORM)
+
+📂web/Public-facing frontend
+
+📂admin/Admin panel (DataTable, FormBuilder)
+
+📂packages/shared/Types, schemas, constants
+
+turbo.json
+
+pnpm-workspace.yaml
+
+Features
+
+-Full admin panel with DataTable + FormBuilder
+
+-Resource definitions for zero-code CRUD
+
+-Dashboard widgets, system pages
+
+-grit generate creates Go + admin page
+
+Full
+--full
+
+Everything — Web + Admin + API + Docs + Expo + Desktop
+
+Ideal for: Products that ship web, mobile, and a native desktop app from one repo
+View example project (Job Portal) →
+
+Structure
+
+my-app/
+
+📂apps/
+
+📂api/Go backend (Gin + GORM)
+
+📂web/Public-facing frontend
+
+📂admin/Admin panel
+
+📂docs/Documentation site
+
+📂expo/Expo mobile app
+
+📂desktop/Wails desktop app
+
+📂packages/shared/Types, schemas, constants
+
+Features
+
+-Triple, plus a docs site, an Expo mobile app, and a Wails desktop app
+
+-One monorepo, one shared API and type layer across every client
+
+-The first option in the interactive grit new picker
+
+-Selectable in grit new or via the --full flag
+
+API Only
+--api
+
+Go API with no frontend
+
+Ideal for: Microservices, backend teams, mobile-first apps
+View example project (Job Portal) →
+
+Structure
+
+my-app/
+
+📂apps/
+
+📂api/Go backend (Gin + GORM)
+
+📂cmd/server/
+
+📂internal/
+
+docker-compose.yml
+
+Features
+
+-Minimal footprint — Go only
+
+-All batteries included (auth, storage, jobs)
+
+-No Node.js, no frontend build step
+
+-Perfect for REST/gRPC APIs
+
+Mobile
+--mobile
+
+API + Expo React Native
+
+Ideal for: Mobile-first products, cross-platform apps
+View example project (Job Portal) →
+
+Structure
+
+my-app/
+
+📂apps/
+
+📂api/Go backend
+
+📂expo/React Native (Expo)
+
+📂packages/shared/Shared types
+
+turbo.json
+
+Features
+
+-Expo managed workflow
+
+-Shared types between API and mobile
+
+-Same auth system (JWT)
+
+-File upload with presigned URLs
+
+Multi-Client (combine flags)
+--desktop (combinable)
+
+Add a Wails desktop app to any architecture
+
+Ideal for: SaaS products needing native + mobile + web clients — the Linear / Notion / Slack pattern
+Read the multi-client guide →
+
+Structure
+
+my-app/
+
+📂apps/
+
+📂api/Shared Go backend
+
+📂web/Next.js or TanStack (optional)
+
+📂admin/Admin panel (optional)
+
+📂expo/Mobile (optional)
+
+📂desktop/Wails desktop (always)
+
+📂packages/shared/Types shared across ALL clients
+
+turbo.json
+
+Features
+
+-Combine --desktop with --triple, --double, --mobile, or --api
+
+-Frameless Wails window (platform-aware window controls)
+
+-Command palette (⌘K) built in
+
+-OS keychain token storage (not localStorage)
+
+-Not compatible with --single (single apps bundle their own SPA)
+
+-Distinct from grit new-desktop (standalone offline-first)
+
+Frontend Framework Choice
+
+For any architecture that includes a frontend (single, double, triple), you can choose between:
+
+Next.js
+--next
+
+- Server-side rendering (SSR)
+
+- SEO-friendly by default
+
+- App Router with layouts
+
+- Larger bundle, Node.js runtime
+
+TanStack Router
+--vite
+
+- Vite — instant HMR, fast builds
+
+- Small bundle size (SPA)
+
+- File-based routing via plugin
+
+- No Node.js server needed
+
+Example Projects
+
+We built the same Job Portal app with every architecture so you can see exactly how each one works. Each example includes a README, step-by-step guide, .env template, and production Docker Compose.
+
+Triple + Next.js→Triple + TanStack→Double + TanStack→Single (one binary)→API Only→Mobile + Expo→
+
+All examples: github.com/MUKE-coder/grit/tree/main/examples
+
+Architecture OverviewCLI Commands

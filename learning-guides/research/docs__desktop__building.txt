@@ -1,0 +1,114 @@
+Desktop (Wails)
+Building & Distribution
+
+Compile your desktop app into a native executable and distribute it to users.
+
+Single binaryPlatform installer
+Wails compiles a single native binary — ship the executable or a platform installer
+
+Compile
+
+Build a production-ready native executable with a single command:
+
+Terminal
+Copy to clipboard
+
+$grit compile
+
+This auto-detects your desktop project and runs wails build. The output binary is placed in build/bin/.
+
+You can also run wails build directly for more control over build flags.
+
+Build Output
+
+PlatformOutput
+
+Windowsbuild/bin/myapp.exe
+
+macOSbuild/bin/myapp.app
+
+Linuxbuild/bin/myapp
+
+Cross-Platform Builds
+
+Build for a specific platform using the -platform flag:
+
+Terminal
+Copy to clipboard
+
+# Windows
+
+$wails build -platform windows/amd64
+
+# macOS (Intel)
+
+$wails build -platform darwin/amd64
+
+# macOS (Apple Silicon)
+
+$wails build -platform darwin/arm64
+
+# Linux
+
+$wails build -platform linux/amd64
+
+Windows Installer (grit package)
+
+Build a distributable Windows installer in one step with grit package. It compiles the app and produces an NSIS installer (.exe), auto-detecting makensis on your PATH.
+
+Terminal
+Copy to clipboard
+
+$grit package
+
+This produces a .exe installer that handles installation, Start Menu shortcuts, and uninstallation. If NSIS is not installed, run grit package --no-installer to build just the raw binary. Under the hood you can still call wails build -nsis directly for finer control.
+
+Installed apps can update themselves — see the Auto-Update guide for shipping new releases in-app.
+
+Production Tips
+
+App Icon
+
+Place your icon at build/appicon.png (1024x1024). Wails automatically converts it for each platform during build.
+
+Environment Config
+
+The .env file is read at runtime from the working directory. For production, either bundle it alongside the executable or use OS environment variables.
+
+Embedded Assets
+
+The React frontend is embedded into the Go binary via //go:embed all:frontend/dist. No separate files need to be distributed — everything is in one executable.
+
+Database & Uploads Location
+
+SQLite creates app.db in the working directory (override with the DB_DSN env var). Native file uploads are written to the OS app-data directory, so they stay writable even when the binary lives in a read-only install location.
+
+Wails Configuration
+
+The wails.json file controls build settings:
+
+{
+
+"name": "myapp",
+
+"outputfilename": "myapp",
+
+"frontend:install": "npm install",
+
+"frontend:build": "npm run build",
+
+"frontend:dev:watcher": "npm run dev",
+
+"frontend:dev:serverUrl": "auto",
+
+"author": {
+
+"name": "Your Name"
+
+}
+
+}
+
+Copy to clipboard
+
+Download Desktop Handbook (PDF)Complete offline reference for Grit Desktop development

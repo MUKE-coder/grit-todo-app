@@ -1,0 +1,620 @@
+Admin Panel
+Resource Definitions
+
+Resources are the building blocks of the Grit admin panel. Define your data model once in TypeScript and get a complete admin interface — data table, forms, filters, sidebar navigation, and dashboard widgets.
+
+One definition objectEvery admin surface
+Each part of the definition object feeds a different admin surface
+
+The defineResource() API
+
+Every admin resource is created with the defineResource() function. It accepts a single configuration object that describes the resource name, API endpoint, table columns, form fields, and optional dashboard widgets.
+
+ResourceConfig type
+Copy to clipboard
+
+interface ResourceConfig {
+
+// Identity
+
+name: string              // Singular name, PascalCase (e.g. "Invoice")
+
+slug?: string             // URL slug, auto-derived if omitted (e.g. "invoices")
+
+endpoint: string          // Go API base URL (e.g. "/api/invoices")
+
+icon: string              // Lucide icon name (e.g. "FileText")
+
+label?: {                 // Display labels (auto-derived from name)
+
+singular: string        // "Invoice"
+
+plural: string          // "Invoices"
+
+}
+
+// How the create/edit form is presented (optional)
+
+formView?: 'sheet' | 'modal' | 'page' | 'modal-steps' | 'page-steps'
+
+// Table configuration
+
+table: TableConfig
+
+// Form configuration
+
+form: FormConfig
+
+// Dashboard widgets (optional)
+
+dashboard?: DashboardConfig
+
+// Stats cards above the table (optional; omit for 4 auto defaults, false to disable)
+
+stats?: StatsConfig | boolean
+
+// Sidebar nav grouping — resources sharing a key collapse under one header
+
+group?: string
+
+// Access control (optional)
+
+adminOnly?: boolean       // Hide from the sidebar for non-ADMIN/EDITOR users
+
+}
+
+Resource Configuration
+
+Name, Slug, and Endpoint
+
+The name field is the singular PascalCase name of your resource (e.g. "Invoice"). Grit auto-derives the plural form, URL slug, and display labels from it. You can override any of these with the slug and label fields.
+
+The endpoint must match the API route registered in your Go backend. For a resource named "Invoice", the endpoint is typically /api/invoices. The admin panel appends /:id for single-item operations automatically.
+
+Icon
+
+Pass any Lucide icon name as a string. The sidebar renders it next to the resource label. Common choices: "Users", "FileText", "ShoppingCart", "CreditCard", "Mail".
+
+Table Configuration
+
+The table object controls how data appears in the resource's data table — which columns are shown, how they are formatted, what filters are available, and which row actions are enabled.
+
+TableConfig type
+Copy to clipboard
+
+interface TableConfig {
+
+columns: ColumnDef[]
+
+filters?: FilterDef[]
+
+pageSize?: number            // Default: 20
+
+defaultSort?: {
+
+key: string
+
+direction: 'asc' | 'desc'
+
+}
+
+searchable?: boolean         // Enable global search (default: true)
+
+actions?: Action[]           // 'create' | 'edit' | 'delete' | 'view' | 'export'
+
+bulkActions?: BulkAction[]   // 'delete' | 'export'
+
+dateFilter?: {               // Date-window filter on the list page (default on)
+
+enabled?: boolean
+
+field?: string             // Column to filter (default: 'created_at')
+
+label?: string
+
+}
+
+export?: false | {           // Toolbar download menu (CSV / JSON / Excel, default all on)
+
+csv?: boolean
+
+json?: boolean
+
+excel?: boolean
+
+}
+
+import?: false | {           // Excel import button + modal (default on)
+
+excel?: boolean
+
+fields?: string[]
+
+}
+
+}
+
+Column Definitions
+
+Each column maps a field from the API response to a table column. The column definition controls sorting, searching, formatting, and custom rendering.
+
+ColumnDef type
+Copy to clipboard
+
+interface ColumnDef {
+
+key: string                  // JSON field name (supports dot notation: "customer.name")
+
+label: string                // Column header text
+
+sortable?: boolean           // Allow sorting by this column
+
+searchable?: boolean         // Include in global search
+
+format?: ColumnFormat        // Display format
+
+badge?: BadgeConfig          // Badge-style rendering for status fields
+
+hidden?: boolean             // Hidden by default (show/hide toggle)
+
+width?: string               // Fixed column width
+
+className?: string           // Tailwind classes applied to every cell
+
+cell?: (row) => ReactNode    // Custom renderer (overrides format/badge)
+
+}
+
+type ColumnFormat =
+
+| 'text'                     // Plain text (default)
+
+| 'currency'                 // Currency ($1,234.00)
+
+| 'boolean'                  // Check/X icon
+
+| 'date'                     // Formatted date (Jan 15, 2026)
+
+| 'relative'                 // Relative time (3 hours ago)
+
+| 'badge'                    // Colored badge
+
+| 'image'                    // Thumbnail image
+
+| 'video' | 'file' | 'files' // Media / attachment previews
+
+| 'link' | 'email' | 'color' // URL, mailto, and color swatch
+
+| 'richtext'                 // HTML stripped to a plain-text preview
+
+| 'user'                     // Avatar + name + email stacked
+
+interface BadgeConfig {
+
+[value: string]: {
+
+color: 'green' | 'yellow' | 'red' | 'blue' | 'purple' | 'gray'
+
+label: string
+
+}
+
+}
+
+Column Format Types
+
+The format property determines how the cell value is rendered:
+
+FormatInputRendered As
+
+text"Hello World"Hello World
+
+currency99.5$99.50
+
+booleantrue / falseGreen check / Red X icon
+
+date"2026-01-15T..."Jan 15, 2026
+
+relative"2026-01-15T..."3 weeks ago
+
+badge"active"Colored pill with label
+
+image"https://..."32x32 rounded thumbnail
+
+Badge Columns
+
+For status-like fields, use the badge property instead of (or in addition to) format. It maps each possible value to a colored label:
+
+Badge column example
+Copy to clipboard
+
+{
+
+key: 'status',
+
+label: 'Status',
+
+badge: {
+
+paid:    { color: 'green',  label: 'Paid' },
+
+pending: { color: 'yellow', label: 'Pending' },
+
+overdue: { color: 'red',    label: 'Overdue' },
+
+},
+
+}
+
+Filters
+
+Filters appear above the data table and let users narrow down results. Three filter types are available:
+
+FilterDef type
+Copy to clipboard
+
+interface FilterDef {
+
+key: string                  // Field to filter on
+
+type: 'select' | 'date-range' | 'number-range'
+
+label?: string               // Display label (defaults to key)
+
+options?: string[]           // For 'select' type
+
+}
+
+// Example filters
+
+filters: [
+
+{ key: 'status', type: 'select', options: ['paid', 'pending', 'overdue'] },
+
+{ key: 'created_at', type: 'date-range' },
+
+{ key: 'amount', type: 'number-range' },
+
+]
+
+Form Configuration
+
+The form object defines the fields that appear in create and edit modals. Grit supports a wide range of field types and validates input using Zod schemas from the shared package.
+
+FormConfig type
+Copy to clipboard
+
+interface FormConfig {
+
+fields: FieldDef[]
+
+layout?: 'single' | 'two-column'  // Default: 'single'
+
+}
+
+interface FieldDef {
+
+key: string                  // JSON field name
+
+label: string                // Display label
+
+type: FieldType              // Input type
+
+required?: boolean           // Required field (default: false)
+
+placeholder?: string         // Placeholder text
+
+defaultValue?: unknown       // Default value for create mode
+
+options?: { label: string; value: string }[]
+
+min?: number                 // For number type
+
+max?: number                 // For number type
+
+step?: number                // For number type
+
+rows?: number                // For textarea type
+
+colSpan?: 1 | 2              // Column span in two-column layout
+
+}
+
+type FieldType =
+
+| 'text'
+
+| 'textarea'
+
+| 'number'
+
+| 'select'
+
+| 'date'
+
+| 'datetime'
+
+| 'toggle'
+
+| 'checkbox'
+
+| 'radio'
+
+| 'image'                    // Single image upload
+
+| 'images'                   // Multiple image upload
+
+| 'video'                    // Single video upload
+
+| 'videos'                   // Multiple video upload
+
+| 'file'                     // Single file upload
+
+| 'files'                    // Multiple file upload
+
+| 'richtext'                 // Rich text editor
+
+| 'relationship-select'      // Select from related resource
+
+| 'multi-relationship-select' // Multi-select from related resource
+
+Form Field Types
+
+Each field type renders a different input component. Here is a quick reference:
+
+TypeComponentExtra Props
+
+textText inputplaceholder
+
+textareaMulti-line textarearows, placeholder
+
+numberNumeric inputmin, max, step
+
+selectDropdown selectoptions
+
+dateDate picker--
+
+datetimeDate & time picker--
+
+toggleToggle switch--
+
+checkboxCheckbox--
+
+radioRadio button groupoptions
+
+imageSingle image uploadaccept
+
+imagesMultiple image uploadaccept
+
+videoSingle video uploadaccept
+
+videosMultiple video uploadaccept
+
+fileSingle file uploadaccept
+
+filesMultiple file uploadaccept
+
+richtextRich text editor--
+
+relationship-selectResource selectrelatedEndpoint, displayField
+
+multi-relationship-selectResource multi-selectrelatedEndpoint, displayField, relationshipKey
+
+Dashboard Configuration
+
+Each resource can optionally define widgets that appear on the admin dashboard. Widgets pull data from your Go API and display stats, charts, or activity feeds.
+
+DashboardConfig type
+Copy to clipboard
+
+interface DashboardConfig {
+
+enabled?: boolean            // false hides this resource's preset widgets
+
+widgets?: WidgetDef[]
+
+}
+
+interface WidgetDef {
+
+type: 'stat' | 'chart' | 'activity'
+
+label: string
+
+endpoint?: string            // Go API URL the widget reads (e.g. "/api/orders?page_size=1")
+
+icon?: string                // Lucide icon name
+
+color?: string               // Accent color for the widget
+
+format?: 'number' | 'currency' | 'percentage'
+
+chartType?: 'line' | 'bar' | 'pie'   // For type: 'chart'
+
+colSpan?: 1 | 2 | 3 | 4
+
+}
+
+Complete Example
+
+Here is a full resource definition for a Posts resource with table columns, filters, form fields, and dashboard widgets:
+
+apps/admin/resources/posts.ts
+Copy to clipboard
+
+import { defineResource } from '@/lib/resource'
+
+export const postsResource = defineResource({
+
+name: 'Post',
+
+slug: 'posts',
+
+endpoint: '/api/posts',
+
+icon: 'FileText',
+
+label: {
+
+singular: 'Blog Post',
+
+plural: 'Blog Posts',
+
+},
+
+adminOnly: true,
+
+table: {
+
+columns: [
+
+{ key: 'title', label: 'Title', sortable: true, searchable: true },
+
+{ key: 'author.name', label: 'Author' },
+
+{ key: 'category', label: 'Category', sortable: true },
+
+{ key: 'status', label: 'Status', badge: {
+
+published: { color: 'green', label: 'Published' },
+
+draft:     { color: 'yellow', label: 'Draft' },
+
+archived:  { color: 'gray', label: 'Archived' },
+
+}},
+
+{ key: 'views', label: 'Views', sortable: true },
+
+{ key: 'published_at', label: 'Published', format: 'date' },
+
+{ key: 'created_at', label: 'Created', format: 'relative' },
+
+],
+
+filters: [
+
+{ key: 'status', type: 'select', options: ['published', 'draft', 'archived'] },
+
+{ key: 'category', type: 'select', options: ['tech', 'design', 'business'] },
+
+{ key: 'published_at', type: 'date-range' },
+
+],
+
+pageSize: 25,
+
+defaultSort: { key: 'created_at', direction: 'desc' },
+
+actions: ['create', 'edit', 'delete', 'export'],
+
+bulkActions: ['delete', 'export'],
+
+// Toolbar download menu (CSV / JSON / Excel) + Excel import are on by default.
+
+},
+
+form: {
+
+layout: 'two-column',
+
+fields: [
+
+{ key: 'title', label: 'Title', type: 'text', required: true,
+
+placeholder: 'Enter post title', colSpan: 2 },
+
+{ key: 'slug', label: 'Slug', type: 'text',
+
+placeholder: 'auto-generated-from-title' },
+
+{ key: 'category', label: 'Category', type: 'select',
+
+options: [
+
+{ label: 'Tech', value: 'tech' },
+
+{ label: 'Design', value: 'design' },
+
+{ label: 'Business', value: 'business' },
+
+] },
+
+{ key: 'content', label: 'Content', type: 'richtext', colSpan: 2 },
+
+{ key: 'excerpt', label: 'Excerpt', type: 'textarea', rows: 3,
+
+colSpan: 2 },
+
+{ key: 'status', label: 'Status', type: 'select',
+
+options: [
+
+{ label: 'Published', value: 'published' },
+
+{ label: 'Draft', value: 'draft' },
+
+{ label: 'Archived', value: 'archived' },
+
+], defaultValue: 'draft' },
+
+{ key: 'featured', label: 'Featured Post', type: 'toggle' },
+
+{ key: 'cover_image', label: 'Cover Image', type: 'file', colSpan: 2 },
+
+],
+
+},
+
+dashboard: {
+
+widgets: [
+
+{ type: 'stat', label: 'Total Posts', icon: 'FileText', color: 'accent',
+
+endpoint: '/api/posts?page_size=1', format: 'number' },
+
+{ type: 'stat', label: 'Published', icon: 'CheckCircle', color: 'success',
+
+endpoint: '/api/posts?status=published&page_size=1', format: 'number' },
+
+],
+
+},
+
+})
+
+Resource Registry
+
+After creating a resource definition file, you need to register it in the resource registry. This file is the single source of truth for all admin resources — the sidebar, router, and dashboard all read from it.
+
+apps/admin/resources/index.ts
+Copy to clipboard
+
+import users from './users'
+
+import posts from './posts'
+
+import invoices from './invoices'
+
+// All registered resources — sidebar and routes are generated from this array
+
+export const resources = [users, posts, invoices]
+
+// Helper to look up a resource by slug
+
+export function getResource(slug: string) {
+
+return resources.find((r) => r.slug === slug)
+
+}
+
+When you run grit generate resource, the CLI automatically adds the import and registration to this file using marker-based code injection. You never need to edit it manually unless you want to reorder the sidebar items.
+
+How Resources Auto-Register in the Sidebar
+
+The admin sidebar component imports the resources array from the registry and renders a navigation link for each one. Each resource'sicon and label.plural (or auto-derived name) are used as the sidebar text. The active item is highlighted based on the current URL path.
+
+The order of resources in the registry array determines their order in the sidebar. System pages (Dashboard, Jobs, Files, Settings) are rendered separately and always appear at fixed positions.
+
+Admin OverviewDataTable

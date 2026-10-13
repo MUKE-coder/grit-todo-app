@@ -1,0 +1,298 @@
+Learn Grit
+Tutorials
+
+Learn Grit by building. Follow a guided track end-to-end for web, desktop, or mobile — or grab a focused tutorial and finish something concrete in about 30 minutes. All free and self-paced.
+
+Copy prompt to build with AI
+
+Guided tracks
+
+Track
+
+$ grit new app --triple
+
+Grit Web
+
+Building Web Applications
+
+9 lessons~4.5 hours
+
+Track
+
+$ grit new app --desktop
+
+Grit Desktop
+
+Building Desktop Applications
+
+6 lessons~3 hours
+
+Track
+
+$ grit new app --mobile
+
+Grit Mobile
+
+Building Mobile Applications
+
+5 lessons~2.5 hours
+
+Focused tutorials
+
+20 min
+
+$ grit new contacts --triple --next
+
+Contacts: web app
+
+The same app as a Next.js site, admin and Go API
+20 min
+
+20 min
+
+$ grit new contacts --triple --desktop
+
+Contacts: desktop app
+
+The same app in a native window, with Wails
+20 min
+
+20 min
+
+$ grit new contacts --triple --expo
+
+Contacts: mobile app
+
+The same app on a phone, with Expo
+20 min
+
+20 min
+
+$ grit new contacts --api
+
+Contacts: API only
+
+The same app as a Go service, no frontend
+20 min
+
+20 min
+
+$ grit new contacts --single
+
+Contacts: one binary
+
+The same app in a single executable
+20 min
+
+20 min
+
+$ grit new contacts --full
+
+Contacts: everything
+
+The same app with every client at once
+20 min
+
+30 min
+
+$ grit new app --desktop
+
+Offline-First Desktop
+
+Local SQLite + outbox + Git-style sync
+30 min
+
+30 min
+
+GET /admin/audit-log
+
+Audit Log + Hash Chain
+
+Tamper-evident activity tracking for SOC2
+30 min
+
+30 min
+
+flags.IsEnabled("beta")
+
+Feature Flags & A/B Testing
+
+Sticky bucketing, percentage rollouts, realtime push
+30 min
+
+30 min
+
+POST /webhooks/:provider
+
+Webhook Receiver
+
+Stripe / GitHub / HMAC verifiers + replay
+30 min
+
+30 min
+
+$ grit generate resource
+
+CSV / Excel Export
+
+Auto-generated per resource via grit generate
+30 min
+
+30 min
+
+hub.Broadcast(event)
+
+Realtime + WebSocket Hub
+
+SendToUser, Broadcast, useRealtimeEvent
+30 min
+
+30 min
+
+$ grit new app --triple
+
+Batteries Included
+
+Every feature that ships with Grit
+30 min
+
+30 min
+
+$ grit new api --api
+
+API-Only Masterclass
+
+Build & deploy a REST API with Go
+30 min
+
+30 min
+
+$ grit new fit --mobile
+
+Build a Fitness App
+
+Go API + Expo React Native
+30 min
+
+30 min
+
+GET /docs
+
+API Docs: Scalar & Swagger
+
+Auto-generated API documentation
+30 min
+
+30 min
+
+sentinel.Protect()
+
+Security Deep Dive
+
+Auth, 2FA, WAF & rate limiting
+30 min
+
+30 min
+
+GET /pulse
+
+Pulse Analytics
+
+Tracing, metrics & monitoring
+30 min
+
+30 min
+
+$ grit studio
+
+GORM Studio
+
+The visual database browser
+30 min
+
+30 min
+
+$ grit new app --vite
+
+React + Vite + Go
+
+Building with TanStack Router
+30 min
+
+30 min
+
+$ dokploy deploy
+
+Deployment Guide
+
+Dokploy, Orbita, VPS & Vercel
+30 min
+
+30 min
+
+$ wails build
+
+Invoice Generator
+
+Desktop app with Wails + PDF export
+30 min
+
+30 min
+
+$ go test ./...
+
+Testing Your Grit App
+
+Go, Vitest & Playwright
+30 min
+
+30 min
+
+db.AutoMigrate(&User{})
+
+Database Mastery
+
+GORM models, migrations & queries
+30 min
+
+30 min
+
+useRealtimeEvent()
+
+Real-Time Chat
+
+WebSockets with grit-websockets
+30 min
+
+30 min
+
+stripe.Subscribe(plan)
+
+Stripe Payments
+
+Subscriptions & billing for SaaS
+30 min
+
+30 min
+
+$ gh workflow run ci
+
+CI/CD with GitHub Actions
+
+Automated testing & deployment
+30 min
+
+Frequently asked questions
+
+Courses vs the docs — what's the difference?
+Courses are guided, build-along walkthroughs; the docs are the reference you look things up in. Each course links back to the relevant docs, and vice-versa.
+Do I need to do them in order?
+Start with a guided track (Web, Desktop, or Mobile) if you are new. The focused tutorials are standalone — pick whichever topic you need.
+
+Something wrong, unclear, or missing on this page?
+
+Open an issue: your feedback shapes Grit, and we fix docs fast.
+
+Raise an issue on GitHub
+
+All coursesCreate a project

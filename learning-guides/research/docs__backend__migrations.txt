@@ -1,0 +1,498 @@
+Backend
+Migrations
+
+Grit wraps GORM's AutoMigrate with a diff-logging runner: it creates any missing tables and adds new columns to tables that already exist, then prints exactly what changed — created, altered, or unchanged. Migrations run as a separate command, never on server startup, so you stay in control of when your schema changes.
+
+The lifecycle at a glance
+
+Migrations create the tables; seeders fill them with rows. Both are explicit commands you run — never on server startup — so you always control when the schema and data change. The usual first-run order is migrate, then seed, then serve.
+
+models.Models()
+
+the model registry
+
+grit migrate
+
+create tables + add columns
+
+grit seed
+
+fills tables (idempotent)
+
+Model registry
+
+Schema — migrate
+
+Data — seed
+
+This page covers the left two boxes — the model registry and the migrate command. For the third box (filling tables with data, faker, and relationships) see Seeders.
+
+Running Migrations
+
+Before starting the API server for the first time (or after adding new models), run the migrate command:
+
+Terminal
+Copy to clipboard
+
+$grit migrate
+
+The migrate command connects to your database and runs AutoMigrate for every registered model — creating missing tables and adding any new columns to existing ones. It snapshots the columns before and after, so the log tells you exactly what changed:
+
+output
+Copy to clipboard
+
+================================================================
+
+DATABASE MIGRATION — 8 model(s) registered
+
+================================================================
+
++ created models.Category
+
+~ models.User — added 2 column(s): job_title, bio
+
+----------------------------------------------------------------
+
+Migration done — 1 table(s) created, 1 altered (+2 column(s)), 6 unchanged.
+
+================================================================
+
+How It Works
+
+The migration system is built on two functions in internal/models/user.go: a Models() registry and a Migrate() runner.
+
+apps/api/internal/models/user.go
+Copy to clipboard
+
+// Models returns the ordered list of all models for migration.
+
+// Models with no foreign key dependencies come first.
+
+func Models() []interface{} {
+
+return []interface{}{
+
+&User{},
+
+&Upload{},
+
+// grit:models
+
+}
+
+}
+
+// Migrate runs AutoMigrate for every registered model. For tables that
+
+// already exist, GORM ALTERs them to add missing columns — we snapshot
+
+// the column set before and after so the log surfaces exactly what changed.
+
+func Migrate(db *gorm.DB) error {
+
+models := Models()
+
+created, altered, columnsAdded, unchanged := 0, 0, 0, 0
+
+for _, model := range models {
+
+existed := db.Migrator().HasTable(model)
+
+// Snapshot columns before, so we can diff what AutoMigrate adds.
+
+before := map[string]bool{}
+
+if existed {
+
+cols, _ := db.Migrator().ColumnTypes(model)
+
+for _, c := range cols {
+
+before[c.Name()] = true
+
+}
+
+}
+
+if err := db.AutoMigrate(model); err != nil {
+
+return fmt.Errorf("migrating %T: %w", model, err)
+
+}
+
+if !existed {
+
+log.Printf("  + created %T", model)
+
+created++
+
+continue
+
+}
+
+// Diff columns to surface anything AutoMigrate added.
+
+after, _ := db.Migrator().ColumnTypes(model)
+
+var added []string
+
+for _, c := range after {
+
+if !before[c.Name()] {
+
+added = append(added, c.Name())
+
+}
+
+}
+
+if len(added) == 0 {
+
+unchanged++
+
+continue
+
+}
+
+log.Printf("  ~ %T — added %d column(s): %s", model, len(added), strings.Join(added, ", "))
+
+altered++
+
+columnsAdded += len(added)
+
+}
+
+log.Printf("Migration done — %d created, %d altered (+%d column(s)), %d unchanged.",
+
+created, altered, columnsAdded, unchanged)
+
+return nil
+
+}
+
+Every model is passed through AutoMigrate. A brand-new table is created; an existing table is altered to add any new columns your struct gained (GORM never drops columns or changes existing types). By snapshotting the columns before and after, the runner can print a precise created / altered / unchanged summary instead of migrating silently.
+
+The Migrate Entrypoint
+
+The migrate command lives at cmd/migrate/main.go. It loads your config, connects to the database, and runs the migration:
+
+apps/api/cmd/migrate/main.go
+Copy to clipboard
+
+package main
+
+import (
+
+"flag"
+
+"fmt"
+
+"log"
+
+"os"
+
+"myapp/apps/api/internal/config"
+
+"myapp/apps/api/internal/database"
+
+"myapp/apps/api/internal/models"
+
+)
+
+func main() {
+
+fresh := flag.Bool("fresh", false, "Drop all tables before migrating")
+
+flag.Parse()
+
+cfg, err := config.Load()
+
+if err != nil {
+
+log.Fatalf("Failed to load config: %v", err)
+
+}
+
+db, err := database.Connect(cfg.DatabaseURL)
+
+if err != nil {
+
+log.Fatalf("Failed to connect to database: %v", err)
+
+}
+
+if *fresh {
+
+fmt.Println("Dropping all tables...")
+
+if err := database.DropAll(db); err != nil {
+
+log.Fatalf("Failed to drop tables: %v", err)
+
+}
+
+fmt.Println("All tables dropped.")
+
+}
+
+fmt.Println("Running migrations...")
+
+if err := models.Migrate(db); err != nil {
+
+log.Fatalf("Migration failed: %v", err)
+
+}
+
+fmt.Println("Migrations completed successfully.")
+
+os.Exit(0)
+
+}
+
+Fresh Migrations
+
+When you need to start from scratch — during development or testing — use the --fresh flag. This drops all tables before re-running migrations:
+
+Terminal
+Copy to clipboard
+
+$grit migrate --fresh
+
+Warning: The --fresh flag permanently deletes all data. Never use it in production.
+
+Fresh migrations are useful when:
+
+✓You changed column types or removed fields from a model
+
+✓You need to reset your local development database
+
+✓You want to re-seed with fresh test data
+
+The DropAll helper uses raw SQL to drop all public tables:
+
+apps/api/internal/database/migrate.go
+Copy to clipboard
+
+// DropAll drops all tables in the database.
+
+// Used by the migrate --fresh command.
+
+func DropAll(db *gorm.DB) error {
+
+var tables []string
+
+if err := db.Raw("SELECT tablename FROM pg_tables WHERE schemaname = 'public'").Scan(&tables).Error; err != nil {
+
+return fmt.Errorf("failed to list tables: %w", err)
+
+}
+
+if len(tables) == 0 {
+
+return nil
+
+}
+
+for _, table := range tables {
+
+if err := db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %q CASCADE", table)).Error; err != nil {
+
+return fmt.Errorf("failed to drop table %s: %w", table, err)
+
+}
+
+}
+
+return nil
+
+}
+
+Adding New Models
+
+When you generate a new resource with grit generate resource, the model is automatically registered in the Models() function via the // grit:models marker.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Category
+
+This adds &Category{} to the Models() list:
+
+apps/api/internal/models/user.go
+Copy to clipboard
+
+func Models() []interface{} {
+
+return []interface{}{
+
+&User{},
+
+&Upload{},
+
+&Category{},
+
+// grit:models
+
+}
+
+}
+
+After generating the resource, run migrations to create the new table:
+
+Terminal
+Copy to clipboard
+
+$grit migrate
+
+The output confirms that only the new table was created:
+
+output
+Copy to clipboard
+
+DATABASE MIGRATION — 3 model(s) registered
+
++ created models.Category
+
+Migration done — 1 created, 0 altered (+0 column(s)), 2 unchanged.
+
+Foreign Key Ordering
+
+When models have foreign key relationships, the order in Models() matters. Parent tables must come before child tables so foreign key constraints can be created.
+
+Correct ordering
+Copy to clipboard
+
+func Models() []interface{} {
+
+return []interface{}{
+
+&User{},     // ← No dependencies (parent)
+
+&Upload{},   // ← Depends on User (has UserID FK)
+
+&Category{}, // ← No dependencies
+
+&Product{},  // ← Depends on Category (has CategoryID FK)
+
+&Order{},    // ← Depends on User (has UserID FK)
+
+// grit:models
+
+}
+
+}
+
+The grit generate resource command always appends new models at the end (before the marker). If a new model depends on another table, make sure the parent model is listed first. You can safely reorder the entries in Models() — just keep the // grit:models marker as the last line.
+
+Tip: If you see a "foreign key constraint" error during migration, check that the parent model appears before the child model in Models().
+
+Typical Workflow
+
+Here's the recommended workflow when starting or extending a Grit project:
+
+1
+
+Start infrastructure
+
+Terminal
+Copy to clipboard
+
+$docker compose up -d
+
+2
+
+Run migrations
+
+Terminal
+Copy to clipboard
+
+$grit migrate
+
+3
+
+Seed the database (optional)
+
+Terminal
+Copy to clipboard
+
+$grit seed
+
+4
+
+Start the server
+
+Terminal
+Copy to clipboard
+
+$grit start server
+
+Rolling Back
+
+There are no down scripts in Grit, because there are no up scripts to write them against: AutoMigrate works out what to change by comparing your models to the database. What makes a rollback possible anyway is that it only ever adds — a table, a column, an index — and never drops a column. So each run is recorded by what it actually changed, taken from the schema before and after, and the reverse is computed from that.
+
+Terminal
+Copy to clipboard
+
+$grit migrate status      # what each run changed, newest first
+
+$grit migrate down        # undo the last run
+
+$grit migrate down --steps 3
+
+$grit migrate down --dry-run
+
+$grit migrate down --yes  # no prompt, for scripts and CI
+
+The record lives in two tables in your own database, grit_migrations and grit_migration_changes, so the history is readable with psql and travels with a database dump. A rollback drops what the run added in the reverse order: indexes, then columns, then tables. Each drop is skipped if it is already gone, so a rollback interrupted halfway can simply be run again.
+
+grit migrate down
+Copy to clipboard
+
+Rolling back 1 run(s):
+
+20260912-034031.905 (2026-09-12 03:40, 2 change(s))
+
+DROP INDEX IF EXISTS "idx_widgets_colour";
+
+ALTER TABLE "widgets" DROP COLUMN "colour";
+
+Dropping a table or a column does not keep the data in it. This is not reversible.
+
+Type yes to continue:
+
+What this cannot do: bring data back. Dropping a column takes everything written into it since the run that added it, which is why every statement is printed before anything runs and nothing runs without a confirmation or --yes. Read the statements; they are the whole plan.
+
+The whole thing end to end, on a project you can throw away afterwards. This block is one of the few the build runs rather than only reads: every command in it is executed against a real Postgres on every change to these docs.
+
+Terminal
+Copy to clipboard
+
+$grit generate resource Widget --fields "name:string"
+
+$grit migrate                  # creates the widgets table: one recorded change
+
+$grit migrate status           # the baseline, and then this run
+
+$grit migrate down --dry-run   # the statements, and nothing else
+
+$grit migrate down --yes       # the table goes; the rest of the schema stays
+
+The first run on an empty database is the one that built the schema, recorded as a baseline. Rolling that back would drop the database rather than undo a change, so it is refused and grit migrate --fresh is the way to start over. A project scaffolded before this existed gets its first recorded run the next time it migrates, and that run is a baseline too: the schema it found was built by runs nobody recorded.
+
+What GORM AutoMigrate Does
+
+Under the hood, Grit's Migrate() function calls GORM's AutoMigrate for each missing table. AutoMigrate will:
+
+✓Create the table with columns matching your struct fields
+
+✓Add indexes and constraints from struct tags (index, uniqueIndex)
+
+✓Create foreign key constraints from relationship fields
+
+✓Never delete existing columns or tables (safe by design)
+
+✓Never change existing column types automatically
+
+Note: AutoMigrate is great for development and simple schemas. For production systems that need column renaming, type changes, or data migrations, consider using a dedicated migration tool like golang-migrate or goose alongside GORM. Use --fresh during development if you need to change column types.
+
+API Response FormatSeeders

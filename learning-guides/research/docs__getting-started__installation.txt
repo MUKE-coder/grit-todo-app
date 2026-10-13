@@ -1,0 +1,197 @@
+Getting Started
+
+Installation
+
+Get up and running with Grit in minutes. Install the CLI, choose your architecture, and scaffold a production-ready full-stack application.
+
+Install onceRunning in minutes
+Install the CLI once, pick a mode, scaffold, and start — production-ready in minutes
+
+System Requirements
+
+ToolMin VersionRequired ForCheck
+
+Go1.21+API servergo version
+
+Node.js18+Frontend appsnode --version
+
+pnpm8+Package managementpnpm --version
+
+DockerLatestInfrastructuredocker --version
+
+Install the Grit CLI
+
+01
+Install Grit
+
+Use the one-line install script. It detects an existing install and runs grit update (idempotent — no-ops if already on latest); otherwise it downloads the binary from the matching GitHub release for your OS / arch and puts it on PATH.
+
+Prefer Go? go install github.com/MUKE-coder/grit/v3/cmd/grit@latest does the same thing if you have the Go toolchain.
+
+Terminal
+Copy to clipboard
+
+# macOS / Linux
+
+curl -fsSL https://gritframework.dev/install.sh | sh
+
+# Windows (PowerShell)
+
+iwr -useb https://gritframework.dev/install.ps1 | iex
+
+02
+Create your project
+
+Run grit new and follow the interactive prompts to select your architecture and frontend framework.
+
+Terminal
+Copy to clipboard
+
+grit new my-app
+
+? Select architecture:
+
+> Triple — Web + Admin + API (Turborepo)
+
+Double — Web + API (Turborepo)
+
+Single — Go API + embedded React SPA
+
+API Only — Go API (no frontend)
+
+Mobile — API + Expo (React Native)
+
+? Select frontend framework:
+
+> Next.js — SSR, SEO, App Router
+
+TanStack Router — Vite, fast builds, small bundle
+
+03
+Start infrastructure
+
+Start PostgreSQL, Redis, MinIO, and Mailhog with Docker Compose. These services are pre-configured in the generated docker-compose.yml.
+
+Terminal
+Copy to clipboard
+
+cd my-app
+
+docker compose up -d
+
+04
+Install dependencies & start
+
+Install frontend dependencies, apply migrations, seed the database, then start every development server with a single command. The Go API runs on :8080, web app on :3000, and admin on :3001.
+
+Terminal
+Copy to clipboard
+
+pnpm install
+
+grit migrate
+
+grit seed
+
+grit start
+
+Architecture shortcuts
+
+Skip the interactive prompts with flags:
+
+Terminal
+Copy to clipboard
+
+# Triple (default) with Next.js
+
+grit new my-app --triple --next
+
+# Single app with TanStack Router (Vite)
+
+grit new my-app --single --vite
+
+# Double (web + api) with TanStack Router
+
+grit new my-app --double --vite
+
+# API only (no frontend)
+
+grit new my-app --api
+
+# Desktop app (Wails)
+
+grit new-desktop my-app
+
+Default services
+
+Go APIlocalhost:8080
+
+Backend server
+
+Web Applocalhost:3000
+
+Next.js or TanStack
+
+Admin Panellocalhost:3001
+
+Resource management
+
+API Docslocalhost:8080/docs
+
+Auto-generated
+
+GORM Studiolocalhost:8080/studio
+
+Database browser
+
+Mailhoglocalhost:8025
+
+Email testing
+
+Running without Docker
+
+Docker is the default, but it is entirely optional. On low-spec machines, or when you just want the leanest possible setup, you can run Grit without any containers.
+
+Option A — SQLite, no services
+
+Point the API at a local SQLite file instead of PostgreSQL and skip docker compose entirely. GORM auto-migrates the SQLite file on first run, so there is nothing else to provision. Redis and MinIO are optional — the cache falls back to in-memory and file storage falls back to the local disk when their env vars are unset.
+
+.env
+Copy to clipboard
+
+# Use a local SQLite file instead of PostgreSQL
+
+DATABASE_URL=sqlite:./app.db
+
+# Leave REDIS_URL / storage vars unset to run without Redis and MinIO
+
+Terminal
+Copy to clipboard
+
+# No 'docker compose up' needed
+
+grit start server   # auto-migrates app.db on first run
+
+# In another terminal, start the frontend(s)
+
+pnpm install
+
+grit start client
+
+Option B — managed cloud services
+
+Prefer PostgreSQL, Redis, and object storage without running them locally? Point the same env vars at managed services — all have generous free tiers. Set them in .env and run the API and frontends directly (no docker compose).
+
+ServiceProviderEnv var
+
+PostgreSQLNeonDATABASE_URL=postgres://…?sslmode=require
+
+RedisUpstashREDIS_URL=rediss://…upstash.io:6379
+
+File storageCloudflare R2 / Backblaze B2STORAGE_DRIVER=r2 (+ R2_* keys)
+
+EmailResendRESEND_API_KEY / MAIL_FROM
+
+Grit scaffolds a .env.cloud.example file with these variables pre-filled as placeholders — copy it to .env and drop in your keys. The same setup doubles as your production infrastructure.
+
+Quick StartProject Structure

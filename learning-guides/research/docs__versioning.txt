@@ -1,0 +1,102 @@
+Project
+Versioning & breaking changes
+
+What the version number means, what can change under you, and what happens to a project you generated a year ago. Currently on v3.398.0.
+
+“Why is the version number so high?”
+
+Because minor versions are cheap here and get used. Grit ships several times a week, and every shipped change gets a number rather than being batched into a quarterly release. A high minor is a record of release cadence, not of churn in your application.
+
+The number that matters for stability is the major, and it has been 3 for a long time. That is the one that is allowed to break you.
+
+The thing most frameworks do not have to explain
+
+Grit is a code generator, not a runtime dependency. Your application does not import Grit and does not link against it. That changes what “upgrading” even means:
+
+A normal framework
+
+Bump the dependency, and every behaviour it controls changes at once. Upgrading is a single risky step for the whole app.
+
+Grit
+
+Upgrading the CLI changes what the next generated file looks like. Code already in your repo is yours and does not move. There is no version of Grit that can break a running application.
+
+So the practical question is not “is it safe to upgrade” — it is always safe — but “will the next thing I generate still fit alongside what I generated last year”. That is what the guarantees below cover.
+
+What each number means
+
+ChangeBumpsExample
+
+New generator, new battery, new commandMinor`grit swap` arriving in v3.115.0
+
+New field type or flag on an existing commandMinor`--items` on `generate resource`
+
+Generated output changes shape for NEW resourcesMinorA generated form gaining a per-step save button
+
+Bug fix in a templatePatchA generated handler missing a nil check
+
+A CLI command is renamed or removedMajor—
+
+A `grit:` marker contract changesMajor—
+
+The scaffolded project layout movesMajorapps/api → services/api
+
+A slot contract changes incompatiblyMajor`button@1` → `button@2`
+
+What will not change in a minor
+
+The meaning of a `grit:` marker. Regeneration finds the same anchors it always did.
+
+The scaffolded project layout. Where a model, handler or resource file lives is stable within a major.
+
+The name or argument shape of an existing CLI command.
+
+A slot contract (`button@1`). Adding a prop is additive; removing or narrowing one is a new major.
+
+Field-type syntax in `--fields`. New types get added; existing ones keep meaning what they meant.
+
+Generated code is yours
+
+Nothing in a Grit release rewrites files you already have. Generators write new files and inject into marked regions of existing ones — never outside them.
+
+// grit:models:auto-start
+
+// Everything between these markers is regenerated.
+
+// Edits here are lost on the next run.
+
+&models.User{},
+
+&models.Product{},
+
+// grit:models:auto-end
+
+// Anything outside the markers is yours, permanently.
+
+// Generators do not read it and will not touch it.
+
+Copy to clipboard
+
+That boundary is the contract. If a release ever moves a marker, that is a major version and it will be in the changelog with a migration note.
+
+Support policy
+
+Being straight about this: Grit is a young project with a small maintainer team. There is no contractual LTS, no backport branch, and no support SLA. Claiming one would be more useful to marketing than to you.
+
+What there is instead: fixes land on the current major, the CLI is independent of your running application, and generated code has no upstream to go stale. An app generated on v3.0 still runs today with no Grit installed anywhere near it — which is a stronger guarantee than most LTS promises, and it comes from the architecture rather than from a commitment anyone has to keep.
+
+If you need something firmer than that for a procurement process, say so on the issue tracker — it is worth knowing that a real team is blocked on it.
+
+Upgrading the CLI
+
+grit update          # latest release
+
+grit version         # what you are on
+
+# Pin a version in CI so a release never changes your build under you:
+
+go install github.com/MUKE-coder/grit/v3/cmd/grit@v3.398.0
+
+Copy to clipboard
+
+ChangelogGovernance & roadmap

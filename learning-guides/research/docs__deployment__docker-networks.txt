@@ -1,0 +1,86 @@
+Deployment
+"All predefined address pools have been fully subnetted"
+
+Every image builds, then the deploy dies at the last step. It is a limit of the Docker daemon on the host, not a fault in your project, and there are three ways out.
+
+What it looks like
+
+Image shop-api  Built
+
+Network shop_default  Creating
+
+Network shop_default  Error  Error response from daemon:
+
+all predefined address pools have been fully subnetted
+
+failed to create network ...
+
+Error: Docker command failed
+
+Copy to clipboard
+
+Builds succeed, nothing starts, and retrying gives the same error. Nothing is said about disk, memory or CPU because none of them are the problem, which is why this tends to cost an afternoon the first time.
+
+Why it happens
+
+Docker hands out bridge-network subnets from a fixed pool. By default that is 172.17.0.0/12 sliced into /16 blocks, which is about sixteen networks for the entire daemon. Every Compose project takes at least one, and a project that declares a network of its own can take two.
+
+They are not returned when a deploy fails or a project is deleted. Run half a dozen stacks on one host, delete and redeploy a few times, and the pool empties. After that no new stack starts, however idle the machine is.
+
+What Grit generates
+
+Since v3.333.0, docker-compose.prod.yml declares no network. Compose's implicit <project>_default already gives service-name DNS and the same isolation, so a named one took a second subnet and bought nothing. It also pins no container_name: names are global to the daemon, so a second copy of the stack, staging beside production, could not start.
+
+grit upgrade applies the same two changes to an existing project, so the stacks you have already deployed converge on it rather than keeping the arrangement that causes this.
+
+If the pool is already empty
+
+One fewer network per stack does not help a host with none left: even the implicit default fails to allocate. Every project ships docker-compose.shared-network.yml, which joins a network that already exists and therefore asks for no subnet at all:
+
+Terminal
+Copy to clipboard
+
+$docker compose -f docker-compose.prod.yml \
+
+$               -f docker-compose.shared-network.yml up -d --build
+
+On Dokploy, set the Compose Path to both files in that order. It defaults to dokploy-network; set SHARED_NETWORK if your proxy uses another.
+
+A shared network is sharedContainers on it resolve each other by service name. If another project on the host also calls a service postgres, whichever answers first is what you get, and a silent connection to somebody else's database is a worse day than a failed deploy. The overlay therefore gives every service a project-prefixed alias and points the API at those rather than the bare names. Treat it as a stopgap.
+
+The fix that belongs on the host
+
+First, return what failed deploys left behind. No restart, no downtime:
+
+Terminal
+Copy to clipboard
+
+$docker network prune -f
+
+That removes only networks with nothing attached. Running stacks are untouched. Then widen the pool so it cannot recur, in /etc/docker/daemon.json:
+
+{ "default-address-pools": [ { "base": "172.17.0.0/12", "size": 24 } ] }
+
+Copy to clipboard
+
+Terminal
+Copy to clipboard
+
+$sudo systemctl restart docker
+
+/24 blocks give about 4096 networks instead of 16, and a stack needs a handful of addresses rather than 65,000. The restart bounces every container on the host, so pick a quiet window, and merge the key if the file already exists.
+
+Once that is done, go back to docker-compose.prod.yml on its own and keep one private network per stack.
+
+Before deploying to a busy host
+
+Terminal
+Copy to clipboard
+
+$docker network ls | wc -l          # above ~12 is the smell
+
+$docker network ls                  # look for stale <project>_default
+
+$docker network prune -f            # after deleting any project
+
+DeploymentDeployment checklist

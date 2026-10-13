@@ -1,0 +1,386 @@
+Core Concepts
+Naming Conventions
+
+Grit enforces consistent naming conventions across the entire stack. When you generate a resource, the CLI automatically converts your resource name into the correct case for each context -- PascalCase for Go structs, snake_case for database columns, kebab-case for TypeScript files, and more.
+
+Complete Naming Table
+
+This table shows the naming convention used for every context in a Grit project. The code generator handles all conversions automatically.
+
+Resource nameGoDatabaseTypeScript
+One resource name → the correct case in every context, automatically
+
+ContextConventionExample
+
+Go file namesnake_case.goblog_post.go
+
+Go structPascalCaseBlogPost
+
+Go struct fieldsPascalCasePublishDate
+
+Go handler structPascalCaseHandlerBlogPostHandler
+
+Go handler variablecamelCaseHandlerblogPostHandler
+
+Go service structPascalCaseServiceBlogPostService
+
+JSON fieldsnake_casepublish_date
+
+Database tableplural_snake_caseblog_posts
+
+Database columnsnake_casepublish_date
+
+API route/api/plural_snake/api/blog_posts
+
+TypeScript filekebab-case.tsblog-post.ts
+
+TypeScript interfacePascalCaseBlogPost
+
+React Query hook fileuse-plural-kebab.tsuse-blog-posts.ts
+
+React Query hook nameusePluralPascaluseBlogPosts
+
+Zod schemaCreatePascalSchemaCreateBlogPostSchema
+
+Resource slugplural-kebab-caseblog-posts
+
+Resource variablecamelCaseResourceblogPostResource
+
+Admin page route/resources/plural-kebab/resources/blog-posts
+
+API route constantPLURAL_UPPERBLOG_POSTS
+
+How the Generator Handles Names
+
+The generator builds a Names struct with all naming variants from your resource name. You can provide the name in PascalCase, snake_case, or kebab-case -- the generator normalizes it to PascalCase first, then derives all other forms.
+
+internal naming struct
+Copy to clipboard
+
+type Names struct {
+
+Pascal       string  // BlogPost
+
+Camel        string  // blogPost
+
+Snake        string  // blog_post
+
+Kebab        string  // blog-post
+
+Lower        string  // blogpost
+
+Plural       string  // blog_posts
+
+PluralPascal string  // BlogPosts
+
+PluralSnake  string  // blog_posts
+
+PluralKebab  string  // blog-posts
+
+}
+
+Conversion Flow
+
+1
+
+Input normalization
+
+The raw input is converted to PascalCase. Input "blog_post", "blog-post", or "BlogPost" all become "BlogPost".
+
+2
+
+Snake case derivation
+
+PascalCase is split at uppercase boundaries. "BlogPost" becomes "blog_post". This is used for file names, JSON fields, and DB columns.
+
+3
+
+Kebab case derivation
+
+Snake case with underscores replaced by hyphens. "blog_post" becomes "blog-post". Used for TypeScript files and resource slugs.
+
+4
+
+Camel case derivation
+
+PascalCase with the first letter lowered. "BlogPost" becomes "blogPost". Used for handler variables and resource definitions.
+
+5
+
+Pluralization
+
+The snake_case form is pluralized using English rules. "blog_post" becomes "blog_posts". This is used for API routes, table names, and hook names.
+
+Full Name Derivation Examples
+
+Here are complete examples showing how a resource name maps to every file and identifier in the project:
+
+Example: "Post"
+
+UsageValue
+
+Go model filemodels/post.go
+
+Go structtype Post struct
+
+Go handlerPostHandler / postHandler
+
+DB tableposts
+
+API routes/api/posts, /api/posts/:id
+
+TS type filetypes/post.ts
+
+Zod schema fileschemas/post.ts
+
+React hooksuse-posts.ts / usePosts()
+
+Admin page/resources/posts/page.tsx
+
+Resource definitionresources/posts.ts / postResource
+
+Example: "BlogPost"
+
+UsageValue
+
+Go model filemodels/blog_post.go
+
+Go structtype BlogPost struct
+
+Go handlerBlogPostHandler / blogPostHandler
+
+DB tableblog_posts
+
+API routes/api/blog_posts, /api/blog_posts/:id
+
+TS type filetypes/blog-post.ts
+
+Zod schema fileschemas/blog-post.ts
+
+React hooksuse-blog-posts.ts / useBlogPosts()
+
+Admin page/resources/blog-posts/page.tsx
+
+Resource definitionresources/blog-posts.ts / blogPostResource
+
+Example: "Category"
+
+UsageValue
+
+Go model filemodels/category.go
+
+Go structtype Category struct
+
+DB tablecategories
+
+API routes/api/categories, /api/categories/:id
+
+React hooksuse-categories.ts / useCategories()
+
+Admin page/resources/categories/page.tsx
+
+Notice how "Category" correctly pluralizes to "categories" (y preceded by a consonant becomes -ies).
+
+Pluralization Rules
+
+The Grit CLI includes a built-in English pluralization engine that handles regular and irregular forms. Pluralization is applied to the snake_case form of the resource name.
+
+Regular Rules
+
+RuleSingularPlural
+
+Default: add -spostposts
+
+Ends in -y (consonant before): -iescategorycategories
+
+Ends in -y (vowel before): -yskeykeys
+
+Ends in -s, -ss, -sh, -ch, -x, -z: -esaddressaddresses
+
+Ends in -f or -fe: -vesleafleaves
+
+Irregular Plurals
+
+The generator handles these irregular English plurals:
+
+SingularPlural
+
+personpeople
+
+childchildren
+
+mousemice
+
+goosegeese
+
+manmen
+
+womanwomen
+
+toothteeth
+
+footfeet
+
+oxoxen
+
+datumdata
+
+mediummedia
+
+indexindices
+
+matrixmatrices
+
+vertexvertices
+
+crisiscrises
+
+axisaxes
+
+analysisanalyses
+
+Automatic Icon Selection
+
+When generating an admin resource definition, the CLI automatically picks a Lucide icon based on the resource name. It matches the lowercase resource name against a dictionary of common domain terms. If no match is found, it defaults to the Database icon.
+
+Resource Name ContainsLucide Icon
+
+post, page, documentFileText
+
+article, blogNewspaper
+
+commentMessageSquare
+
+categoryFolderTree
+
+tagTag
+
+productPackage
+
+orderShoppingCart
+
+invoiceReceipt
+
+payment, subscriptionCreditCard
+
+customerUserCircle
+
+userUsers
+
+projectBriefcase
+
+taskCheckSquare
+
+eventCalendar
+
+fileFile
+
+image, mediaImage
+
+message, emailMail
+
+notificationBell
+
+settingSettings
+
+roleShield
+
+permissionLock
+
+teamUsersRound
+
+company, organizationBuilding2
+
+reportBarChart3
+
+analyticTrendingUp
+
+logScrollText
+
+reviewStar
+
+planGem
+
+couponTicket
+
+discountPercent
+
+shippingTruck
+
+address, locationMapPin
+
+contactContact
+
+leadTarget
+
+dealHandshake
+
+pipelineGitBranch
+
+workflowWorkflow
+
+templateLayoutTemplate
+
+campaignMegaphone
+
+surveyClipboardList
+
+formFormInput
+
+questionHelpCircle
+
+answerMessageCircle
+
+ticket, issueTicket / AlertCircle
+
+bugBug
+
+featureSparkles
+
+releaseRocket
+
+versionGitCommit
+
+deployCloudUpload
+
+The matching is substring-based. A resource named "ProductCategory" would match "product" first and get the Package icon. You can always change the icon in the generated resource definition file.
+
+File Naming Summary
+
+Different ecosystems use different naming conventions for files. Grit follows the idiomatic convention for each language:
+
+Go files: snake_case
+
+All Go source files use snake_case. This is the idiomatic Go convention. Examples: user_handler.go,blog_post.go,auth.go
+
+TypeScript utility files: kebab-case
+
+Non-component TypeScript files use kebab-case. This matches Next.js and modern TypeScript conventions. Examples: api-client.ts,use-posts.ts,blog-post.ts
+
+React components: PascalCase
+
+React component files use PascalCase to match the component name inside. Examples: DataTable.tsx,StatsCard.tsx,AdminLayout.tsx
+
+Next.js pages: lowercase
+
+Next.js App Router requires directory names to be lowercase (since they map to URL paths). Examples: app/resources/posts/page.tsx,app/(auth)/login/page.tsx
+
+Column Label Generation
+
+When the generator creates admin DataTable columns and form fields, it converts field names to human-readable labels by splitting PascalCase into separate words.
+
+Field NamePascalCaseGenerated Label
+
+titleTitleTitle
+
+due_dateDueDateDue Date
+
+is_publishedIsPublishedIs Published
+
+author_idAuthorIdAuthor Id
+
+total_amountTotalAmountTotal Amount
+
+The label splitting algorithm finds uppercase letter boundaries in PascalCase and inserts spaces. You can always customize labels in the generated resource definition file after generation.
+
+Type SystemStyle Variants

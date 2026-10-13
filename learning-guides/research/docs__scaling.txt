@@ -1,0 +1,199 @@
+Operations
+Scaling
+
+Ten stages, from one server to sharding. A Grit app starts at the far side of five of them, and the rule for the rest is the same as everywhere else: do not add a box until something is actually breaking, then add exactly one.
+
+Where does a Grit app start?
+
+Most scaling guides begin with work you have to do first: move config to environment variables, put database access behind one module, get uploads off the local disk, add a health endpoint. That is the whole of Stage 1, and a generated Grit project has all of it on the first commit.
+
+It goes further than that. Sessions are rows, not process memory. Cron is elected to a single instance, so the daily digest is sent once rather than once per replica. The server drains in-flight requests on SIGTERM. Jobs retry with backoff and there is a transactional outbox for the ones that must not be lost. Those are Stages 4 and 8, and they are there before you have a user.
+
+StageWhat Grit doesWhat you do
+
+0 Measure firstRequest percentiles, connection use, slowest queries, cache hit rate, and a verdict.Run grit scale against production.
+
+1 One server, one databaseConfig from env, one database module, uploads in object storage, /health. A Grit app is born finished here.Nothing.
+
+2 Vertical scalingGo uses every core in one process. There is no cluster module to add.Buy a bigger machine.
+
+3 Horizontal + load balancerStateless by construction, graceful shutdown on SIGTERM, a health endpoint the balancer can poll.Set an instance count. The balancer is your platform’s.
+
+4 Stateless serversSessions in the database, uploads in object storage, cache invalidation across replicas, and cron elected to one instance.Nothing. The three-emails bug cannot happen.
+
+5 Connection poolingpgbouncer already in docker-compose.prod.yml, per-instance pool limits, and a doctor check that does the arithmetic.Point DATABASE_URL at the pooler.
+
+6 Indexes, then read replicasIndexes on foreign keys as generated. Replica routing, read-your-own-writes, and a lag probe.Set DATABASE_REPLICA_URLS. No code changes.
+
+7 Cachingcache.Remember: cache-aside with fallback, jittered TTLs, stampede protection and a hit rate.Decide what may be stale. Nobody can decide that for you.
+
+8 Queues and background jobsasynq workers, retries with backoff, a jobs dashboard, cron, and a transactional outbox.Move slow work into a job.
+
+9 ShardingNothing, deliberately.Archive, partition, or move to Citus first. Almost nobody needs this.
+
+Which stage are you at?
+
+Point it at the deployment that is struggling. These numbers describe wherever they are measured, and a laptop under no load is always healthy. The admin panel shows the same report; see below.
+
+Terminal
+Copy to clipboard
+
+$grit scale --api https://api.yourapp.com --token $GRIT_ADMIN_TOKEN
+
+Requests
+
+p50      3ms   p95      7ms   p99     13ms   max    164ms
+
+65 requests in the window, 5.0/s since start
+
+Database
+
+11 of 100 connections in use (11%), pool max 25 per instance
+
+No read replicas
+
+Healthy
+
+p99 13ms over 65 requests, 11 of 100 database connections in use.
+
+Do this next: Nothing. Adding infrastructure now buys complexity and no speed.
+
+Copy to clipboard
+
+It names one thing, and most of the time that thing is nothing. A tool that lists six possible improvements has handed the hardest part of the job, choosing, back to you.
+
+Why the API measures and the CLI only rendersPercentiles, connection counts and query statistics are only true where the load is. Measuring in the CLI would describe your laptop. The API exposes GET /api/v1/scale (admin only, because it reports connection counts and query shapes) and grit scale reads it over the network.
+
+The same thing, in the admin panel
+
+grit scale answers it from a terminal. The admin's Observability page answers it for everyone else, at the top of the page, refreshed every minute: the verdict, and then all ten stages with the state of each on this deployment.
+
+Scaling readiness                        9 of 10 stages handled
+
+Healthy
+
+p99 13ms over 65 requests, 11 of 100 database connections in use.
+
+Do this next: Nothing. Adding infrastructure now buys complexity and no speed.
+
+0  Measure first               p50 3ms, p95 7ms, p99 13ms over 65 requests
+
+1  One server, one database    config from the environment, one database
+
+module (postgres), uploads in object storage
+
+2  Vertical scaling            8 cores visible, GOMAXPROCS 8
+
+3  Horizontal + load balancer  4 instances declared
+
+4  Stateless servers           sessions are rows, uploads on s3, cron
+
+elected to one instance through Redis
+
+5  Connection pooling          11 of 100 connections in use, pool max 25
+
+6  Indexes, then replicas      no replicas, and none needed until reads peg
+
+the primary with the indexes already right
+
+7  Caching                     hit rate 94% over 20,431 lookups
+
+8  Queues and background jobs  asynq workers, retries with backoff, cron
+
+and a transactional outbox
+
+9  Sharding                    largest table orders, about 412,000 rows
+
+Copy to clipboard
+
+Every line is read off the running deployment rather than off a list of features. A tick against Stage 4 means this app was observed keeping sessions in the database and uploads in object storage; it is not a claim about what the framework can do. The three measured stages, 5, 6 and 7, go amber on the same thresholds the verdict uses, so the panel cannot show green for the stage the verdict is calling out.
+
+Two things it will tell you about that are easy to miss until a second instance exists. STORAGE_DRIVER=local keeps uploads on one machine's disk, so the second instance serves 404s for half of them. And SQLite serialises writes, which makes every scaling question after Stage 1 have the same answer.
+
+Why a hollow tick is still a good answerStages 6 and 7 usually read "ready, not needed yet". That is the correct state for almost every application, and the panel says so rather than leaving a gap that looks like something missing. Replica routing and cache.Remember are in the project either way; they are one environment variable and one function call from being in force.
+
+Stage 6: read replicas
+
+One environment variable, and no code changes:
+
+DATABASE_REPLICA_URLS=postgres://...replica-1,postgres://...replica-2
+
+Copy to clipboard
+
+Reads go to the replicas from the next boot. Writes, and everything inside a transaction including its reads, stay on the primary. That last rule is the one that matters and the one hand-rolled splits get wrong: a balance check inside the transaction that debits the balance must not read a replica, and here it cannot, whatever the handler was written to do.
+
+For the reads whose answer decides a write, outside a transaction:
+
+// Never stale: the answer decides whether to sell the seat.
+
+database.Primary(h.DB).First(&seat, "id = ?", id)
+
+// Staleness is the point: a report nobody acts on in the next second.
+
+database.Replica(h.DB).Find(&monthlyTotals)
+
+Copy to clipboard
+
+Read your own writes
+
+The classic replica bug: you post, the feed loads from a replica that has not caught up, your own post is missing, and you post it again. Grit pins a person to the primary for five seconds after they write, using a cookie rather than a shared store: it travels with the person who wrote, costs no lookup, and cannot itself be stale. Generated list and detail handlers use it. Hand-written ones should too:
+
+database.ForRequest(c, h.DB).Find(&posts)
+
+Copy to clipboard
+
+Stage 7: caching
+
+var followers int64
+
+err := cache.Remember(ctx, svc.Cache, "user:"+id+":followers", time.Minute, &followers,
+
+func() (int64, error) {
+
+// The loader is a cache miss doing the real read, so it is the
+
+// service's query like any other. Caching is not a reason for a
+
+// handler to start talking to the database.
+
+return h.service().FollowerCount(ctx, id)
+
+})
+
+Copy to clipboard
+
+Remember is cache-aside with the three things a hand-written version misses. A cache read failure falls through to the loader, so Redis being down makes the app slower rather than broken. TTLs are jittered, so ten thousand keys written by one deploy do not all expire in the same second. And when a hot key expires, one caller rebuilds it while the rest wait briefly and read the result, instead of every concurrent request running the same expensive query.
+
+Invalidate from the write that makes the value wrong, and keep the TTL as the safety net for the invalidation somebody forgets:
+
+cache.Forget(ctx, svc.Cache, "user:"+id+":followers")
+
+Copy to clipboard
+
+The one thing no framework can do for youDeciding what is allowed to be wrong, and for how long. A follower count may be a minute stale. An account balance at the moment of a debit may not. Caches and replicas make an app faster and slightly wrong on purpose, and which parts are allowed to be wrong is a product decision. Write the list down.
+
+Stage 5: the arithmetic
+
+Connection exhaustion is the only failure here that arrives as errors rather than slowness: the API returns 500s while every dashboard looks healthy. It is also pure arithmetic, so grit doctor does it:
+
+⚠ database  8 instances x DB_MAX_OPEN_CONNS=25 is 200 connections, and
+
+max_connections is 100. Spikes will fail with "sorry, too many
+
+clients already" while every dashboard looks healthy
+
+put pgbouncer in front, or set DB_MAX_OPEN_CONNS=10
+
+Copy to clipboard
+
+Tell it how many instances you run with APP_INSTANCES. That is the number people get wrong: a pool of 25 is comfortable on one machine and fatal on eight, and nothing else in the config mentions the other seven.
+
+Stage 9: sharding
+
+Grit does nothing here, deliberately. Sharding is the most expensive tool in the box and most applications never need it. Before it: archive cold rows, use Postgres native partitioning, move analytics to a warehouse and search to a search engine, or let Citus or CockroachDB shard for you. If you genuinely outgrow one primary, the shard key is the decision that matters, and it should be the column your queries already filter by.
+
+The order is the whole thing
+
+Every stage trades something: money, complexity, or correctness. Replicas and caches make the app faster and slightly wrong on purpose. Queues make done mean promised. The skill is not knowing the names of the boxes; it is knowing which one you need next and what it costs. That is why grit scale names one.
+
+DeploymentProject audit (grit doctor)

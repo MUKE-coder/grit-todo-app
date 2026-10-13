@@ -1,0 +1,260 @@
+Admin Panel
+Admin Overview
+
+Grit ships with a Filament-inspired admin panel that gives you a full-featured back-office from simple TypeScript definitions. Define your resources once and get data tables, forms, dashboards, and navigation automatically.
+
+Your definitionGenerated admin UI
+Define a resource once — the table, forms, dashboard, and navigation come for free
+
+What is the Admin Panel?
+
+The Grit admin panel is a resource-based admin dashboard inspired by Laravel Filament. Instead of hand-coding every CRUD page, data table, and form, you describe your resources in a declarative TypeScript file and the admin panel renders everything for you — columns, filters, form fields, validation, dashboard widgets, and sidebar navigation.
+
+It lives in apps/admin/ as a standalone Next.js application inside the Grit monorepo. It connects to your Go API over HTTP and uses React Query for data fetching, caching, and optimistic updates.
+
+How It Works
+
+The workflow is straightforward:
+
+Define a resource in apps/admin/resources/ using the defineResource() helper.
+
+Register it in resources/index.ts so the admin panel discovers it.
+
+That's it. The sidebar link, data table page, create/edit forms, and dashboard widgets are generated automatically.
+
+When you run grit generate resource Post, the CLI creates both the Go backend artifacts (model, handler, service) and the admin resource definition file. You get a working admin page for your new resource with zero manual wiring.
+
+apps/admin/resources/posts.ts
+Copy to clipboard
+
+import { defineResource } from '@/lib/resource'
+
+export const postsResource = defineResource({
+
+name: 'Post',
+
+slug: 'posts',
+
+endpoint: '/api/posts',
+
+icon: 'FileText',
+
+table: {
+
+columns: [
+
+{ key: 'title', label: 'Title', searchable: true },
+
+{ key: 'status', label: 'Status', badge: {
+
+published: { color: 'green', label: 'Published' },
+
+draft: { color: 'yellow', label: 'Draft' },
+
+}},
+
+{ key: 'created_at', label: 'Created', format: 'relative' },
+
+],
+
+actions: ['create', 'edit', 'delete'],
+
+},
+
+form: {
+
+fields: [
+
+{ key: 'title', label: 'Title', type: 'text', required: true },
+
+{ key: 'content', label: 'Content', type: 'textarea' },
+
+{ key: 'status', label: 'Status', type: 'select',
+
+options: [
+
+{ label: 'Published', value: 'published' },
+
+{ label: 'Draft', value: 'draft' },
+
+], defaultValue: 'draft' },
+
+],
+
+},
+
+})
+
+The definition above produces a fully functional admin page with a sortable, searchable data table, create and edit modals with validation, badge-styled status column, and relative timestamps — all without writing any JSX.
+
+Admin Panel Folder Structure
+
+The admin panel follows Next.js App Router conventions with a clear separation between layout components, reusable UI, data-fetching hooks, resource definitions, and utilities.
+
+apps/admin/
+Copy to clipboard
+
+apps/admin/
+
+├── app/
+
+│   ├── layout.tsx            # Root layout with providers
+
+│   ├── page.tsx              # Dashboard (admin home)
+
+│   └── resources/
+
+│       ├── users/page.tsx     # User management page
+
+│       └── posts/page.tsx     # Post management page
+
+├── components/
+
+│   ├── layout/               # The admin shell
+
+│   │   └── admin-layout.tsx
+
+│   ├── chrome/               # Sidebar, user menu, page header
+
+│   │   ├── CollapsibleSidebar.tsx
+
+│   │   └── PageHeader.tsx
+
+│   ├── tables/               # DataTable system
+
+│   │   ├── data-table.tsx
+
+│   │   ├── columns.tsx
+
+│   │   └── filters.tsx
+
+│   ├── forms/                # Form builder system
+
+│   │   ├── form-builder.tsx
+
+│   │   ├── form-modal.tsx
+
+│   │   └── fields/
+
+│   │       ├── text-field.tsx
+
+│   │       ├── select-field.tsx
+
+│   │       ├── date-field.tsx
+
+│   │       └── file-field.tsx
+
+│   └── dashboard/            # Dashboard widgets
+
+│       ├── ResourceStatCard.tsx
+
+│       ├── DashboardCharts.tsx
+
+│       └── ResourceWidgetsRow.tsx
+
+├── hooks/                    # React Query data hooks
+
+│   ├── use-auth.ts
+
+│   ├── use-users.ts
+
+│   └── use-posts.ts
+
+├── resources/                # Resource definitions
+
+│   ├── index.ts              # Registry (exports all resources)
+
+│   ├── users.ts
+
+│   └── posts.ts
+
+└── lib/
+
+├── api-client.ts         # Axios wrapper for Go API
+
+├── auth.ts
+
+└── utils.ts
+
+Built-in Features
+
+Collapsible Sidebar
+
+The sidebar is auto-generated from your registered resources. Each resource appears as a navigation item with its configured Lucide icon and label. The sidebar supports collapsing to icon-only mode, active state highlighting, and a user profile section at the bottom with logout functionality.
+
+Dark and Light Theme
+
+The admin panel defaults to a premium dark theme inspired by tools like Linear and Vercel Dashboard. Colors use the Grit palette — deep backgrounds (#0a0a0f, #111118), purple accent (#6c5ce7), and carefully calibrated text hierarchy. A theme toggle in the sidebar lets users switch to light mode.
+
+Responsive Layout
+
+On desktop the sidebar is always visible. On tablets and mobile devices it collapses into a hamburger menu overlay. Data tables switch to horizontal scrolling and cards stack vertically. The entire admin panel is usable on any screen size.
+
+Authentication Guard
+
+The admin layout wraps all routes in an authentication guard. Unauthenticated users are redirected to the login page. Role-based access is enforced — only users with the ADMIN role can access the admin panel by default. Individual resources can be hidden from non-ADMIN/EDITOR users via theadminOnly option in the resource definition.
+
+System Pages
+
+Beyond your custom resources, the admin panel includes several built-in system pages for managing infrastructure concerns:
+
+localhost:3001/system/jobs
+
+Active, pending, completed, failed and retry counts across your asynq queues, with the dead-letter queue one click away. The image:process jobs here were enqueued by uploading five images.
+Jobs Dashboard
+
+Monitor your Redis-backed background job queue. The jobs dashboard shows live counts for pending, active, completed, and failed jobs. You can inspect individual failed jobs to see error details, retry them, or clear entire queues. Queue stats update in real time via polling.
+
+localhost:3001/system/files
+
+Totals, a per-type breakdown and thumbnails served back from your bucket. Uploads go browser-to-storage through a presigned URL, so files never pass through the API.
+File Browser
+
+Browse and manage all files uploaded to your S3-compatible storage (AWS S3, Cloudflare R2, or local MinIO). The file browser displays a grid of thumbnails with file metadata — name, size, MIME type, upload date. You can delete files, copy URLs, and preview images directly in the admin panel.
+
+localhost:3001/system/cron
+
+Every registered scheduled task with its cron expression — token cleanup hourly, orphaned uploads nightly, backups every 30 minutes. Your own registrations appear here alongside them.
+Cron Viewer
+
+View all registered cron tasks, their schedules (cron expressions), last run time, and next scheduled execution. The cron viewer gives you visibility into background scheduling without checking server logs.
+
+Email Preview
+
+Preview your Go HTML email templates rendered with sample data. This lets you iterate on email design without sending real emails. In development, emails sent through the mail service are also captured by Mailhog and visible at its web UI.
+
+UI Aesthetic
+
+The admin panel is designed to feel like a premium CRM or SaaS dashboard, not a generic CRUD generator. Key design principles:
+
+Generous spacing — content breathes with consistent padding and margins.
+
+Professional data density — tables show enough information without overwhelming the user.
+
+Beautiful empty states — when a resource has no data, you see a polished illustration with a call to action, not a blank page.
+
+Polished loading states — skeleton loaders match the exact layout of the content they replace.
+
+Subtle animations — hover effects, transitions, and micro-interactions make the interface feel alive.
+
+Typography hierarchy — Onest for UI text, JetBrains Mono for code and data, with carefully chosen font weights and sizes.
+
+What's Next?
+
+Resource Definitions
+
+Learn the full defineResource() API and configuration options.
+
+DataTable
+
+Server-side pagination, sorting, filtering, and custom cell renderers.
+
+Form Builder
+
+All field types, validation, layout options, and create/edit modes.
+
+Dashboard & Widgets
+
+Stats cards, charts, activity feeds, and widget configuration.
+
+API Response FormatResource Definitions

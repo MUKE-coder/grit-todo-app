@@ -1,0 +1,170 @@
+Security
+
+Roles & Permissions
+
+Grit guards routes by permission, not by role name. Roles are named bags of permissions you edit at runtime, so adding a role never means editing routes and redeploying.
+
+The shape of a permission
+
+A permission key is <resource>.<action>, where the action is one of create, view, edit or delete:
+
+products.create
+
+users.delete
+
+uploads.view
+
+Copy to clipboard
+
+Grants may use wildcards:
+
+*             every permission (superuser)
+
+products.*    every action on products
+
+*.view        view on every resource
+
+Copy to clipboard
+
+Roles hold grants
+
+Three roles are seeded on first migrate: ADMIN (holds *), EDITOR (content) and USER (no administrative permissions). Seeding is idempotent and never overwrites grants you have edited.
+
+Grants are stored as authored. If a role holds products.* and you later add a new action to that resource, the role picks it up automatically — nothing to re-grant.
+
+Guarding a route
+
+RequireRole accepts role names, permissions (prefixed perm:), or both. Access is granted if any argument matches:
+
+internal/routes/routes.go
+Copy to clipboard
+
+// Permission-based (preferred)
+
+staff.DELETE("/products/:id",
+
+middleware.RequireRole("perm:products.delete"),
+
+productHandler.Delete)
+
+// Mixed: an ADMIN passes, and so does any role granted users.edit.
+
+staff.PUT("/users/:id",
+
+middleware.RequireRole("ADMIN", "perm:users.edit"),
+
+userHandler.Update)
+
+// Role-only still works. Nothing existing had to change.
+
+admin.Use(middleware.RequireRole("ADMIN"))
+
+Staff routes: how a custom role reaches the admin API
+
+routes.go has two groups for the admin API, and which one a route is on decides who can reach it:
+
+staff admits anyone who holds at least one permission, and every route on it names the permission it needs. Users, roles, the audit log, jobs, backups, blogs and the dashboards live here, so a role granted users.view can list users and nothing more.
+
+admin requires the ADMIN role and nothing less. Routes that name no permission stay here (SSO connections, form sharing, writing settings, changing feature flags), and so does anything a plugin adds, so a route that forgets its permission fails closed.
+
+Generated resources follow the same split. Reading and writing a record is on the protected group; delete and bulk are on the staff group and ask for <resource>.delete, so a role can be allowed to delete products without being made an admin.
+
+internal/routes/product_routes.go
+Copy to clipboard
+
+m.Staff.DELETE("/products/:id", middleware.RequireRole("ADMIN", "perm:products.delete"), h.Delete)
+
+m.Staff.POST("/products/bulk", middleware.RequireRole("ADMIN", "perm:products.delete"), h.Bulk)
+
+Before v3.220.0 there was only the admin group. Every route on it sat behind the ADMIN role, so the perm: guards on them never ran, and a custom role was refused by every admin endpoint whatever it was granted. The admin panel showed an EDITOR pages the API then refused.
+
+Inside a handler, use authz.Can for conditional logic:
+
+if authz.Can(h.DB, userID, "products.delete") {
+
+// show the destructive action
+
+}
+
+Copy to clipboard
+
+Generated resources register themselves
+
+grit generate resource Product adds products.create|view|edit|delete to the catalog automatically, so a new resource is grantable immediately. grit remove resource takes them back out. Hand-written permissions belong in coreModules() in internal/authz/permissions.go; machine-written entries live in generatedModules() between the marker comments.
+
+Managing roles
+
+The admin panel has a Roles & permissions screen under System (/system/roles): create roles, tick permissions in a tree with a CRUD matrix, copy permissions from an existing role, and see how many users hold each one.
+
+Built-in roles can have their permissions edited, but they cannot be renamed or deleted — routes and the upgrade path resolve them by name. This is enforced by the API, not just hidden in the UI.
+
+In the frontend
+
+The API returns the caller's permissions already expanded, so the client never re-implements wildcard matching:
+
+const { can, isSuper } = usePermissions()
+
+{can("products.delete") && <DeleteButton />}
+
+{can("products.*") && <ProductsMenu />}
+
+Copy to clipboard
+
+Hiding UI is not access control
+
+can() is a convenience for hiding buttons and nav items. It is not a security boundary — anyone can call your API directly. Always guard the route as well.
+
+Upgrading an existing app
+
+Nothing breaks, by construction:
+
+every existing RequireRole("ADMIN") call site keeps working — the signature did not change
+
+if a user has no role assignment yet, grants resolve from the legacy users.role string, so admins do not lose access
+
+changing a user's role in the admin keeps the assignment in step, so the dropdown still takes effect
+
+Adopt permissions route by route: add a perm: argument alongside the role name, then drop the role name once every caller has a role that grants it.
+
+A project scaffolded before v3.220.0 has no staff group, and grit upgrade does not restructure routes.go, so it says so instead. Its generated deletes stay ADMIN-only until you add the group. To add it, create the group beside the admin one, move each route you want grantable onto it with the permission it needs, and hand it to generated resources:
+
+internal/routes/routes.go
+Copy to clipboard
+
+staff := v1.Group("")
+
+staff.Use(middleware.APIKeyOrAuth(db, middleware.Auth(db, authService)))
+
+staff.Use(middleware.RequireStaff())
+
+{
+
+staff.GET("/users", middleware.RequireRole("ADMIN", "perm:users.view"), userHandler.List)
+
+}
+
+mountResources(&Mount{
+
+// ...
+
+Admin:     admin,
+
+Staff:     staff,
+
+})
+
+grit upgrade does not rewrite internal/middleware/auth.go or internal/routes/resources.go either. Copy RequireStaff and RequirePermissionFor from a new project into the first, and add Staff *gin.RouterGroup to the Mount in the second. Regenerate a resource afterwards and its delete and bulk routes move to the staff group.
+
+Multiple roles per user
+
+Assignment is many-to-many. The admin's user form edits a single primary role; assign several with:
+
+PUT /api/users/:id/roles
+
+{ "role_ids": ["...", "..."] }
+
+Copy to clipboard
+
+A user's grants are the union of every role they hold.
+
+Security GuideSentinel

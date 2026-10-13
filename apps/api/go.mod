@@ -66,7 +66,7 @@ require (
 	// by the blog and by anything built on a richtext field, so it is cleaned on
 	// the way in rather than trusted on the way out.
 	github.com/microcosm-cc/bluemonday v1.0.27
-	github.com/redis/go-redis/v9 v9.22.0
+	github.com/redis/go-redis/v9 v9.23.0
 	// CVE-2026-54063 and CVE-2026-59161: the worksheet and streaming
 	// parsers could be made to allocate without bound, and this is what
 	// the CSV/XLSX importer hands user uploads to.
@@ -101,6 +101,7 @@ require (
 require (
 	github.com/davidbyttow/govips/v2 v2.19.0
 	github.com/glebarez/sqlite v1.11.0
+	github.com/nyaruka/phonenumbers v1.8.1
 	github.com/stretchr/testify v1.12.1
 	gorm.io/driver/sqlite v1.6.0
 )
@@ -160,7 +161,7 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
+	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/mattermost/xml-roundtrip-validator v0.1.0 // indirect
@@ -169,7 +170,6 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
-	github.com/nyaruka/phonenumbers v1.8.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
@@ -194,7 +194,7 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.45.0 // indirect
 	go.opentelemetry.io/otel/metric v1.45.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.11.0 // indirect
-	go.uber.org/atomic v1.11.0 // indirect
+	go.uber.org/atomic v1.12.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/arch v0.20.0 // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect

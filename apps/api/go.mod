@@ -83,9 +83,9 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.45.0
 	go.opentelemetry.io/otel/sdk v1.45.0
 	go.opentelemetry.io/otel/trace v1.45.0
-	golang.org/x/crypto v0.57.0
+	golang.org/x/crypto v0.58.0
 	// singleflight, which collapses concurrent cache misses in middleware/cache.go.
-	golang.org/x/sync v0.23.0
+	golang.org/x/sync v0.24.0
 	// Pulled in by the OTLP exporter even on the HTTP transport: the
 	// collector proto package depends on it. Pinned rather than left to
 	// whatever the otel modules ask for, which was v1.77.0 and carries two
@@ -101,6 +101,7 @@ require (
 require (
 	github.com/davidbyttow/govips/v2 v2.19.0
 	github.com/glebarez/sqlite v1.11.0
+	github.com/nyaruka/phonenumbers v1.8.1
 	github.com/stretchr/testify v1.12.1
 	gorm.io/driver/sqlite v1.6.0
 )
@@ -169,7 +170,6 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
-	github.com/nyaruka/phonenumbers v1.8.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
@@ -198,7 +198,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/arch v0.20.0 // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
-	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d // indirect
@@ -230,7 +230,7 @@ require (
 	// HTTP/2 again, and reached from the API's own server: GO-2026-6617 is the
 	// HPACK encoder race that go1.26.9 fixes in the standard library's copy,
 	// and this module carries its own. Raising the toolchain does not raise it.
-	golang.org/x/net v0.60.0 // GO-2026-6617, -6612, -6611, -6603
+	golang.org/x/net v0.61.0 // GO-2026-6617, -6612, -6611, -6603
 	golang.org/x/oauth2 v0.36.0 // indirect; CVE-2025-22868
-	golang.org/x/text v0.42.0 // indirect; GO-2026-5970
+	golang.org/x/text v0.43.0 // indirect; GO-2026-5970
 )

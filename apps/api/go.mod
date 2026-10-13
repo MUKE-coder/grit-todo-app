@@ -29,7 +29,7 @@ require (
 	// sort_by SQL injection, SSRF bypasses), and v2.5.0 keeps rate limits and
 	// lockouts in Redis, so every replica counts against the same numbers.
 	github.com/MUKE-coder/sentinel/v2 v2.6.0
-	github.com/aws/aws-sdk-go-v2 v1.43.0
+	github.com/aws/aws-sdk-go-v2 v1.47.3
 	github.com/aws/aws-sdk-go-v2/config v1.32.31
 	github.com/aws/aws-sdk-go-v2/credentials v1.19.30
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.106.0
@@ -101,6 +101,7 @@ require (
 require (
 	github.com/davidbyttow/govips/v2 v2.19.0
 	github.com/glebarez/sqlite v1.11.0
+	github.com/nyaruka/phonenumbers v1.8.1
 	github.com/stretchr/testify v1.12.1
 	gorm.io/driver/sqlite v1.6.0
 )
@@ -120,7 +121,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.33.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.38.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.45.0 // indirect
-	github.com/aws/smithy-go v1.27.3 // indirect
+	github.com/aws/smithy-go v1.28.5 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/beevik/etree v1.6.0 // indirect
 	github.com/bytedance/sonic v1.14.0 // indirect
@@ -169,7 +170,6 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
-	github.com/nyaruka/phonenumbers v1.8.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
